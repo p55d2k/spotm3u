@@ -3,3 +3,4 @@ out/
 .venv/
 data.csv
 options.json
+__pycache__/

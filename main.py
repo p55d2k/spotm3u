@@ -2,9 +2,14 @@ import csv
 import logging
 import os
 import random
+import re
 import json
-import yt_dlp
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+try:
+    import yt_dlp
+except ImportError:  # pragma: no cover - only used when dependency is not installed
+    yt_dlp = None
 
 
 # Set up Colored Logging without external dependencies
@@ -67,10 +72,59 @@ def create_out_dir():
     return out_dir
 
 
-def download_song(query, out_dir):
+def sanitize_filename_component(value):
+    if value is None:
+        return "Unknown"
+
+    cleaned = str(value)
+    cleaned = cleaned.replace("/", " - ")
+    cleaned = cleaned.replace("\\", " - ")
+    cleaned = cleaned.replace(":", " - ")
+    cleaned = cleaned.replace("*", " ")
+    cleaned = cleaned.replace("?", "")
+    cleaned = cleaned.replace('"', "")
+    cleaned = cleaned.replace("<", " ")
+    cleaned = cleaned.replace(">", " ")
+    cleaned = cleaned.replace("|", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ._")
+    return cleaned or "Unknown"
+
+
+def build_output_basename(track_name, artist_names):
+    track = sanitize_filename_component(track_name)
+    artist_names_clean = artist_names.replace(";", ", ") if artist_names else ""
+    artists = sanitize_filename_component(artist_names_clean)
+
+    if artists and artists != track:
+        return f"{track} - {artists}"
+    return track
+
+
+def get_unique_output_base_name(out_dir, track_name, artist_names):
+    base_name = build_output_basename(track_name, artist_names)
+    candidate = base_name
+    counter = 2
+
+    while any(
+        os.path.exists(os.path.join(out_dir, f"{candidate}.{ext}"))
+        for ext in ("mp3", "webm", "m4a", "aac", "wav", "flac")
+    ):
+        candidate = f"{base_name} ({counter})"
+        counter += 1
+
+    return candidate
+
+
+def download_song(track_name, artist_names, out_dir):
+    if yt_dlp is None:
+        raise RuntimeError("yt_dlp is not installed. Please run: pip install -r requirements.txt")
+
+    artist_names_text = artist_names or ""
+    output_base_name = get_unique_output_base_name(out_dir, track_name, artist_names_text)
+    query = f"{track_name} {artist_names_text}".strip()
     ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
+        "outtmpl": os.path.join(out_dir, f"{output_base_name}.%(ext)s"),
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -93,9 +147,8 @@ def download_song(query, out_dir):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             logger.info(f"Searching and downloading: '{query}'")
-            # ytsearch1: searches and returns the first result
             ydl.download([f"ytsearch1:{query}"])
-            logger.info(f"Successfully downloaded: '{query}'")
+            logger.info(f"Successfully downloaded: '{output_base_name}'")
             return True
         except Exception as e:
             logger.error(f"Failed to download '{query}': {e}")
@@ -128,24 +181,23 @@ def main():
         logger.info("Random order enabled. Shuffling tracks...")
         random.shuffle(rows)
 
-    queries = []
+    tracks = []
     for row in rows:
         track_name = row.get("Track Name")
         artist_names = row.get("Artist Name(s)")
-        # Replace ';' in artists with ', ' for a better search query
         artist_names_clean = artist_names.replace(";", ", ") if artist_names else ""
-        queries.append(f"{track_name} {artist_names_clean}".strip())
+        tracks.append((track_name, artist_names_clean))
 
     max_threads = max(1, config.get("threads", 6))
     logger.info(f"Starting downloads concurrently with {max_threads} threads...")
 
-    # Using ThreadPoolExecutor for concurrent downloads
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        future_to_query = {
-            executor.submit(download_song, q, out_dir): q for q in queries
+        future_to_track = {
+            executor.submit(download_song, track_name, artist_names, out_dir): (track_name, artist_names)
+            for track_name, artist_names in tracks
         }
 
-        for future in as_completed(future_to_query):
+        for future in as_completed(future_to_track):
             success = future.result()
             if success:
                 songs_processed += 1
