@@ -4,3 +4,4 @@ out/
 data.csv
 options.json
 __pycache__/
+data_files/
