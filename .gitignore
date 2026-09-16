@@ -5,3 +5,9 @@ data.csv
 options.json
 __pycache__/
 data_files/
+context.md
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+archive/**/.git/
+archive/legacy/exportifyx

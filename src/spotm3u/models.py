@@ -1,0 +1,35 @@
+"""Data models shared by the playlist and local-audio layers."""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class Playlist:
+    """A Spotify playlist available to the user."""
+
+    id: str | None
+    name: str
+    url: str
+    track_count: int | None = None
+
+
+@dataclass(frozen=True)
+class Track:
+    """Track metadata collected from a playlist source."""
+
+    title: str
+    artists: list[str]
+    album: str | None = None
+    duration_ms: int | None = None
+    spotify_id: str | None = None
+    spotify_url: str | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedTrack:
+    """A track matched to an audio file available on the local machine."""
+
+    track: Track
+    local_path: Path
+
