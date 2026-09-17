@@ -22,6 +22,7 @@ but is not started by the CLI workflow.
 uv venv
 uv sync
 uv run playwright install chromium
+uv run pre-commit install
 ```
 
 ## Usage
@@ -57,6 +58,9 @@ spotm3u
 ```bash
 uv run pytest
 ```
+
+Commits run the test suite automatically when pre-commit is installed. The
+same suite runs in GitHub Actions for pushes and pull requests.
 
 ## Project layout
 

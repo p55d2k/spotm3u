@@ -22,6 +22,7 @@ spotm3u-web = "spotm3u.app:run"
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.2",
     "pytest>=8.3",
 ]
 
