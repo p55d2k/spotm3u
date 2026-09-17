@@ -7,9 +7,43 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
-    <main>
+    <main class="card">
+      <p class="eyebrow">Local playlist converter</p>
       <h1>Spotify to M3U</h1>
-      <p>Turn Spotify playlist metadata into local M3U playlists.</p>
+      <p class="intro">
+        Convert your Spotify playlists into local M3U playlists without
+        connecting your Spotify account to this app.
+      </p>
+
+      <section aria-labelledby="instructions-heading">
+        <h2 id="instructions-heading">How it works</h2>
+        <ol class="steps">
+          <li>
+            <strong>Open Exportify</strong>
+            <a
+              href="https://exportify.net/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >Open Exportify<span class="visually-hidden"> (opens in a new tab)</span></a>
+          </li>
+          <li><strong>Log into Spotify through Exportify</strong></li>
+          <li><strong>Press “Export All”</strong></li>
+          <li><strong>Download the playlist export ZIP</strong></li>
+          <li><strong>Upload that ZIP here</strong></li>
+        </ol>
+      </section>
+
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <label for="export-file">Exportify ZIP file</label>
+        <input
+          id="export-file"
+          name="file"
+          type="file"
+          accept=".zip,application/zip"
+          required
+        >
+        <button type="submit">Upload Exportify ZIP</button>
+      </form>
     </main>
   </body>
 </html>
