@@ -36,6 +36,14 @@ uv run spotm3u --version
 session data, when used directly through the isolated Spotify modules, remains
 local-only in `.browser-data/` and must not be copied or committed.
 
+The Flask web app can be started with:
+
+```bash
+uv run spotm3u-web
+```
+
+Open `http://127.0.0.1:5000/` to view the web app homepage.
+
 The installed command can also be used directly after activating the uv
 environment:
 

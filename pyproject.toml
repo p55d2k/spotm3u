@@ -9,6 +9,7 @@ description = "Create local M3U playlists from Spotify playlist metadata."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "flask>=3.1",
     "playwright>=1.52",
     "rich>=14.0",
     "typer>=0.16",
@@ -16,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 spotm3u = "spotm3u.cli:app"
+spotm3u-web = "spotm3u.app:run"
 
 [dependency-groups]
 dev = [
@@ -28,4 +30,3 @@ packages = ["src/spotm3u"]
 [tool.pytest.ini_options]
 addopts = ["-ra"]
 testpaths = ["tests"]
-
