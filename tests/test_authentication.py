@@ -52,6 +52,21 @@ def test_login_url_is_not_authenticated() -> None:
     asyncio.run(exercise())
 
 
+def test_existing_session_is_detected_from_cookie() -> None:
+    async def exercise() -> None:
+        page = SimpleNamespace(
+            context=SimpleNamespace(
+                cookies=AsyncMock(
+                    return_value=[{"name": "sp_dc", "value": "authenticated-session"}]
+                )
+            )
+        )
+
+        assert await SpotifyAuthenticator().is_authenticated(page)
+
+    asyncio.run(exercise())
+
+
 def test_authenticate_times_out_with_actionable_error() -> None:
     async def exercise() -> None:
         page = SimpleNamespace(

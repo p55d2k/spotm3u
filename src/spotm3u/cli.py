@@ -7,7 +7,11 @@ import typer
 from rich.console import Console
 
 from . import __version__
-from .spotify.authentication import AuthenticationTimeoutError, SpotifyAuthenticator
+from .spotify.authentication import (
+    SPOTIFY_HOME_URL,
+    AuthenticationTimeoutError,
+    SpotifyAuthenticator,
+)
 from .spotify.browser import BrowserManager
 
 app = typer.Typer(
@@ -41,13 +45,26 @@ def main(
 
 
 async def _authenticate() -> None:
+    authenticator = SpotifyAuthenticator()
+    session_browser = BrowserManager(headless=True)
+    await session_browser.start()
+    try:
+        page = await session_browser.new_page()
+        console.print("Checking for an existing Spotify session (headless)...")
+        await page.goto(SPOTIFY_HOME_URL, wait_until="domcontentloaded")
+        if await authenticator.is_authenticated(page):
+            console.print("[green]✓ Existing Spotify session detected; skipping browser login.[/green]")
+            return
+    finally:
+        await session_browser.close()
+
     browser = BrowserManager()
     await browser.start()
     try:
         page = await browser.new_page()
-        console.print("\nOpening Spotify...")
-        console.print("If needed, log in using the Spotify window.")
-        await SpotifyAuthenticator().authenticate(page)
+        console.print("\nNo existing session found; opening Spotify...")
+        console.print("Please log in using the Spotify window.")
+        await authenticator.authenticate(page)
         console.print("[green]✓ Spotify login detected.[/green]")
     finally:
         await browser.close()
