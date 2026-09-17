@@ -2,9 +2,10 @@
 
 import json
 import re
+import secrets
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .exportify import ExportifyParseError, parse_exportify
@@ -21,6 +22,7 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.from_mapping(
         MAX_CONTENT_LENGTH=DEFAULT_MAX_UPLOAD_SIZE,
         UPLOAD_ROOT=default_upload_root(),
+        SECRET_KEY=secrets.token_hex(32),
     )
     if config:
         app.config.update(config)
@@ -65,6 +67,7 @@ def create_app(config: dict | None = None) -> Flask:
                 error="The uploaded export could not be read. Please try again.",
             ), 400
 
+        session["job_id"] = job.job_id
         return render_template(
             "playlists.html",
             job_id=job.job_id,
@@ -73,7 +76,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/playlists/<job_id>")
     def playlists(job_id: str):
-        job_directory = _job_directory(app.config["UPLOAD_ROOT"], job_id)
+        job_directory = _current_job_directory(app, job_id)
         if job_directory is None:
             return render_template(
                 "index.html",
@@ -100,7 +103,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.post("/playlists/<job_id>/select")
     def select_playlist(job_id: str):
-        job_directory = _job_directory(app.config["UPLOAD_ROOT"], job_id)
+        job_directory = _current_job_directory(app, job_id)
         if job_directory is None:
             return render_template(
                 "index.html",
@@ -144,7 +147,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/processing/<job_id>/<playlist_id>")
     def processing(job_id: str, playlist_id: str):
-        job_directory = _job_directory(app.config["UPLOAD_ROOT"], job_id)
+        job_directory = _current_job_directory(app, job_id)
         if job_directory is None or not _selection_matches(
             job_directory, playlist_id
         ):
@@ -175,9 +178,20 @@ def _job_directory(upload_root: Path | str, job_id: str) -> Path | None:
     directory = (root / f"job-{job_id}").resolve()
     if root not in directory.parents or not directory.is_dir():
         return None
-    if not (directory / "extracted").is_dir():
+    if not (
+        (directory / "extracted").is_dir()
+        and (directory / "state.json").is_file()
+        and (directory / "output").is_dir()
+    ):
         return None
     return directory
+
+
+def _current_job_directory(app: Flask, job_id: str) -> Path | None:
+    """Resolve a job only when it belongs to the current browser session."""
+    if session.get("job_id") != job_id:
+        return None
+    return _job_directory(app.config["UPLOAD_ROOT"], job_id)
 
 
 def _save_job_state(job_directory: Path, state: dict[str, str]) -> None:

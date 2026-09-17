@@ -22,6 +22,8 @@ class UploadJob:
     directory: Path
     archive: Path
     extracted: Path
+    state: Path
+    output: Path
 
 
 def store_upload(
@@ -41,11 +43,15 @@ def store_upload(
     job_directory = upload_root / f"job-{job_id}"
     archive_path = job_directory / "export.zip"
     extracted_directory = job_directory / "extracted"
+    state_path = job_directory / "state.json"
+    output_directory = job_directory / "output"
 
     try:
         job_directory.mkdir()
         _write_limited(uploaded_file, archive_path, max_upload_size)
         _extract_zip(archive_path, extracted_directory)
+        output_directory.mkdir()
+        state_path.write_text("{}", encoding="utf-8")
     except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
         shutil.rmtree(job_directory, ignore_errors=True)
         raise UploadError("The uploaded file is not a valid ZIP archive.") from error
@@ -58,6 +64,8 @@ def store_upload(
         directory=job_directory,
         archive=archive_path,
         extracted=extracted_directory,
+        state=state_path,
+        output=output_directory,
     )
 
 

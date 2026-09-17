@@ -82,3 +82,22 @@ def test_playlist_selection_rejects_playlist_outside_job(tmp_path) -> None:
 
     assert selection.status_code == 400
     assert b"not available for this upload" in selection.data
+
+
+def test_job_id_is_stored_in_session_and_jobs_are_session_scoped(tmp_path) -> None:
+    app = create_app({"UPLOAD_ROOT": tmp_path})
+    client = app.test_client()
+    other_client = app.test_client()
+
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    job_id = next(tmp_path.iterdir()).name.removeprefix("job-")
+
+    with client.session_transaction() as current_session:
+        assert dict(current_session) == {"job_id": job_id}
+
+    assert client.get(f"/playlists/{job_id}").status_code == 200
+    assert other_client.get(f"/playlists/{job_id}").status_code == 404
