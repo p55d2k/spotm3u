@@ -1,28 +1,44 @@
-"""Source-independent text normalization used by the local audio layer."""
+"""Source-independent text normalization used by the local audio layer.
+
+These helpers return matching-only values.  Callers retain the source metadata
+on :class:`~spotm3u.models.Track` (or their local file metadata) unchanged.
+"""
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from pathlib import Path
+import re
+
+
+_FEATURING_RE = re.compile(r"\b(?:featuring|feat\.?|ft\.?)\b", re.IGNORECASE)
+_TRACK_NUMBER_RE = re.compile(r"^\s*(?:\d{1,3}\s*[-_.]\s*|\d{1,3}\s+)")
+_FILENAME_TAG_RE = re.compile(
+    r"(?:\s*[\(\[]\s*(?:official\s+)?(?:audio|video|lyrics?|lyric\s+video)\s*[\)\]]"
+    r"|\s*-\s*(?:official\s+)?(?:audio|video|lyrics?|lyric\s+video)\s*$)",
+    re.IGNORECASE,
+)
 
 
 def normalize(value: str | None) -> str:
-    """Return a comparison-friendly representation of text."""
+    """Return a comparison-friendly representation without changing input."""
     if not value:
         return ""
-    text = unicodedata.normalize("NFKD", str(value))
+    text = unicodedata.normalize("NFKC", str(value)).casefold()
+    text = unicodedata.normalize("NFKD", text)
     text = "".join(char for char in text if not unicodedata.combining(char))
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\u4e00-\u9fff\u3040-\u30ff]+", " ", text)
-    return text.strip()
+    # Keep letters and numbers from every script; punctuation and symbols are
+    # separators, so "Artist_Title" and "Artist - Title" compare equally.
+    text = "".join(char if char.isalnum() else " " for char in text)
+    return " ".join(text.split())
 
 
 def normalize_artists(artists: list[str] | str | None) -> str:
     """Normalize one or more artist names into a comparison string."""
     if isinstance(artists, str):
-        artists = artists.replace(";", ", ").split(",")
-    return normalize(" ".join(artists or []))
+        artists = re.split(r"\s*(?:,|;|/|\||&|\band\b)\s*", artists, flags=re.IGNORECASE)
+    text = " ".join(_FEATURING_RE.sub(" ", artist) for artist in (artists or []))
+    return normalize(text)
 
 
 def track_key(title: str, artists: list[str] | str | None = None) -> str:
@@ -34,7 +50,21 @@ def track_key(title: str, artists: list[str] | str | None = None) -> str:
 
 def filename_stem(path: str | Path) -> str:
     """Normalize an audio filename without its extension."""
-    return normalize(Path(path).stem)
+    stem = _TRACK_NUMBER_RE.sub("", Path(path).stem)
+    stem = _FILENAME_TAG_RE.sub(" ", stem)
+    return normalize(stem)
+
+
+def filename_keys(path: str | Path) -> tuple[str, ...]:
+    """Return equivalent normalized forms for common filename layouts."""
+    stem = _TRACK_NUMBER_RE.sub("", Path(path).stem)
+    stem = _FILENAME_TAG_RE.sub(" ", stem)
+    parts = [normalize(part) for part in re.split(r"\s+-\s+", stem) if part]
+    normalized_stem = normalize(stem)
+    keys = [normalized_stem]
+    if len(parts) >= 2:
+        keys.extend((" ".join(reversed(parts)), " ".join(parts)))
+    return tuple(dict.fromkeys(key for key in keys if key))
 
 
 def sanitize_filename_component(value: str | None) -> str:

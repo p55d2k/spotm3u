@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from ..models import ResolvedTrack, Track
-from ..normalization import filename_stem, normalize, track_key
+from ..normalization import filename_keys, filename_stem, normalize, track_key
 
 AUDIO_EXTENSIONS = frozenset({".mp3", ".m4a", ".flac", ".wav", ".aac", ".ogg", ".webm"})
 
@@ -52,7 +52,8 @@ class LocalAudioResolver:
         )
         index: dict[str, list[Path]] = {}
         for path in self._files:
-            index.setdefault(filename_stem(path), []).append(path)
+            for key in filename_keys(path):
+                index.setdefault(key, []).append(path)
         self._by_key = index
 
     def resolve(self, track: Track) -> Resolution:
