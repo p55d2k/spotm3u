@@ -5,11 +5,12 @@ portable `.m3u` playlists. It is designed around the normal Spotify website
 and a local music library; it does not use the Spotify Web API as a core
 dependency and does not handle Spotify passwords.
 
-The project currently supports **Task 3: Spotify authentication**. Running the
-CLI opens a visible Spotify browser window where the user signs in directly;
-the CLI detects the authenticated state without receiving or storing
-credentials. Playlist extraction, local audio matching, and M3U writing will
-be added in later tasks.
+The project currently supports **Task 4: persistent Spotify authentication**.
+Running the CLI opens a visible Spotify browser window where the user signs in
+directly; the CLI detects the authenticated state without receiving or storing
+credentials. The local browser profile is reused on later runs, so login is
+normally only required once. Playlist extraction, local audio matching, and
+M3U writing will be added in later tasks.
 
 ## Requirements
 
@@ -34,7 +35,10 @@ uv run spotm3u --version
 ```
 
 `spotm3u` opens Spotify in a visible Chromium window and waits for the user to
-complete login on Spotify's own page.
+complete login on Spotify's own page when no valid local session exists. The
+authenticated Chromium profile is stored in `.browser-data/` in the current
+directory. It is local-only, ignored by Git, and must not be copied or
+committed.
 
 The installed command can also be used directly after activating the uv
 environment:

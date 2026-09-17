@@ -46,7 +46,7 @@ async def _authenticate() -> None:
     try:
         page = await browser.new_page()
         console.print("\nOpening Spotify...")
-        console.print("Please log in using the Spotify window.")
+        console.print("If needed, log in using the Spotify window.")
         await SpotifyAuthenticator().authenticate(page)
         console.print("[green]✓ Spotify login detected.[/green]")
     finally:

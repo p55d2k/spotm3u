@@ -11,3 +11,4 @@ context.md
 *.egg-info/
 archive/**/.git/
 archive/legacy/exportifyx
+.browser-data/
