@@ -5,7 +5,8 @@ data.csv
 options.json
 __pycache__/
 data_files/
-context.md
+tasks.md
+tasks/
 .pytest_cache/
 *.py[cod]
 *.egg-info/
