@@ -1,6 +1,23 @@
 """Tests for the Flask application scaffold."""
 
+from io import BytesIO
+from zipfile import ZipFile
+
 from spotm3u.app import create_app
+
+
+def export_zip() -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr(
+            "one.csv",
+            "Track Name,Artist Name(s)\nFirst,Artist\n",
+        )
+        archive.writestr(
+            "two.csv",
+            "Track Name,Artist Name(s)\nSecond,Artist\n",
+        )
+    return output.getvalue()
 
 
 def test_homepage_renders() -> None:
@@ -24,3 +41,44 @@ def test_static_stylesheet_is_available() -> None:
 
     assert response.status_code == 200
     assert b"font-family" in response.data
+
+
+def test_playlist_selection_persists_state_and_redirects(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
+
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 201
+    job_id = next(tmp_path.iterdir()).name.removeprefix("job-")
+    selection = client.post(
+        f"/playlists/{job_id}/select",
+        data={"playlist_id": "1"},
+    )
+
+    assert selection.status_code == 302
+    assert selection.headers["Location"] == f"/processing/{job_id}/1"
+    assert (tmp_path / f"job-{job_id}" / "state.json").read_text() == (
+        '{"selected_playlist_id": "1"}'
+    )
+    assert client.get(selection.headers["Location"]).status_code == 200
+
+
+def test_playlist_selection_rejects_playlist_outside_job(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    job_id = next(tmp_path.iterdir()).name.removeprefix("job-")
+
+    selection = client.post(
+        f"/playlists/{job_id}/select",
+        data={"playlist_id": "2"},
+    )
+
+    assert selection.status_code == 400
+    assert b"not available for this upload" in selection.data

@@ -10,17 +10,26 @@
     <main class="card">
       <p class="eyebrow">Imported playlists</p>
       <h1>Select a playlist</h1>
+      {% if error %}
+      <p role="alert">{{ error }}</p>
+      {% endif %}
       {% if playlists %}
-      <ul>
-        {% for playlist in playlists %}
-        <li>
-          <strong>{{ playlist.name }}</strong>
-          {% if playlist.track_count is not none %}
-          <span>({{ playlist.track_count }} tracks)</span>
-          {% endif %}
-        </li>
-        {% endfor %}
-      </ul>
+      <form method="post" action="{{ url_for('select_playlist', job_id=job_id) }}">
+        <ul>
+          {% for playlist in playlists %}
+          <li>
+            <label>
+              <input type="radio" name="playlist_id" value="{{ loop.index0 }}" required>
+              <strong>{{ playlist.name }}</strong>
+              {% if playlist.track_count is not none %}
+              <span>({{ playlist.track_count }} tracks)</span>
+              {% endif %}
+            </label>
+          </li>
+          {% endfor %}
+        </ul>
+        <button type="submit">Continue</button>
+      </form>
       {% else %}
       <p role="status">The export did not contain any playlists.</p>
       {% endif %}

@@ -1,9 +1,10 @@
 """Flask application for the spotm3u web interface."""
 
+import json
 import re
 from pathlib import Path
 
-from flask import Flask, render_template, request
+from flask import Flask, redirect, render_template, request, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .exportify import ExportifyParseError, parse_exportify
@@ -97,6 +98,62 @@ def create_app(config: dict | None = None) -> Flask:
             playlists=playlist_data,
         )
 
+    @app.post("/playlists/<job_id>/select")
+    def select_playlist(job_id: str):
+        job_directory = _job_directory(app.config["UPLOAD_ROOT"], job_id)
+        if job_directory is None:
+            return render_template(
+                "index.html",
+                error="That upload has expired. Please upload the ZIP again.",
+            ), 404
+
+        try:
+            playlist_data = parse_exportify(job_directory / "extracted")
+        except (ExportifyParseError, OSError, UnicodeError) as error:
+            app.logger.info("Unable to load playlists for job %s: %s", job_id, error)
+            return render_template(
+                "index.html",
+                error="The playlist selection has expired. Please upload the ZIP again.",
+            ), 400
+
+        playlist_id = request.form.get("playlist_id", "")
+        if not playlist_id.isdigit():
+            return render_template(
+                "playlists.html",
+                job_id=job_id,
+                playlists=playlist_data,
+                error="Choose a playlist before continuing.",
+            ), 400
+
+        playlist_index = int(playlist_id)
+        if playlist_index < 0 or playlist_index >= len(playlist_data):
+            return render_template(
+                "playlists.html",
+                job_id=job_id,
+                playlists=playlist_data,
+                error="That playlist is not available for this upload.",
+            ), 400
+
+        _save_job_state(
+            job_directory,
+            {"selected_playlist_id": playlist_id},
+        )
+        return redirect(
+            url_for("processing", job_id=job_id, playlist_id=playlist_id)
+        )
+
+    @app.get("/processing/<job_id>/<playlist_id>")
+    def processing(job_id: str, playlist_id: str):
+        job_directory = _job_directory(app.config["UPLOAD_ROOT"], job_id)
+        if job_directory is None or not _selection_matches(
+            job_directory, playlist_id
+        ):
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 404
+        return render_template("processing.html")
+
     @app.errorhandler(RequestEntityTooLarge)
     def upload_too_large(_error):
         return render_template(
@@ -121,6 +178,24 @@ def _job_directory(upload_root: Path | str, job_id: str) -> Path | None:
     if not (directory / "extracted").is_dir():
         return None
     return directory
+
+
+def _save_job_state(job_directory: Path, state: dict[str, str]) -> None:
+    """Persist small workflow state inside the server-owned job directory."""
+    state_path = job_directory / "state.json"
+    temporary_path = job_directory / "state.json.tmp"
+    temporary_path.write_text(json.dumps(state), encoding="utf-8")
+    temporary_path.replace(state_path)
+
+
+def _selection_matches(job_directory: Path, playlist_id: str) -> bool:
+    if not playlist_id.isdigit():
+        return False
+    try:
+        state = json.loads((job_directory / "state.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return state.get("selected_playlist_id") == playlist_id
 
 
 def run() -> None:
