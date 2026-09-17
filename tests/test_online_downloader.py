@@ -34,6 +34,10 @@ class FakeYoutubeDL:
 
 def install_fake_yt_dlp(monkeypatch, fake=FakeYoutubeDL):
     monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=fake))
+    monkeypatch.setattr(
+        "spotm3u.online.downloader.validate_downloaded_audio",
+        lambda track, path: types.SimpleNamespace(status="valid", reasons=()),
+    )
 
 
 def test_download_produces_safe_mp3_inside_output_directory(tmp_path, monkeypatch):

@@ -14,6 +14,7 @@ from .validation import (
     validate_source_candidates,
 )
 from .downloader import DownloadError, download_source, download_track
+from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
 
 __all__ = [
     "OnlineSourceSearcher",
@@ -30,4 +31,7 @@ __all__ = [
     "DownloadError",
     "download_source",
     "download_track",
+    "AudioValidation",
+    "AudioValidationStatus",
+    "validate_downloaded_audio",
 ]

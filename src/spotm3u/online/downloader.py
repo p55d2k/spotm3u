@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ..models import Track
+from .audio_validation import validate_downloaded_audio
 
 
 class DownloadError(RuntimeError):
@@ -76,6 +77,11 @@ def download_track(
         raise DownloadError(f"download failed for {source_url} (exit code {result})")
     if not _is_complete_mp3(output_path, destination):
         raise DownloadError(f"download did not produce a complete MP3: {output_path.name}")
+    validation = validate_downloaded_audio(track, output_path)
+    if validation.status == "invalid":
+        raise DownloadError(
+            f"downloaded audio is invalid: {', '.join(validation.reasons)}"
+        )
     return output_path
 
 
