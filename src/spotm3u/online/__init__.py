@@ -13,6 +13,7 @@ from .validation import (
     validate_source_candidate,
     validate_source_candidates,
 )
+from .downloader import DownloadError, download_source, download_track
 
 __all__ = [
     "OnlineSourceSearcher",
@@ -26,4 +27,7 @@ __all__ = [
     "ValidationStatus",
     "validate_source_candidate",
     "validate_source_candidates",
+    "DownloadError",
+    "download_source",
+    "download_track",
 ]
