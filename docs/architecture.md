@@ -2,235 +2,206 @@
 
 ## Overview
 
-The application converts Spotify playlist metadata exported through Exportify into an M3U playlist pointing to local audio files.
+This project converts Spotify playlists exported through Exportify into local M3U playlists.
 
-The important architectural boundary is:
+The application does not use:
 
-```text
-Exportify ZIP
-      ↓
-Spotify/Exportify-specific code
-      ↓
-Generic Playlist + Track models
-      ↓
-Generic local audio resolver
-      ↓
-Generic M3U writer
-```
+- Spotify browser automation
+- Spotify DOM scraping
+- Spotify Web API
+- Spotify Premium
 
-Spotify-specific knowledge should stop at the parser.
+The user workflow is:
 
----
+Exportify
+→ Exportify ZIP
+→ Flask upload
+→ Exportify parser
+→ playlist selection
+→ local audio resolution
+→ online source search when necessary
+→ source ranking/validation
+→ yt-dlp download
+→ downloaded audio validation
+→ M3U generation
+→ M3U download
 
-## Project Structure
+## Important Existing Component
 
-```text
-spotify-m3u/
-├── pyproject.toml
-├── README.md
-├── context.md
-├── tasks.md
-├── docs/
-│   ├── architecture.md
-│   ├── exportify.md
-│   ├── web.md
-│   ├── matching.md
-│   ├── m3u.md
-│   └── security.md
-├── src/
-│   └── spotm3u/
-│       ├── __init__.py
-│       ├── app.py
-│       ├── models.py
-│       ├── config.py
-│       ├── exportify/
-│       │   ├── __init__.py
-│       │   └── parser.py
-│       ├── audio/
-│       │   ├── __init__.py
-│       │   ├── resolver.py
-│       │   └── local.py
-│       ├── m3u/
-│       │   ├── __init__.py
-│       │   └── writer.py
-│       └── utils/
-│           ├── __init__.py
-│           └── normalize.py
-├── templates/
-│   ├── base.html
-│   ├── index.html
-│   ├── upload.html
-│   ├── playlists.html
-│   ├── processing.html
-│   └── result.html
-├── static/
-│   ├── css/
-│   │   └── style.css
-│   └── js/
-│       └── app.js
-├── tests/
-│   ├── test_models.py
-│   ├── test_exportify.py
-│   ├── test_resolver.py
-│   ├── test_m3u.py
-│   └── test_routes.py
-└── uploads/
-```
+Task 10 already implements the local audio resolver.
 
----
+Do not replace it.
 
-## Data Models
+The local resolver searches the user's existing audio library for suitable MP3/FLAC/etc. files.
 
-### Playlist
+The new online pipeline is a fallback/additional resolution strategy.
 
-```python
-@dataclass
-class Playlist:
-    id: str | None
-    name: str
-    track_count: int | None = None
-    tracks: list["Track"] = field(default_factory=list)
-```
+## Resolution Architecture
+
+For each Track:
+
+1. Try local audio resolution.
+2. If a suitable local file exists:
+   - use it
+3. Otherwise:
+   - search online sources
+   - rank candidates
+   - validate the selected candidate
+   - download using yt-dlp
+   - convert to MP3
+   - validate the resulting audio
+4. Store the resulting local audio path.
+5. Use the local path when generating the M3U.
+
+Conceptually:
+
+Track
+├── Local Audio Resolver
+│ └── existing local audio file
+│
+└── Online Resolver
+├── Source Search
+├── Candidate Ranking
+├── Source Validation
+├── yt-dlp Download
+└── Downloaded Audio Validation
+└── downloaded MP3
+
+## Core Models
 
 ### Track
 
-```python
-@dataclass
-class Track:
-    title: str
-    artists: list[str]
-    album: str | None
-    duration_ms: int | None
-    spotify_id: str | None = None
-    spotify_url: str | None = None
-```
+Represents the Spotify/Exportify track metadata.
+
+Suggested fields:
+
+- title
+- artists
+- album
+- duration_ms
+- spotify_id
+- spotify_url
+
+### SourceCandidate
+
+Represents an online candidate.
+
+Suggested fields:
+
+- url
+- title
+- uploader/channel
+- duration_s
+- source_type
+- metadata
+- ranking/confidence
 
 ### ResolvedTrack
 
-```python
-@dataclass
-class ResolvedTrack:
-    track: Track
-    local_path: Path
-```
+Represents the final local audio associated with a Track.
 
-Additional matching/result models may be introduced if they make the interfaces clearer.
+Suggested fields:
 
----
+- track
+- local_path
+- resolution_method
+- source_url
+- status
+- validation information
 
-## Module Responsibilities
+## Module Boundaries
 
-### `app.py`
-
-Responsible for:
-
-- Flask routes
-- request validation
-- coordinating services
-- rendering templates
-- redirects
-- HTTP responses
-
-It should not contain substantial parsing, matching, or M3U business logic.
-
-### `models.py`
-
-Contains shared application data structures.
-
-### `exportify/parser.py`
+### Exportify Parser
 
 Responsible only for:
 
-- understanding Exportify's exported format
-- reading export files
-- converting them into generic models
+- reading Exportify files
+- parsing playlists
+- creating Track objects
 
-No local audio matching should occur here.
-
-### `audio/local.py`
+### Track Normalization
 
 Responsible for:
 
-- discovering local audio files
-- reading local metadata
-- representing local library entries
+- normalization
+- title/artist comparison utilities
+- version-marker handling
 
-### `audio/resolver.py`
+### Local Audio Resolver
 
 Responsible for:
 
-- comparing `Track` metadata against local audio
-- exact matching
-- normalized matching
-- fuzzy matching
-- returning match results
+- finding existing local audio
+- matching Track metadata to local files
 
-### `m3u/writer.py`
+This is Task 10 and should remain independent.
 
-Responsible only for generating M3U output from resolved tracks.
+### Online Source Search
 
-### `utils/normalize.py`
+Responsible for:
 
-Contains reusable normalization functions.
+- searching for online candidates
+- returning candidate metadata
 
----
+It does not download files.
 
-## Job Storage
+### Candidate Ranking
 
-Temporary state should be stored server-side.
+Responsible for:
 
-Example:
+- comparing candidates against Track metadata
+- ranking candidates
+- exposing confidence
 
-```text
-/tmp/spotm3u/
-└── job-abc123/
-    ├── export.zip
-    ├── extracted/
-    ├── state.json
-    └── output/
-        └── playlist.m3u
-```
+### Source Validation
 
-The browser should retain only a small opaque job identifier.
+Responsible for:
 
-Do not put complete playlist data or uploaded file contents into the Flask cookie session.
+- rejecting obviously unsuitable sources
+- deciding whether a candidate may proceed to download
 
----
+### yt-dlp Downloader
 
-## Processing Flow
+Responsible for:
 
-```text
-GET /
-    ↓
-Exportify instructions
-    ↓
-POST /upload
-    ↓
-Validate ZIP
-    ↓
-Create job
-    ↓
-Extract safely
-    ↓
-Parse Exportify
-    ↓
-GET /playlists/<job_id>
-    ↓
-User selects playlist
-    ↓
-Resolve local tracks
-    ↓
-Generate M3U
-    ↓
-GET /result/<job_id>/<playlist_id>
-    ↓
-GET /download/...
-```
+- downloading an accepted source
+- extracting/converting audio to MP3
+- returning the resulting local path
 
----
+### Downloaded Audio Validation
 
-## Design Principle
+Responsible for:
 
-The application should remain usable even if Exportify is eventually replaced.
+- checking the resulting audio file
+- verifying duration/format/readability
+- detecting obvious unwanted content where technically possible
 
-The generic layers should know nothing about where the playlist metadata originated.
+### M3U Writer
+
+Responsible only for:
+
+- receiving ordered local audio paths
+- writing the M3U
+
+It must not perform matching or downloading.
+
+## Key Principle
+
+Source selection and audio validation are separate.
+
+A source can have perfect-looking metadata and still contain unwanted dialogue or sound effects.
+
+Therefore:
+
+metadata match
+≠
+guaranteed clean recording
+
+## Output
+
+The final M3U references the actual local MP3 files produced by:
+
+- existing local library resolution, or
+- successful yt-dlp downloads.
+
+The M3U itself does not download anything.

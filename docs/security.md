@@ -1,152 +1,85 @@
 # Security
 
-## Threat Model
+## ZIP Uploads
 
-The application accepts ZIP files supplied by users.
+Exportify ZIP files are untrusted input.
 
-Uploaded files must therefore be treated as untrusted data.
+Protect against:
 
----
+- path traversal
+- absolute paths
+- malicious archive contents
+- oversized compressed files
+- oversized extracted files
+- malformed CSV/JSON
 
-## Upload Validation
+All extraction must remain inside the job's controlled directory.
 
-Validate:
+## Track Metadata
 
-- request size
-- uploaded file presence
-- extension
-- ZIP integrity
-- expected archive structure where possible
+Spotify/Exportify metadata is untrusted input.
 
-Do not trust the original filename.
+Never use raw:
 
----
+- title
+- artist
+- album
+- playlist name
 
-## Server-Side Filenames
+as shell commands.
 
-Generate filenames on the server.
+Sanitize filenames separately from shell execution.
 
-Example concept:
+## yt-dlp
 
-```text
-job-abc123/export.zip
-```
+Source URLs must be handled as data.
 
-Do not use arbitrary user filenames as filesystem paths.
+Do not construct shell commands through string concatenation.
 
----
+Prefer direct subprocess argument arrays or yt-dlp's Python API.
 
-## ZIP Path Traversal
+Use controlled output directories.
 
-ZIP entries may contain paths such as:
+## Resource Limits
 
-```text
-../../something
-```
+Protect the server from:
 
-or absolute paths.
+- too many simultaneous downloads
+- huge uploads
+- excessive decompression
+- runaway ffmpeg processes
+- infinite retries
+- hung downloads
+- excessive temporary storage
 
-Extraction must ensure every destination remains inside the job's extraction directory.
+## File Downloads
 
-Do not blindly call `extractall()` on an untrusted archive without validating its entries.
+The Flask download endpoint must never accept an arbitrary filesystem path from the browser.
 
----
+Resolve downloads through an internal job ID and known output filename.
 
-## File Execution
+## Credentials
 
-Uploaded files must never be executed.
+The application should not collect or store the user's Spotify password.
 
-The application should treat archive contents strictly as data.
+Spotify authentication happens externally through Exportify.
 
----
+Do not log authentication tokens or unrelated credentials.
 
-## Arbitrary File Access
+## Cleanup
 
-Users must not be able to request arbitrary filesystem paths through:
+Temporary ZIPs, extracted files, and failed job data should eventually be removed.
 
-- download endpoints
-- job IDs
-- playlist IDs
-- filenames
-- query parameters
+Successful downloaded audio should remain available for as long as the application's retention policy requires.
 
-Generated files should be addressed through server-controlled identifiers.
+## Principle
 
----
+Treat:
 
-## Job Isolation
+- uploaded files
+- archive filenames
+- track metadata
+- source URLs
+- downloaded media
 
-Each upload should have its own job directory.
-
-Example:
-
-```text
-job-A/
-job-B/
-```
-
-A user accessing job A must not be able to retrieve files belonging to job B.
-
----
-
-## Temporary Data
-
-Temporary files should have an expiration policy.
-
-Cleanup must:
-
-- avoid deleting active jobs
-- handle interrupted jobs
-- safely remove expired directories
-
----
-
-## Logging
-
-Never log:
-
-- passwords
-- authentication tokens
-- cookies
-- secrets
-- raw credentials
-- unnecessary sensitive uploaded data
-
-Logs should contain enough information to diagnose application behavior without exposing private information.
-
----
-
-## Error Messages
-
-Do not expose:
-
-- internal stack traces
-- absolute server filesystem paths
-- secrets
-- implementation details useful for attacking the application
-
-Log detailed errors server-side and display safe summaries to users.
-
----
-
-## Session Data
-
-Keep Flask cookie sessions small.
-
-Store opaque identifiers rather than large application objects.
-
-Never place credentials or secrets in the client-side session.
-
----
-
-## Download Authorization
-
-Before returning a generated file:
-
-1. Resolve the current job.
-2. Verify it is accessible to the current session.
-3. Validate the requested playlist/output identifier.
-4. Construct the path from trusted server-side data.
-5. Ensure the resulting path remains inside the expected output directory.
-
-Never treat user-supplied path strings as trusted filesystem paths.
+as untrusted input.

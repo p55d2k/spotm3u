@@ -1,164 +1,82 @@
 # Web Application
 
-## Purpose
+## Technology
 
-The Flask application provides the user interface for importing an Exportify ZIP, selecting a playlist, matching tracks, and downloading an M3U file.
+Use Flask with:
 
----
+- Jinja2 templates
+- vanilla HTML/CSS/JS unless existing project requirements dictate otherwise
 
-## User-Facing Flow
+## User Flow
 
-```text
-Homepage
-   ↓
-Exportify instructions
-   ↓
-Upload ZIP
-   ↓
-Playlist selection
-   ↓
-Processing
-   ↓
-Results
-   ↓
-M3U download
-```
+### 1. Homepage
 
----
+Explain that the user should:
 
-## Routes
-
-The exact route structure may evolve, but the application should have concepts equivalent to:
-
-```text
-GET  /
-POST /upload
-GET  /playlists/<job_id>
-POST /playlists/<job_id>/select
-GET  /processing/<job_id>
-GET  /result/<job_id>/<playlist_id>
-GET  /download/<job_id>/<playlist_id>
-```
-
-Routes should remain thin and delegate business logic to backend modules.
-
----
-
-## Homepage
-
-Explain:
-
-1. Go to Exportify.
+1. Open Exportify.
 2. Log into Spotify there.
-3. Press "Export All".
-4. Download the ZIP.
-5. Upload the ZIP here.
+3. Export their playlists.
+4. Download the resulting ZIP.
+5. Upload the ZIP to this application.
 
-Clearly state that the application does not require the user's Spotify password.
+The application does not handle the Spotify login.
 
----
+### 2. ZIP Upload
 
-## Upload Page
+The user uploads the Exportify ZIP.
 
-The upload form should:
+The backend:
 
-- accept ZIP files
-- show useful instructions
-- display validation errors
-- avoid exposing server filesystem paths
-- provide a clear next step
+- validates the upload
+- extracts it into a controlled job directory
+- parses playlists
 
----
+### 3. Playlist Selection
 
-## Playlist Page
+Display playlists discovered from the Exportify export.
+
+The user selects one.
+
+### 4. Processing
+
+The selected playlist is processed.
+
+For each track:
+
+Local resolver
+→ online search if needed
+→ source validation
+→ yt-dlp download
+→ downloaded-audio validation
+
+The UI should expose progress.
+
+### 5. Result
 
 Display:
 
-- playlist name
-- track count
-- selection control
-
-Handle:
-
-- empty exports
-- no playlists
-- expired jobs
-- invalid playlist IDs
-
----
-
-## Processing Page
-
-The initial implementation should prefer simple synchronous processing.
-
-Do not introduce:
-
-- WebSockets
-- Redis
-- Celery
-- background workers
-
-unless real processing time demonstrates that they are necessary.
-
----
-
-## Result Page
-
-Show:
-
-- playlist name
 - total tracks
-- matched count
-- missing count
-- ambiguous count
-- output status
-- download control
+- successful tracks
+- local matches
+- downloaded tracks
+- failed tracks
+- ambiguous tracks
+- rejected/uncertain tracks
 
-Problematic tracks should be identifiable.
+Provide the generated M3U when available.
 
----
+## Important
 
-## Sessions
+The web UI must never imply that a track was successfully resolved when only a weak/uncertain source was found.
 
-The browser session should contain only small values such as:
+## Job State
 
-```text
-job_id = abc123
-```
+Processing should use a job abstraction rather than performing a large playlist synchronously inside a single HTTP request.
 
-Do not put:
+The frontend can poll a job-status endpoint or use another lightweight progress mechanism.
 
-- ZIP contents
-- complete playlist objects
-- complete track lists
-- local library indexes
+## Security
 
-into the cookie session.
+Client requests must never directly provide arbitrary filesystem paths.
 
-Large state belongs on the server.
-
----
-
-## Errors
-
-Expected errors should render user-friendly pages/messages rather than raw tracebacks.
-
-Examples:
-
-- invalid ZIP
-- unsupported upload
-- empty export
-- expired job
-- invalid playlist
-- matching failure
-- missing generated output
-
-Unexpected errors should be logged while exposing only a safe message to the user.
-
----
-
-## Download
-
-Downloads must refer to generated files through server-controlled identifiers.
-
-Never construct a filesystem path directly from an arbitrary user-supplied path.
+Job IDs should resolve only to internal job directories.

@@ -2,104 +2,71 @@
 
 ## Purpose
 
-Generate a local M3U playlist from successfully resolved local audio files.
-
-The M3U writer should be independent of Flask and Exportify.
-
----
+Generate an M3U playlist containing the local audio files resolved for an Exportify playlist.
 
 ## Input
 
-The writer receives ordered `ResolvedTrack` objects.
+The M3U writer receives an ordered sequence of resolved local audio paths.
 
-```python
-ResolvedTrack(
-    track=Track(...),
-    local_path=Path(...)
-)
-```
+A resolved path may originate from:
 
----
+1. an existing local audio file found by Task 10, or
+2. an MP3 downloaded through yt-dlp.
 
 ## Output
 
-The generated file should:
+The output is a `.m3u` file.
 
-- use UTF-8
-- begin with `#EXTM3U`
-- contain appropriate `#EXTINF` entries
-- reference valid local paths
-- preserve the supplied track order
+The M3U references local audio files.
 
----
+It does not reference remote source URLs.
 
-## Example Structure
+It does not perform downloading.
 
-Conceptually:
+## Order
 
-```text
-#EXTM3U
-#EXTINF:<duration>,<artist> - <title>
-/path/to/song.mp3
-```
-
-The exact metadata formatting should be implemented consistently.
-
----
-
-## Paths
-
-Support configurable path output where useful:
-
-- absolute paths
-- relative paths
-
-The chosen behavior should be explicit and documented.
-
-Paths must be properly represented for the target operating system.
-
----
-
-## Ordering
-
-The writer must never sort tracks unless explicitly instructed.
-
-The input order is authoritative.
-
----
+Preserve the order from Exportify.
 
 ## Duplicates
 
-Do not deduplicate.
+Do not globally deduplicate playlist entries.
 
-If the source playlist contains:
+If the original playlist contains:
 
-```text
 A
 B
 A
-```
 
-the generated M3U should contain all three entries.
+the M3U should contain:
 
-Any deduplication decision belongs upstream and only applies to confirmed parser artifacts.
+A
+B
+A
 
----
+The physical file may be shared between both A entries.
 
-## Validation
+## Unresolved Tracks
 
-The writer should avoid generating references to nonexistent files where practical.
+Tracks that are:
 
-The resolver should normally ensure that only valid `ResolvedTrack` objects reach the writer.
+- missing
+- ambiguous
+- rejected
+- failed
+- uncertain
 
----
+must not silently appear as successful entries.
 
-## Independence
+The processing result should report them separately.
+
+## Separation of Concerns
 
 The M3U writer must not:
 
-- access Spotify
-- parse Exportify files
-- scan the music library
-- render HTML
-- depend on Flask request state
+- search online
+- match audio
+- call yt-dlp
+- validate source URLs
+- validate audio content
+
+Its only job is writing the playlist.
