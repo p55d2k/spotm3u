@@ -9,12 +9,7 @@ from playwright.async_api import Page
 SPOTIFY_HOME_URL = "https://open.spotify.com/"
 DEFAULT_TIMEOUT_SECONDS = 300.0
 POLL_INTERVAL_SECONDS = 0.5
-
-# These labels are user-facing navigation that is only available after login.
-AUTHENTICATED_LOCATORS = (
-    '[aria-label="Your Library"]',
-    '[data-testid="user-widget-link"]',
-)
+AUTHENTICATION_COOKIE = "sp_dc"
 
 
 class AuthenticationTimeoutError(TimeoutError):
@@ -55,11 +50,9 @@ class SpotifyAuthenticator:
         )
 
     async def is_authenticated(self, page: Page) -> bool:
-        """Return whether Spotify shows an authenticated navigation state."""
-        if "/login" in page.url:
-            return False
-
-        for selector in AUTHENTICATED_LOCATORS:
-            if await page.locator(selector).count() > 0:
-                return True
-        return False
+        """Return whether the browser has Spotify's authenticated session cookie."""
+        cookies = await page.context.cookies()
+        return any(
+            cookie["name"] == AUTHENTICATION_COOKIE and cookie["value"]
+            for cookie in cookies
+        )

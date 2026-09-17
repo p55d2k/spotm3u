@@ -14,11 +14,18 @@ from spotm3u.spotify.authentication import (
 
 def test_authenticate_opens_spotify_and_waits_for_authenticated_locator() -> None:
     async def exercise() -> None:
-        locator = SimpleNamespace(count=AsyncMock(side_effect=[0, 1]))
+        context = SimpleNamespace(
+            cookies=AsyncMock(
+                side_effect=[
+                    [],
+                    [{"name": "sp_dc", "value": "authenticated-session"}],
+                ]
+            )
+        )
         page = SimpleNamespace(
             url="https://open.spotify.com/",
             goto=AsyncMock(),
-            locator=lambda selector: locator,
+            context=context,
         )
 
         await SpotifyAuthenticator(
@@ -30,14 +37,16 @@ def test_authenticate_opens_spotify_and_waits_for_authenticated_locator() -> Non
             "https://open.spotify.com/",
             wait_until="domcontentloaded",
         )
-        assert locator.count.await_count == 2
+        assert context.cookies.await_count == 2
 
     asyncio.run(exercise())
 
 
 def test_login_url_is_not_authenticated() -> None:
     async def exercise() -> None:
-        page = SimpleNamespace(url="https://accounts.spotify.com/login")
+        page = SimpleNamespace(
+            context=SimpleNamespace(cookies=AsyncMock(return_value=[]))
+        )
         assert not await SpotifyAuthenticator().is_authenticated(page)
 
     asyncio.run(exercise())
@@ -45,11 +54,10 @@ def test_login_url_is_not_authenticated() -> None:
 
 def test_authenticate_times_out_with_actionable_error() -> None:
     async def exercise() -> None:
-        locator = SimpleNamespace(count=AsyncMock(return_value=0))
         page = SimpleNamespace(
             url="https://open.spotify.com/",
             goto=AsyncMock(),
-            locator=lambda selector: locator,
+            context=SimpleNamespace(cookies=AsyncMock(return_value=[])),
         )
 
         with pytest.raises(AuthenticationTimeoutError, match="browser window"):
