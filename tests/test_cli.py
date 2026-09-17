@@ -12,10 +12,13 @@ def test_help_is_available() -> None:
     assert "Create local M3U playlists" in result.stdout
 
 
-def test_startup_message() -> None:
+def test_startup_message(monkeypatch) -> None:
+    async def authenticate() -> None:
+        return None
+
+    monkeypatch.setattr("spotm3u.cli._authenticate", authenticate)
     result = CliRunner().invoke(app)
 
     assert result.exit_code == 0
     assert "Spotify" in result.stdout
     assert "Local M3U" in result.stdout
-

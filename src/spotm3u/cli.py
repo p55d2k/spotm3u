@@ -1,11 +1,14 @@
 """Command-line interface for spotm3u."""
 
+import asyncio
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
 from . import __version__
+from .spotify.authentication import AuthenticationTimeoutError, SpotifyAuthenticator
+from .spotify.browser import BrowserManager
 
 app = typer.Typer(
     name="spotm3u",
@@ -30,4 +33,21 @@ def main(
 ) -> None:
     """Start the Spotify to local M3U workflow."""
     console.print("[bold]Spotify → Local M3U[/bold]")
-    console.print("Task 1 is ready. Browser automation will be added in a later task.")
+    try:
+        asyncio.run(_authenticate())
+    except AuthenticationTimeoutError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
+async def _authenticate() -> None:
+    browser = BrowserManager()
+    await browser.start()
+    try:
+        page = await browser.new_page()
+        console.print("\nOpening Spotify...")
+        console.print("Please log in using the Spotify window.")
+        await SpotifyAuthenticator().authenticate(page)
+        console.print("[green]✓ Spotify login detected.[/green]")
+    finally:
+        await browser.close()
