@@ -34,6 +34,9 @@
       </section>
 
       <form action="/upload" method="post" enctype="multipart/form-data">
+        {% if error %}
+        <p role="alert">{{ error }}</p>
+        {% endif %}
         <label for="export-file">Exportify ZIP file</label>
         <input
           id="export-file"
