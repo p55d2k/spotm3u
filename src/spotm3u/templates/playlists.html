@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Select playlist - Spotify to M3U</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="card">
+      <p class="eyebrow">Imported playlists</p>
+      <h1>Select a playlist</h1>
+      {% if playlists %}
+      <ul>
+        {% for playlist in playlists %}
+        <li>
+          <strong>{{ playlist.name }}</strong>
+          {% if playlist.track_count is not none %}
+          <span>({{ playlist.track_count }} tracks)</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p role="status">The export did not contain any playlists.</p>
+      {% endif %}
+      <p><a href="{{ url_for('index') }}">Upload another ZIP</a></p>
+    </main>
+  </body>
+</html>
