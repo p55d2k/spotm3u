@@ -7,6 +7,12 @@ from .search import (
     search_online_sources,
 )
 from .ranking import CandidateRanking, rank_source_candidate, rank_source_candidates
+from .validation import (
+    SourceValidation,
+    ValidationStatus,
+    validate_source_candidate,
+    validate_source_candidates,
+)
 
 __all__ = [
     "OnlineSourceSearcher",
@@ -16,4 +22,8 @@ __all__ = [
     "CandidateRanking",
     "rank_source_candidate",
     "rank_source_candidates",
+    "SourceValidation",
+    "ValidationStatus",
+    "validate_source_candidate",
+    "validate_source_candidates",
 ]
