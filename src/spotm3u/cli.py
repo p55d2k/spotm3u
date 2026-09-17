@@ -35,13 +35,9 @@ def main(
         typer.Option("--version", callback=version_callback, is_eager=True),
     ] = None,
 ) -> None:
-    """Start the Spotify to local M3U workflow."""
+    """Show the application entry point without starting browser automation."""
     console.print("[bold]Spotify → Local M3U[/bold]")
-    try:
-        asyncio.run(_authenticate())
-    except AuthenticationTimeoutError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+    console.print("Reusable playlist, local-audio, and M3U services are ready.")
 
 
 async def _authenticate() -> object | None:

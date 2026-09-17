@@ -1,17 +1,18 @@
 """Data models shared by the playlist and local-audio layers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
 @dataclass(frozen=True)
 class Playlist:
-    """A Spotify playlist available to the user."""
+    """A source-independent playlist and its ordered tracks."""
 
     id: str | None
     name: str
-    url: str
+    url: str = ""
     track_count: int | None = None
+    tracks: list["Track"] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -32,4 +33,3 @@ class ResolvedTrack:
 
     track: Track
     local_path: Path
-
