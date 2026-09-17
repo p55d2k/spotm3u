@@ -44,7 +44,7 @@ def main(
         raise typer.Exit(code=1) from exc
 
 
-async def _authenticate() -> None:
+async def _authenticate() -> object | None:
     authenticator = SpotifyAuthenticator()
     session_browser = BrowserManager(headless=True)
     await session_browser.start()
@@ -54,17 +54,27 @@ async def _authenticate() -> None:
         await page.goto(SPOTIFY_HOME_URL, wait_until="domcontentloaded")
         if await authenticator.is_authenticated(page):
             console.print("[green]✓ Existing Spotify session detected; skipping browser login.[/green]")
-            return
+            return session_browser
     finally:
         await session_browser.close()
 
-    browser = BrowserManager()
+    browser = BrowserManager(headless=False)
     await browser.start()
     try:
         page = await browser.new_page()
         console.print("\nNo existing session found; opening Spotify...")
         console.print("Please log in using the Spotify window.")
         await authenticator.authenticate(page)
-        console.print("[green]✓ Spotify login detected.[/green]")
-    finally:
+        console.print("[green]✓ Spotify login detected; switching to the headless profile.[/green]")
+
+        headless_browser = await browser.switch_to_headless()
+        if await authenticator.is_authenticated(headless_browser):
+            console.print("[green]✓ Authenticated Spotify session preserved in headless mode.[/green]")
+            return headless_browser
+
+        raise AuthenticationTimeoutError(
+            "The visible browser login completed, but the headless session was not able to reuse the authenticated Spotify cookies."
+        )
+    except Exception:
         await browser.close()
+        raise

@@ -50,6 +50,13 @@ class BrowserManager:
             raise RuntimeError("BrowserManager.start() must be called before new_page()")
         return await self._context.new_page()
 
+    async def switch_to_headless(self) -> Page:
+        """Switch from the visible login browser to the same persistent background session."""
+        await self.close()
+        self._headless = True
+        await self.start()
+        return await self.new_page()
+
     async def close(self) -> None:
         """Close the persistent context and Playwright process cleanly."""
         context, playwright = (

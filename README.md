@@ -5,12 +5,13 @@ portable `.m3u` playlists. It is designed around the normal Spotify website
 and a local music library; it does not use the Spotify Web API as a core
 dependency and does not handle Spotify passwords.
 
-The project currently supports **Task 4: persistent Spotify authentication**.
+The project currently supports **Task 5: switching from the visible login browser to background/headless mode while preserving the authenticated session**.
 Running the CLI opens a visible Spotify browser window where the user signs in
 directly; the CLI detects the authenticated state without receiving or storing
-credentials. The local browser profile is reused on later runs, so login is
-normally only required once. Playlist extraction, local audio matching, and
-M3U writing will be added in later tasks.
+credentials. Once the session is authenticated, the app reuses the same local
+browser profile and can switch to a headless/background Chromium context for
+subsequent automation without forcing the user to log in again. Playlist
+extraction, local audio matching, and M3U writing will be added in later tasks.
 
 ## Requirements
 
