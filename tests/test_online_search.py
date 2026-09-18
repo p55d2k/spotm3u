@@ -72,7 +72,7 @@ def test_coerce_results_skips_malformed_entries() -> None:
     assert candidates[0].duration_s == 210.0
 
 
-def test_coerce_results_filters_unsuitable_recordings() -> None:
+def test_coerce_results_filters_non_music_entries() -> None:
     info = {
         "entries": [
             {
@@ -83,9 +83,20 @@ def test_coerce_results_filters_unsuitable_recordings() -> None:
                 "title": "Song (Live)",
                 "webpage_url": "https://example.com/live",
             },
+            {
+                "title": "Song Reaction",
+                "webpage_url": "https://example.com/reaction",
+            },
+            {
+                "title": "Song Movie Scene",
+                "webpage_url": "https://example.com/scene",
+            },
         ]
     }
 
     candidates = OnlineSourceSearcher._coerce_results(info)
 
-    assert [candidate.url for candidate in candidates] == ["https://example.com/song"]
+    assert [candidate.url for candidate in candidates] == [
+        "https://example.com/song",
+        "https://example.com/live",
+    ]

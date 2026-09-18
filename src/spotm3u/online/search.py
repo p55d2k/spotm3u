@@ -16,24 +16,14 @@ from ..models import Track
 from ..normalization import normalize
 
 _SEARCH_EXCLUSION_TOKENS = (
-    "live",
-    "lyrics",
     "interview",
     "reaction",
-    "cover",
-    "remix",
-    "mashup",
-    "trailer",
-    "teaser",
     "movie",
     "scene",
-    "soundtrack",
-    "karaoke",
-    "speed",
-    "slowed",
-    "sped",
-    "nightcore",
-    "fan edit",
+    "trailer",
+    "teaser",
+    "podcast",
+    "documentary",
 )
 
 

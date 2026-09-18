@@ -30,27 +30,50 @@ def test_exact_studio_recording_beats_unrelated_song() -> None:
     assert ranked[0].accepted
 
 
-def test_alternate_recordings_are_not_accepted() -> None:
-    for title in ("Song Name Official Music Video", "Song Name (Live)", "Song Name Remix",
-                  "Song Name Sped-Up", "Song Name (Cover)"):
+def test_alternate_recordings_are_rejected() -> None:
+    for title in ("Song Name (Live)", "Song Name Remix", "Song Name Sped-Up", "Song Name (Cover)"):
         result = rank_source_candidate(TRACK, candidate(title, "Artist"))
         assert result.confidence == "rejected"
         assert not result.accepted
 
 
+def test_music_video_is_penalized_but_not_rejected() -> None:
+    result = rank_source_candidate(TRACK, candidate("Song Name Official Music Video", "Artist"))
+    assert result.confidence in {"plausible", "uncertain"}
+    assert result.accepted
+    assert any("music video" in reason for reason in result.reasons)
+    better = rank_source_candidate(TRACK, candidate("Song Name - Official Audio", "Artist"))
+    assert better.score > result.score
+
+
 def test_exact_title_with_poor_artist_is_rejected() -> None:
-    result = rank_source_candidate(TRACK, candidate("Song Name", "Wrong Artist"))
+    result = rank_source_candidate(TRACK, candidate("Song Name", "Another Band"))
     assert result.confidence == "rejected"
 
 
-def test_wrong_duration_remains_uncertain_or_rejected() -> None:
+def test_clearly_wrong_duration_is_rejected() -> None:
     result = rank_source_candidate(TRACK, candidate("Song Name", "Artist", duration=400))
-    assert result.confidence != "strong"
+    assert result.confidence == "rejected"
     assert not result.accepted
+
+
+def test_missing_duration_and_uploader_remain_plausible() -> None:
+    incomplete = SourceCandidate(
+        url="https://example.com/song",
+        title="Song Name",
+        artist="Artist",
+        uploader=None,
+        duration_s=None,
+        source_type="youtube",
+    )
+    result = rank_source_candidate(TRACK, incomplete)
+    assert result.accepted
+    assert result.confidence in {"strong", "plausible"}
+    assert any("duration is unavailable" in reason for reason in result.reasons)
 
 
 def test_ranking_result_is_structured() -> None:
     result = rank_source_candidate(TRACK, candidate("Song Name", "Artist"))
     assert isinstance(result, CandidateRanking)
     assert 0 <= result.score <= 100
-    assert result.confidence in {"strong", "uncertain", "rejected"}
+    assert result.confidence in {"strong", "plausible", "uncertain", "rejected"}

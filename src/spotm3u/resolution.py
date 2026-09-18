@@ -170,18 +170,17 @@ class TrackResolver:
             return TrackResolution(track, status, reasons=("no online source candidates",))
 
         rankings = rank_source_candidates(track, candidates)
-        ambiguous_seen = False
-        rejected_seen = False
-        rejected_url: str | None = None
+        rejected_urls: list[str] = []
+        download_failures = 0
+        invalid_downloads: list[str] = []
+        uncertain_download: tuple[
+            Path, CandidateRanking, SourceValidation, AudioValidation
+        ] | None = None
         for ranking in rankings:
             report("validating-source")
             source_validation = validate_source_candidate(track, ranking.candidate)
-            if source_validation.status == "uncertain":
-                ambiguous_seen = True
-                continue
             if source_validation.status == "rejected":
-                rejected_seen = True
-                rejected_url = rejected_url or ranking.candidate.url
+                rejected_urls.append(ranking.candidate.url)
                 continue
 
             report("downloading")
@@ -190,42 +189,24 @@ class TrackResolver:
                     track, ranking.candidate.url, self.output_dir
                 )
             except (DownloadError, OSError, RuntimeError) as exc:
-                return TrackResolution(
-                    track,
-                    "failed",
-                    source_url=ranking.candidate.url,
-                    candidates=candidates,
-                    ranking=rankings,
-                    validation=source_validation,
-                    reasons=(f"download failed: {exc}",),
-                )
+                download_failures += 1
+                continue
 
             report("validating-audio")
             audio_validation = validate_downloaded_audio(track, downloaded)
-            if audio_validation.status == "invalid":
-                return TrackResolution(
-                    track,
-                    "rejected",
-                    source_url=ranking.candidate.url,
-                    candidates=candidates,
-                    ranking=rankings,
-                    validation=source_validation,
-                    audio_validation=audio_validation,
-                    output_path=downloaded,
-                    reasons=audio_validation.reasons,
+            if audio_validation.status == "invalid" or not _is_real_file(downloaded):
+                invalid_downloads.extend(
+                    audio_validation.reasons or ("downloaded file is not usable",)
                 )
-            if audio_validation.status == "uncertain" or not _is_real_file(downloaded):
-                return TrackResolution(
-                    track,
-                    "uncertain",
-                    source_url=ranking.candidate.url,
-                    candidates=candidates,
-                    ranking=rankings,
-                    validation=source_validation,
-                    audio_validation=audio_validation,
-                    output_path=downloaded,
-                    reasons=audio_validation.reasons or ("downloaded file is not usable",),
+                continue
+            if audio_validation.status == "uncertain":
+                uncertain_download = (
+                    downloaded,
+                    ranking,
+                    source_validation,
+                    audio_validation,
                 )
+                continue
 
             resolved = ResolvedTrack(
                 track,
@@ -245,17 +226,45 @@ class TrackResolver:
                 audio_validation=audio_validation,
             )
 
-        status: ResolutionStatus
-        if rejected_seen:
-            status = "rejected"
-        elif ambiguous_seen:
-            status = "ambiguous"
-        else:
-            status = "missing"
+        if uncertain_download is not None:
+            downloaded, ranking, source_validation, audio_validation = uncertain_download
+            return TrackResolution(
+                track,
+                "uncertain",
+                source_url=ranking.candidate.url,
+                candidates=candidates,
+                ranking=rankings,
+                validation=source_validation,
+                audio_validation=audio_validation,
+                output_path=downloaded,
+                reasons=audio_validation.reasons or ("downloaded audio is unverified",),
+            )
+
+        if invalid_downloads:
+            return TrackResolution(
+                track,
+                "failed",
+                candidates=candidates,
+                ranking=rankings,
+                reasons=(
+                    "all downloaded candidates failed audio validation",
+                    *invalid_downloads,
+                ),
+            )
+
+        if download_failures:
+            return TrackResolution(
+                track,
+                "failed",
+                candidates=candidates,
+                ranking=rankings,
+                reasons=(f"{download_failures} download attempt(s) failed",),
+            )
+
         return TrackResolution(
             track,
-            status,
-            source_url=rejected_url,
+            "rejected",
+            source_url=rejected_urls[0] if rejected_urls else None,
             candidates=candidates,
             ranking=rankings,
             reasons=("no candidate passed source validation",),
