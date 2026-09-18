@@ -282,3 +282,87 @@ def test_download_m3u_route_requires_completed_job(tmp_path, monkeypatch) -> Non
     response = client.get(f"/processing/{job_id}/1/playlist.m3u")
 
     assert response.status_code == 404
+
+
+def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    assert response.status_code == 200
+    assert b"Local matches" in response.data
+    assert b"Downloaded" in response.data
+    assert b"Successfully resolved" in response.data
+    assert b"Total tracks: 1" in response.data
+    assert f"/processing/{job_id}/1/playlist.m3u".encode() in response.data
+
+
+def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+    client = app.test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    class BlockingResolver:
+        def resolve(self, track, *, stage_callback=None):
+            import threading
+            threading.Event().wait(timeout=30)
+            raise RuntimeError("unreachable")
+
+    from spotm3u.jobs import ProcessingJob
+    from spotm3u.models import Track
+
+    playlist = app.config["JOB_MANAGER"]
+    job = ProcessingJob(
+        job_id=job_id,
+        playlist_id="1",
+        playlist_name="two",
+        tracks=[Track("First", ["Artist"], duration_ms=200_000)],
+        output_dir=music / "spotm3u-downloads",
+        resolver_factory=lambda: BlockingResolver(),
+    )
+    playlist.submit(job)
+    job.start()
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == f"/processing/{job_id}/1"
+    job.wait(timeout=1)
+
+
+def test_result_page_exposes_rejected_reasons(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+
+    class RejectingCandidates:
+        def search(self, track):
+            return ()
+
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda: RejectingCandidates()
+    )
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    assert response.status_code == 200
+    assert b"no online source candidates" in response.data

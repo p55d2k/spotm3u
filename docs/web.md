@@ -89,6 +89,11 @@ Display:
 
 For failures, display the actual processing reason.
 
+The finished result is available at `GET /processing/<job_id>/<playlist_id>/result`,
+which renders per-track outcomes (status and reason) alongside the summary
+counts. While the job is still queued or running, that route redirects to the
+live processing page.
+
 ## M3U Download
 
 When processing completes, offer a `Save playlist (M3U)` link to

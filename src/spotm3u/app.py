@@ -250,6 +250,35 @@ def create_app(config: dict | None = None) -> Flask:
             ), 404
         return jsonify(job.as_dict())
 
+    @app.get("/processing/<job_id>/<playlist_id>/result")
+    def processing_result(job_id: str, playlist_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        if job_directory is None or not _selection_matches(
+            job_directory, playlist_id
+        ):
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 404
+
+        job = app.config["JOB_MANAGER"].get(job_id)
+        if job is None or job.playlist_id != playlist_id:
+            return render_template(
+                "index.html",
+                error="That processing job could not be found.",
+            ), 404
+        if job.status == "running" or job.status == "queued":
+            return redirect(
+                url_for("processing", job_id=job_id, playlist_id=playlist_id)
+            )
+        state = job.as_dict()
+        return render_template(
+            "result.html",
+            job_id=job_id,
+            playlist_id=playlist_id,
+            state=state,
+        )
+
     @app.get("/processing/<job_id>/<playlist_id>/playlist.m3u")
     def download_m3u(job_id: str, playlist_id: str):
         job = app.config["JOB_MANAGER"].get(job_id)

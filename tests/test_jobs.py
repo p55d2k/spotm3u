@@ -198,3 +198,38 @@ def test_job_manager_registers_and_returns_jobs(tmp_path: Path) -> None:
     assert manager.get("managed") is job
     assert job.manager is manager
     assert manager.get("unknown") is None
+
+
+def test_snapshot_reports_granular_resolution_counts(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B"), _track("C"), _track("D"), _track("E")]
+    local_file = tmp_path / "Artist - A.mp3"
+    local_file.write_bytes(b"audio")
+    outcomes = [
+        _resolution(tracks[0], "local", path=local_file),
+        _resolution(tracks[1], "downloaded", path=tmp_path / "B.mp3"),
+        _resolution(tracks[2], "ambiguous"),
+        _resolution(tracks[3], "rejected"),
+        _resolution(tracks[4], "failed"),
+    ]
+
+    job = _job(tracks, outcomes, tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    counts = job.as_dict()["counts"]
+    assert counts["total"] == 5
+    assert counts["successful"] == 2
+    assert counts["local"] == 1
+    assert counts["downloaded"] == 1
+    assert counts["ambiguous"] == 1
+    assert counts["rejected"] == 1
+    assert counts["failed"] == 1
+    assert counts["missing"] == 0
+    assert counts["uncertain"] == 0
+    assert [state["resolution"] for state in job.as_dict()["tracks"]] == [
+        "local",
+        "downloaded",
+        "ambiguous",
+        "rejected",
+        "failed",
+    ]

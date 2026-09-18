@@ -18,6 +18,8 @@
 
       <p id="download-wrap" class="download" hidden>
         <a id="download-link" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Save playlist (M3U)</a>
+        ·
+        <a href="{{ url_for('processing_result', job_id=job_id, playlist_id=playlist_id) }}">View full results</a>
       </p>
 
       <section id="progress" class="progress" hidden>

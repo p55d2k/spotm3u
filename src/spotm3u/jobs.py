@@ -52,6 +52,7 @@ class TrackJobState:
     reason: str = ""
     local_path: str | None = None
     source_url: str | None = None
+    resolution: str = ""
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -62,6 +63,7 @@ class TrackJobState:
             "reason": self.reason,
             "local_path": self.local_path,
             "source_url": self.source_url,
+            "resolution": self.resolution,
         }
 
 
@@ -196,6 +198,7 @@ class ProcessingJob:
                 current.reason,
                 current.local_path,
                 current.source_url,
+                current.resolution,
             )
 
     def _finalize_track(self, index: int, result: TrackResolution) -> None:
@@ -210,6 +213,7 @@ class ProcessingJob:
                 result.reason,
                 str(result.local_path) if result.local_path is not None else None,
                 result.source_url,
+                result.status,
             )
 
     def snapshot(self) -> dict[str, object]:
@@ -221,6 +225,22 @@ class ProcessingJob:
                 if self._current_index is not None
                 else None
             )
+            resolutions = [state.resolution for state in self._track_states]
+            counts = {
+                resolution: resolutions.count(resolution)
+                for resolution in (
+                    "local",
+                    "downloaded",
+                    "missing",
+                    "ambiguous",
+                    "rejected",
+                    "failed",
+                    "uncertain",
+                    "",
+                )
+            }
+            counts["total"] = len(self._track_states)
+            counts["successful"] = counts["local"] + counts["downloaded"]
             return {
                 "job_id": self.job_id,
                 "playlist": {
@@ -240,6 +260,7 @@ class ProcessingJob:
                 "ambiguous": sum(
                     state.status == "ambiguous" for state in self._track_states
                 ),
+                "counts": counts,
                 "status": self._status,
                 "error": self._error,
                 "output_dir": str(self.output_dir),
