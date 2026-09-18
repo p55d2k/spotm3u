@@ -9,9 +9,11 @@ def test_build_search_queries_include_title_artist_and_audio_hints() -> None:
     queries = build_search_queries(track)
 
     assert queries
+    assert "artist one" in queries[0].lower()
+    assert "artist two" in queries[0].lower()
     assert "song name" in queries[0].lower()
     assert any("official audio" in query.lower() for query in queries)
-    assert any("album name" in query.lower() for query in queries)
+    assert any("lyrics" in query.lower() for query in queries)
 
 
 def test_coerce_results_returns_empty_when_search_has_no_results() -> None:
@@ -52,8 +54,8 @@ def test_build_search_queries_handle_punctuation_features_and_version() -> None:
 
     queries = build_search_queries(track)
 
-    assert queries[0] == "can t stop live from tokyo artist one guest artist"
-    assert any("album deluxe edition" in query for query in queries)
+    assert queries[0] == "artist one guest artist can t stop live from tokyo"
+    assert any("lyrics" in query for query in queries)
 
 
 def test_coerce_results_skips_malformed_entries() -> None:

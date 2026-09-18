@@ -10,6 +10,8 @@ import unicodedata
 from pathlib import Path
 import re
 
+from zhconv import convert as _zh_convert
+
 
 _FEATURING_RE = re.compile(r"\b(?:featuring|feat\.?|ft\.?)\b", re.IGNORECASE)
 _TRACK_NUMBER_RE = re.compile(r"^\s*(?:\d{1,3}\s*[-_.]\s*|\d{1,3}\s+)")
@@ -31,6 +33,20 @@ def normalize(value: str | None) -> str:
     # separators, so "Artist_Title" and "Artist - Title" compare equally.
     text = "".join(char if char.isalnum() else " " for char in text)
     return " ".join(text.split())
+
+
+def normalize_cjk(value: str | None) -> str:
+    """Normalize CJK text for comparison after converting Traditional to Simplified.
+
+    YouTube titles and uploader names frequently use Traditional Chinese for
+    songs that Spotify describes in Simplified form (e.g. ``薛之謙`` vs
+    ``薛之谦``, ``演員`` vs ``演员``). Script unification makes the two forms
+    match during search-result ranking without changing source metadata.
+    """
+    base = normalize(value)
+    if not base:
+        return base
+    return _zh_convert(base, "zh-cn")
 
 
 def normalize_artists(artists: list[str] | str | None) -> str:

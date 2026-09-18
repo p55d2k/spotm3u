@@ -6,7 +6,19 @@ from .search import (
     build_search_queries,
     search_online_sources,
 )
-from .ranking import CandidateRanking, rank_source_candidate, rank_source_candidates
+from .ranking import (
+    CandidateRanking,
+    ScoreComponents,
+    rank_source_candidate,
+    rank_source_candidates,
+)
+from .source_quality import (
+    SourceProfile,
+    SourceQuality,
+    quality_label,
+    quality_points,
+    source_profile,
+)
 from .validation import (
     SourceValidation,
     ValidationStatus,
@@ -22,8 +34,14 @@ __all__ = [
     "build_search_queries",
     "search_online_sources",
     "CandidateRanking",
+    "ScoreComponents",
     "rank_source_candidate",
     "rank_source_candidates",
+    "SourceProfile",
+    "SourceQuality",
+    "quality_label",
+    "quality_points",
+    "source_profile",
     "SourceValidation",
     "ValidationStatus",
     "validate_source_candidate",

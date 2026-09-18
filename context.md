@@ -48,13 +48,18 @@ Exportify Parser
       ↓
 Playlist / Track Models
       ↓
-Local Audio Resolver
-      ↓
-ResolvedTrack
-      ↓
-M3U Writer
-      ↓
-M3U Download
+Local Audio Resolver ──── online source search (new path when no local match)
+      ↓                           ↓
+ResolvedTrack               Source Candidate Ranking
+      ↓                       (identity first, then source quality)
+M3U Writer                       ↓
+      ↓                       source validation
+M3U Download                   ↓
+                           yt-dlp download
+                               ↓
+                           downloaded-audio validation
+                               ↓
+                           ResolvedTrack ──→ M3U Writer
 ```
 
 ## Technology

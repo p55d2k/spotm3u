@@ -1,14 +1,16 @@
 """Permissive metadata ranking for online source candidates.
 
-Discovery is intentionally lenient: candidates with imperfect or missing
-metadata may still be plausible and worth downloading. Strong evidence of the
-wrong recording (wrong song, wrong artist, explicit covers/remixes, version
-conflicts, obvious non-music content) is what triggers rejection.
+Two questions are evaluated independently:
 
-Artist identity is a first-class signal: for common titles a candidate with a
-conflicting artist must be rejected even when the title matches exactly, and a
-candidate whose artist identity is confirmed outranks same-title candidates
-that only happen to share the song name.
+A. Is this the requested song/recording by the requested artist?
+   -> recording identity (artist evidence across title/explicit/uploader/description)
+B. Is this upload a good source for the song audio?
+   -> source-quality preference (official audio > lyrics > official song > MV > generic)
+
+A wrong artist outranks every title/source-quality advantage. The source-quality
+preference only operates strongly among candidates that already appear to be
+the correct recording. Discovery stays permissive (Task 21A): missing metadata
+is not proof of a wrong candidate.
 """
 
 from __future__ import annotations
@@ -20,8 +22,9 @@ import re
 from typing import Literal
 
 from ..models import Track
-from ..normalization import normalize, normalize_artists
+from ..normalization import normalize_artists, normalize_cjk
 from .search import SourceCandidate
+from .source_quality import SourceQuality, quality_label, quality_points, source_profile
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +32,14 @@ Confidence = Literal["strong", "plausible", "uncertain", "rejected"]
 
 _AUDIO_LABEL_RE = re.compile(
     r"\b(?:official\s+audio|official\s+music\s+videos?|official\s+video|"
-    r"official\s*mv\b|official|\bmv\b|audio|lyric\s+video|lyrics)\b",
+    r"official\s*mv\b|official|\bmv\b|audio|lyric\s+video|lyrics|歌词)\b",
     re.IGNORECASE,
 )
 _REMASTER_RE = re.compile(r"\bremaster(?:ed)?\b", re.IGNORECASE)
 _VERSION_KEYS = (
     "live",
+    "现场",
+    "演唱会",
     "concert",
     "acoustic",
     "instrumental",
@@ -44,29 +49,49 @@ _VERSION_KEYS = (
     "single version",
     "demo",
     "reprise",
+    "remix",
+    "cover",
+    "翻唱",
 )
 _CONFLICT_MARKERS = frozenset(_VERSION_KEYS)
-_ALT_CONTENT_RE = re.compile(
-    r"\b(?:cover|翻唱|karaoke|remix|mashup|parody|sped[\s-]*up|slowed|nightcore|"
-    r"fan\s+made|fan\s+edit)\b",
-    re.IGNORECASE,
+_VERSION_KEY_PATTERNS = tuple(
+    (key, re.compile(rf"\b{re.escape(key)}\b", re.IGNORECASE)) for key in _VERSION_KEYS
 )
-_NON_MUSIC_RE = re.compile(
-    r"\b(?:dialogue|movie|film|scene|trailer|teaser|interview|podcast|"
-    r"reaction|compilation|documentary)\b",
-    re.IGNORECASE,
-)
-_MUSIC_VIDEO_RE = re.compile(
-    r"\b(?:music\s+video|official\s+music\s+videos?|\bmv\b|lyric\s+video)\b",
-    re.IGNORECASE,
-)
+
 _POSITIVE_SOURCE_RE = re.compile(
     r"\b(?:official\s+audio|official|audio|topic|artist|records?|vevo)\b",
     re.IGNORECASE,
 )
-_VERSION_KEY_PATTERNS = tuple(
-    (key, re.compile(rf"\b{re.escape(key)}\b", re.IGNORECASE)) for key in _VERSION_KEYS
-)
+
+# Title-only evidence that the requested artist appears somewhere in the title.
+# Kept as a lightweight helper; recording identity primarily uses the artist
+# evidence tiers computed from candidate fields.
+
+
+@dataclass(frozen=True)
+class ScoreComponents:
+    """Separated scoring dimensions for one candidate decision."""
+
+    identity: float
+    title: float
+    version: float
+    duration: float
+    source_quality: float
+    uploader: float
+    penalties: float
+    total: float
+
+    def as_dict(self) -> dict[str, float]:
+        return {
+            "identity": round(self.identity, 2),
+            "title": round(self.title, 2),
+            "version": round(self.version, 2),
+            "duration": round(self.duration, 2),
+            "source_quality": round(self.source_quality, 2),
+            "uploader": round(self.uploader, 2),
+            "penalties": round(self.penalties, 2),
+            "total": round(self.total, 2),
+        }
 
 
 @dataclass(frozen=True)
@@ -78,6 +103,7 @@ class CandidateRanking:
     confidence: Confidence
     accepted: bool
     reasons: tuple[str, ...] = ()
+    components: ScoreComponents | None = None
 
 
 def rank_source_candidates(
@@ -94,36 +120,54 @@ def rank_source_candidates(
 
 
 def rank_source_candidate(track: Track, candidate: SourceCandidate) -> CandidateRanking:
-    """Return a permissive ranking where artist identity is a first-class signal.
-
-    Artist identity is examined across the explicit artist metadata, the title
-    attribution, and the uploader/channel. Confirmed identity outranks a mere
-    exact title match, and a conflicting explicit artist rejects the candidate
-    even when the title is identical (common song titles such as ``演员``).
-    """
+    """Rank a single candidate: identity first, then source quality."""
     requested_core, requested_versions = _split_title(track.title)
     candidate_core, candidate_versions = _split_title(candidate.title)
     candidate_text = _candidate_text(candidate)
-    requested_artists = [
-        normalize_artists(artist)
-        for artist in track.artists
-        if normalize_artists(artist)
-    ]
-    candidate_artist_text = normalize_artists(candidate.artist) if candidate.artist else ""
-    uploader_text = normalize_artists(candidate.uploader) if candidate.uploader else ""
-    title_text = normalize(candidate.title)
+    profile = source_profile(candidate)
+    requested_artists = _artist_keys(track)
 
-    title_similarity = _similarity(requested_core, candidate_core)
-    artist_in_explicit = _artist_present(requested_artists, candidate_artist_text)
+    # Strip the requested artist's name from candidate-title cores so that
+    # ``薛之谦 演员`` and a bare ``演员`` compare against the same underlying
+    # identity (an artist attribution is never a title difference).
+    candidate_core_for_title = _strip_artist_phrases(
+        candidate_core, requested_artists
+    )
+    requested_core_for_title = _strip_artist_phrases(
+        requested_core, requested_artists
+    )
+
+    candidate_artist_text = _artist_text(candidate.artist) if candidate.artist else ""
+    creator_text = _artist_text(candidate.metadata.get("creator")) if candidate.metadata.get("creator") else ""
+    uploader_text = _artist_text(candidate.uploader) if candidate.uploader else ""
+    channel_text = _artist_text(candidate.metadata.get("channel")) if candidate.metadata.get("channel") else ""
+    title_text = _cjk_text(candidate.title)
+    description_text = " ".join(
+        part
+        for part in (
+            _cjk_text(str(candidate.metadata.get("description") or "")),
+            _cjk_text(
+                " ".join(str(tag) for tag in (candidate.metadata.get("tags") or []) if tag)
+            ),
+        )
+        if part
+    )
+
+    title_similarity = _similarity(requested_core_for_title, candidate_core_for_title)
+
+    artist_in_explicit = _artist_present(requested_artists, f"{candidate_artist_text} {creator_text}")
     artist_in_title = _artist_present(requested_artists, title_text)
-    artist_in_uploader = _artist_present(requested_artists, uploader_text)
+    artist_in_uploader = _artist_present(requested_artists, f"{uploader_text} {channel_text}")
+    artist_in_description = _artist_present(requested_artists, description_text)
 
     if artist_in_explicit or artist_in_title:
-        artist_evidence = 1.0
+        identity_evidence = 1.0
     elif artist_in_uploader:
-        artist_evidence = 0.7
+        identity_evidence = 0.7
+    elif artist_in_description:
+        identity_evidence = 0.3
     else:
-        artist_evidence = 0.0
+        identity_evidence = 0.0
 
     reasons: list[str] = []
     if title_similarity >= 0.98:
@@ -137,6 +181,8 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
         reasons.append("artist matches (title attribution)")
     elif artist_in_uploader:
         reasons.append("artist matches (uploader/channel)")
+    elif artist_in_description:
+        reasons.append("artist matches (description/tags)")
     elif requested_artists:
         if candidate_artist_text:
             reasons.append("artist mismatch")
@@ -145,58 +191,79 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
         else:
             reasons.append("artist identity not confirmed")
 
-    score = 45 * title_similarity + 40 * artist_evidence
+    identity_score = 40 * identity_evidence
+    title_score = 35 * title_similarity
 
+    duration_score = 0.0
     if track.duration_ms and candidate.duration_s is not None:
         difference = abs(candidate.duration_s - track.duration_ms / 1000)
         if difference <= 5:
-            score += 12
+            duration_score = 10
             reasons.append("duration matches")
         elif difference <= 15:
-            score += 7
+            duration_score = 7
             reasons.append("duration is close")
         elif difference <= 40:
-            score += 3
+            duration_score = 3
         else:
-            score -= 20
+            duration_score = -15
             reasons.append("duration differs substantially")
     elif candidate.duration_s is None:
         reasons.append("duration is unavailable")
 
-    if track.album and normalize(track.album) in candidate_text:
-        score += 4
-        reasons.append("album metadata matches")
-    if _POSITIVE_SOURCE_RE.search(candidate_text):
-        score += 5
-        reasons.append("audio or official source indicator")
+    source_quality_score = quality_points(profile.quality)
+    source_label = quality_label(profile.quality)
+    reasons.append(f"source quality: {source_label}")
 
-    music_video = bool(_MUSIC_VIDEO_RE.search(candidate_text))
+    version_score = 5.0 if requested_versions and requested_versions <= candidate_versions else 0.0
+
+    uploader_score = 3.0 if artist_in_uploader or artist_in_explicit else 0.0
+
+    music_video = profile.music_video
+    penalties = 0.0
     if music_video:
-        score -= 12
+        penalties -= 2
         reasons.append("music video indicator")
 
-    non_music_markers = _unique_markers(_NON_MUSIC_RE, candidate_text)
+    album_key = _cjk_text(track.album) if track.album else ""
+    if album_key and album_key in candidate_text:
+        identity_score += 3
+        reasons.append("album metadata matches")
+    if _POSITIVE_SOURCE_RE.search(candidate_text):
+        reasons.append("audio or official source indicator")
+
+    non_music_markers = profile.non_music
     if non_music_markers:
         reasons.append("non-music content indicator: " + ", ".join(non_music_markers))
-    alt_markers = _unique_markers(_ALT_CONTENT_RE, candidate_text)
+    alt_markers = profile.alternate
     if alt_markers:
         reasons.append("alternate version indicator: " + ", ".join(alt_markers))
+    performance_markers = profile.performance
+    if performance_markers:
+        reasons.append("live/performance indicator: " + ", ".join(performance_markers))
+
     conflict = _version_conflict(requested_versions, candidate_versions)
     if conflict:
         reasons.append(f"version conflict: {conflict}")
 
+    score = identity_score + title_score + version_score + duration_score + source_quality_score + uploader_score + penalties
     score = max(0.0, min(100.0, score))
 
-    alternate_wrong = bool(non_music_markers or alt_markers)
-    version_wrong = conflict is not None
+    alternate_wrong = any(
+        not _requested_allows_marker(track.title, marker, requested_versions)
+        for marker in alt_markers
+    )
+    performance_wrong = any(
+        not _requested_allows_marker(track.title, marker, requested_versions)
+        for marker in performance_markers
+    )
+    version_wrong = conflict is not None and not _requested_has_marker(track.title, conflict)
     explicit_conflict = bool(
         candidate_artist_text
         and not artist_in_explicit
         and not artist_in_title
         and title_similarity >= 0.5
     )
-    if explicit_conflict:
-        reasons.append("explicit artist conflicts with requested artist")
     duration_wrong = bool(
         track.duration_ms
         and candidate.duration_s is not None
@@ -206,53 +273,83 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
         title_similarity < 0.5 and score < 30
     )
 
-    if (
-        weak_evidence
-        or explicit_conflict
-        or alternate_wrong
-        or version_wrong
-        or duration_wrong
-    ):
+    rejection_reason: str | None = None
+    if weak_evidence:
+        rejection_reason = "title does not match the requested track"
+    elif explicit_conflict:
+        rejection_reason = "explicit artist conflicts with requested artist"
+    elif non_music_markers:
+        rejection_reason = "non-music content indicator"
+    elif alternate_wrong:
+        rejection_reason = "alternate version indicator" if not alt_markers else f"alternate version indicator: {', '.join(alt_markers)}"
+    elif performance_wrong:
+        rejection_reason = "live/performance version conflicts with requested version"
+    elif version_wrong:
+        rejection_reason = f"version conflict: {conflict}"
+    elif duration_wrong:
+        rejection_reason = "duration differs substantially"
+
+    if rejection_reason is not None:
+        reasons.append(rejection_reason)
         confidence: Confidence = "rejected"
         accepted = False
     elif (
         title_similarity >= 0.85
-        and artist_evidence >= 0.7
+        and identity_evidence >= 0.7
         and score >= 70
         and not non_music_markers
         and not music_video
+        and not alternate_wrong
+        and not performance_wrong
     ):
         confidence = "strong"
         accepted = True
-    elif not non_music_markers and not alternate_wrong and not version_wrong:
+    elif not non_music_markers and not alternate_wrong and not performance_wrong and not version_wrong:
         confidence = "plausible"
         accepted = True
     else:
         confidence = "uncertain"
         accepted = False
 
+    components = ScoreComponents(
+        identity=identity_score,
+        title=title_score,
+        version=version_score,
+        duration=duration_score,
+        source_quality=source_quality_score,
+        uploader=uploader_score,
+        penalties=penalties,
+        total=score,
+    )
+
     logger.debug(
-        "rank url=%s confidence=%s accepted=%s score=%.2f title=%.2f "
-        "artist_evidence=%.2f (explicit=%s title=%s uploader=%s) reasons=%s",
+        "rank url=%s query=%s confidence=%s accepted=%s score=%.2f "
+        "components=%s artist_evidence=%.2f (explicit=%s title=%s uploader=%s desc=%s) "
+        "source_quality=%s reasons=%s",
         candidate.url,
+        candidate.source_query,
         confidence,
         accepted,
         score,
-        title_similarity,
-        artist_evidence,
+        components.as_dict(),
+        identity_evidence,
         artist_in_explicit,
         artist_in_title,
         artist_in_uploader,
+        artist_in_description,
+        source_label,
         "; ".join(reasons),
     )
-    return CandidateRanking(candidate, round(score, 2), confidence, accepted, tuple(reasons))
+    return CandidateRanking(
+        candidate, round(score, 2), confidence, accepted, tuple(reasons), components
+    )
 
 
 def _split_title(value: str | None) -> tuple[str, frozenset[str]]:
-    """Return (core title, version markers) with version info removed from core."""
+    """Return (core title, version markers) with labels and versions removed."""
     if not value:
         return "", frozenset()
-    title = _AUDIO_LABEL_RE.sub(" ", normalize(value))
+    title = _AUDIO_LABEL_RE.sub(" ", _cjk_text(value))
     versions: set[str] = set()
     for key, pattern in _VERSION_KEY_PATTERNS:
         if pattern.search(title):
@@ -272,42 +369,106 @@ def _version_conflict(
     return min(conflicting) if conflicting else None
 
 
+def _requested_allows_marker(
+    requested_title: str, marker: str, requested_versions: frozenset[str]
+) -> bool:
+    return marker in _cjk_text(requested_title) or marker in requested_versions
+
+
+def _requested_has_marker(requested_title: str, marker: str) -> bool:
+    return marker in _cjk_text(requested_title)
+
+
 def _candidate_text(candidate: SourceCandidate) -> str:
+    tags = candidate.metadata.get("tags")
+    if isinstance(tags, (list, tuple)):
+        tags_text = " ".join(str(tag) for tag in tags)
+    else:
+        tags_text = str(tags) if tags else ""
     values = (
         candidate.title,
         candidate.artist,
         candidate.uploader,
         candidate.source_type,
+        candidate.metadata.get("creator"),
+        candidate.metadata.get("channel"),
         candidate.metadata.get("description"),
         candidate.metadata.get("category"),
         candidate.metadata.get("genre"),
+        tags_text,
     )
-    return normalize(" ".join(str(value) for value in values if value))
-
-
-def _unique_markers(pattern: re.Pattern, text: str) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            match for match in pattern.findall(text)
-        )
-    )
+    return _cjk_text(" ".join(str(value) for value in values if value))
 
 
 def _artist_present(keys: list[str], text: str) -> bool:
     """True when a requested artist identity appears in ``text``.
 
-    Substring matching handles CJK artist names and channel suffixes such as
-    ``薛之谦官方频道`` or ``Oasis - Topic`` without requiring exact equality.
+    Substring matching handles CJK artist names such as ``薛之谦`` and channel
+    suffixes such as ``Oasis - Topic`` without requiring exact equality.
+    ``text`` is expected to be CJK-normalized already.
     """
     if not keys or not text:
         return False
     return any(key in text for key in keys)
 
 
+def _artist_keys(track: Track) -> list[str]:
+    """Return request-artist identity keys, CJK script-normalized."""
+    return [key for artist in track.artists if (key := _artist_text(artist))]
+
+
+def _artist_text(value: str) -> str:
+    """Normalize an artist/uploader/channel string for identity matches."""
+    return _cjk_text(normalize_artists(value))
+
+
+def _cjk_text(value: str | None) -> str:
+    """Return a CJK-script-normalized comparison string."""
+    return normalize_cjk(value)
+
+
+def _strip_artist_phrases(core: str, artist_keys: list[str]) -> str:
+    """Remove requested-artist names from a title core.
+
+    YouTube titles often embed the artist (``薛之谦 演员``). The artist name is
+    identity evidence, not title text, so removing it lets a bare ``演员`` and
+    ``薛之谦 演员`` compare against the same underlying identity.
+    """
+    if not core or not artist_keys:
+        return core
+    result = core
+    for artist in sorted(artist_keys, key=len, reverse=True):
+        if artist:
+            result = result.replace(artist, " ")
+    return _collapse(result)
+
+
 def _similarity(left: str, right: str) -> float:
     if not left or not right:
         return 0.0
-    return SequenceMatcher(None, left, right).ratio()
+    ratio = SequenceMatcher(None, left, right).ratio()
+    containment = _token_containment(left, right)
+    return max(ratio, containment)
+
+
+def _token_containment(left: str, right: str) -> float:
+    """1.0 when every ``left`` token appears in order within ``right``.
+
+    A requested core such as ``演员`` is considered a full title match when it
+    appears in a stripped candidate core such as ``joker xue 演员``, even when
+    leftover non-title tokens (romanized artist names, extra words) remain.
+    """
+    left_tokens = left.split()
+    right_tokens = right.split()
+    if not left_tokens:
+        return 0.0
+    needle_idx = 0
+    for tok in right_tokens:
+        if needle_idx < len(left_tokens) and tok == left_tokens[needle_idx]:
+            needle_idx += 1
+            if needle_idx == len(left_tokens):
+                return 1.0
+    return 0.0
 
 
 def _collapse(value: str) -> str:
@@ -317,6 +478,7 @@ def _collapse(value: str) -> str:
 __all__ = [
     "CandidateRanking",
     "Confidence",
+    "ScoreComponents",
     "rank_source_candidate",
     "rank_source_candidates",
 ]

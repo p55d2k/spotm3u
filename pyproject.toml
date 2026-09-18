@@ -15,6 +15,7 @@ dependencies = [
     "rich>=14.0",
     "typer>=0.16",
     "yt-dlp>=2025.1.15",
+    "zhconv>=1.4",
 ]
 
 [project.scripts]

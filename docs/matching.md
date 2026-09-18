@@ -49,15 +49,26 @@ and:
 
 ## Candidate Ranking
 
-Ranking should combine signals including:
+Ranking evaluates two independent questions:
+
+- **A. Recording identity** — is this the requested song by the requested artist?
+- **B. Source quality** — is this upload a good way to extract clean song audio?
+
+A wrong artist outweighs every title/source-quality advantage. The
+source-quality preference operates only among candidates that already appear
+to be the correct recording.
+
+Signal components:
 
 - **artist identity** (first-class, ordering-dominant)
 - title similarity
 - duration similarity
 - version compatibility
-- uploader/channel (supporting evidence for artist identity)
 - source type
+- source-quality tier (audio suitability)
+- uploader/channel (supporting evidence for artist identity)
 - obvious content indicators
+- penalty for music-video intent
 
 Artist identity is not a small score component. For common song titles (for
 example Joker Xue's `演员`), a candidate with a conflicting artist must be
@@ -67,6 +78,58 @@ song name.
 
 No individual signal other than a confirmed wrong artist should normally be a
 hard requirement.
+
+## Source Discovery
+
+Discovery runs **every** configured search query and aggregates the results
+before ranking. A candidate that appears only in a later query is still
+discovered, and duplicates across queries (by URL) are removed. Discovery
+never chooses a "best" candidate and never downloads; selection happens after
+all queries have been ranked.
+
+Search queries are a small, configurable set, always paired as
+`{artist} {title}` with a few focused audio hints:
+
+- `{artist} {title}`
+- `{artist} {title} lyrics`
+- `{artist} {title} lyric`
+- `{artist} {title} official audio`
+- `{artist} {title} audio`
+- `{artist} {title} official`
+- `{title} {artist}`
+
+Title-only queries are used only as a fallback when artist information is
+genuinely absent, because a title-only search tends to return same-title
+uploads by other artists.
+
+## Source-Quality Preference
+
+Preference order for the **same correct recording** (best first):
+
+1. official audio / audio upload
+2. lyric video / lyrics
+3. clean official song upload
+4. official music video
+5. other legitimate music upload
+6. live / performance (only when the requested recording is a live/performance)
+7. covers / remixes / mashups (only when explicitly requested)
+
+This is a ranking preference, not an identity rule. A high-quality source for
+the wrong artist never beats a lower-quality source for the correct artist.
+An official music video remains a valid fallback when no audio/lyrics source
+for the same recording is available.
+
+Intent is detected from title, uploader/channel, artist/creator metadata,
+description, tags, and duration. Positive signals include `official audio`,
+`lyrics`, `audio`, and the artist name or an official/verified channel.
+Negative signals include `cover`/`翻唱`, `karaoke`, `remix`, `sped up`,
+`slowed`, `nightcore`, `8D`, `live`/`现场`, `concert`, `reaction`,
+`interview`, `trailer`, `movie`, `scene`, and `compilation`. Multilingual
+indicators are normalized where practical.
+
+CJK scripts are unified before comparison: Traditional Chinese titles such as
+`薛之謙 / 演員【歌詞】` compare equal to the Simplified `薛之谦 / 演员【歌词】`
+equivalent, so script variants never bleed into title or identity scoring.
 
 ## Title Matching
 
@@ -78,11 +141,22 @@ Handle:
 - punctuation
 - whitespace
 - Unicode variations
+- Traditional/Simplified CJK script differences
 - common separators
 - version suffixes
-- `Official MV` / `Official Audio` / `MV` labels
+- `Official MV` / `Official Audio` / `MV` / `歌词` labels
 
-Treat core song identity separately from version information and upload labels.
+Treat core song identity separately from version information, upload labels,
+and the requested artist attribution.
+
+A title like `薛之谦 演员 Official Music Video` and a title like
+`薛之谦 演员 [歌词]` normalize to the same underlying recording identity, and a
+bare `演员` is **not** automatically better than `薛之谦 演员` because the
+artist attribution is itself identity evidence. The requested artist's name is
+stripped from title cores before similarity so an artist attribution in the
+title is never scored as a title difference, and leftover non-title tokens
+(such as romanized artist names like `Joker Xue`) do not hide a full requested
+title contained in the candidate core.
 
 Examples:
 
@@ -134,6 +208,10 @@ Behavior:
   candidate with confirmed identity.
 - The uploader/channel differing from the artist is not, by itself, a reason
   to reject.
+
+Artist evidence is also drawn from description and tags, but uploader/channel
+and description/tags are supporting evidence only and are never treated as
+proof.
 
 Explicit cover indicators (`cover`, `翻唱`) are strong negative signals and
 reject the candidate unless the requested artist is the performer.

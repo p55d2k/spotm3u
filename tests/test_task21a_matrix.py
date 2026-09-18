@@ -72,12 +72,17 @@ def test_feat_formatting_variants_are_tolerated() -> None:
         assert rank_source_candidate(track, source(artist=artist)).accepted
 
 
-def test_music_video_candidate_is_penalized_but_not_rejected() -> None:
-    result = rank_source_candidate(TRACK, source(title="Wonderwall Official Music Video"))
-    assert result.accepted
-    assert any("music video" in reason for reason in result.reasons)
-    plain = rank_source_candidate(TRACK, source())
-    assert result.score < plain.score
+def test_music_video_candidate_is_preferred_over_generic_but_below_audio() -> None:
+    mv = rank_source_candidate(TRACK, source(title="Wonderwall Official Music Video"))
+    assert mv.accepted
+    assert any("music video" in reason for reason in mv.reasons)
+
+    generic = rank_source_candidate(TRACK, source())
+    assert mv.score >= generic.score
+
+    audio = rank_source_candidate(TRACK, source(title="Wonderwall - Official Audio"))
+    assert audio.accepted
+    assert audio.score > mv.score
 
 
 def test_live_candidate_is_rejected() -> None:

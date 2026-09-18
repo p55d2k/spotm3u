@@ -18,8 +18,8 @@ runs instead of being downloaded again.
 ## Pipeline
 
 Track
-→ source search
-→ candidate ranking
+→ source search (all queries aggregated)
+→ candidate ranking (identity first, then source quality)
 → source validation
 → yt-dlp
 → MP3
@@ -31,6 +31,11 @@ Track
 Source validation should not be so strict that every imperfect candidate is rejected before downloading.
 
 A plausible candidate may need to be downloaded before the application can determine whether its actual audio is suitable.
+
+Selection always happens **after** all search queries have been run and
+ranked. The highest-ranked plausible candidate is downloaded first; an
+official music video is only used as a fallback when no audio/lyrics source
+for the same recording exists.
 
 ## Candidate Retry
 

@@ -68,28 +68,51 @@ Do not duplicate its functionality inside the online resolver.
 
 Searches for candidate recordings using Track metadata.
 
-Search queries always include the requested artist alongside the song title,
-so common titles such as `演员` still surface the correct artist's official
-upload instead of only other-artist covers.
+Search queries are a small set of focused artist-aware queries (for example
+`{artist} {title}`, `{artist} {title} lyrics`, `{artist} {title} official
+audio`, `{title} {artist}`). Search queries always include the requested
+artist alongside the song title, so common titles such as `演员` still surface
+the correct artist's official upload instead of only other-artist covers.
 
-It returns candidates but does not decide correctness.
+The searcher runs **every** query and aggregates all candidates (deduplicated
+by URL) before any ranking or download, so a candidate that appears only in a
+later query is still discovered. It returns candidates but does not decide
+correctness and never downloads.
 
 ## Candidate Ranking
 
-Ranks candidates using:
+Ranking separately evaluates **recording identity** (is this the requested
+song by the requested artist?) and **source quality** (is this upload a good
+way to extract clean song audio?).
+
+Identity signal components:
 
 - **artist identity** (first-class, ordering-dominant)
 - title
 - duration
 - version
-- uploader/channel (supporting evidence for artist identity)
-- source type
-- negative content indicators
+- uploader/channel and description/tags (supporting identity evidence)
 
 For common titles (e.g. `演员`), a confirmed artist identity outranks an exact
 title match, and a conflicting explicit artist rejects the candidate even when
 the title matches exactly. `Official MV`/`Official Audio` labels are separated
 from core song identity so official artist uploads still match.
+
+Source-quality preference (only among already-correct recordings):
+
+1. official audio / audio upload
+2. lyric video / lyrics
+3. clean official song upload
+4. official music video
+5. other legitimate music upload
+6. live / performance (only when requested)
+7. covers / remixes (only when explicitly requested)
+
+An official music video is a valid fallback but never outranks an
+audio/lyrics source for the same recording.
+
+Each candidate decision is logged with its score, the identity-evidence
+breakdown, and the source-quality tier.
 
 Missing metadata should generally reduce available evidence rather than count
 as proof of mismatch.
