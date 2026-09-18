@@ -84,6 +84,19 @@ Use bounded concurrency.
 
 Avoid spawning an uncontrolled number of yt-dlp or ffmpeg processes.
 
+Track-level download concurrency is a separate, smaller cap
+(`download.workers`) than search concurrency (`web.resolve_workers`), so a
+large playlist can search broadly without launching an uncontrolled number of
+downloads. Per-track yt-dlp/ffmpeg work stays inside the job's bounded worker
+pool; yt-dlp's own internal concurrency (fragment downloads) is left to
+yt-dlp rather than duplicated.
+
+Each download is additionally bounded by a wall-clock timeout
+(`download.timeout`), and search and download socket operations use a network
+timeout, so a hung source cannot occupy a worker or the machine indefinitely.
+Retries are capped and bounded, so a failing download fails instead of
+retrying forever.
+
 ## Validation
 
 Successful yt-dlp execution does not automatically mean successful track resolution.

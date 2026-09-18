@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import time
 import types
 
 import pytest
@@ -108,3 +109,15 @@ def test_missing_output_is_not_success(tmp_path, monkeypatch):
     install_fake_yt_dlp(monkeypatch, NoOutput)
     with pytest.raises(DownloadError, match="complete MP3"):
         download_track(TRACK, "https://example.com/source", tmp_path)
+
+
+def test_hung_download_is_abandoned_after_wall_clock_timeout(tmp_path, monkeypatch):
+    class Hung(FakeYoutubeDL):
+        def download(self, urls):
+            time.sleep(2)
+            return 0
+
+    install_fake_yt_dlp(monkeypatch, Hung)
+
+    with pytest.raises(DownloadError, match="timed out"):
+        download_track(TRACK, "https://example.com/source", tmp_path, timeout=0.2)

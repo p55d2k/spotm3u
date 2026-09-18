@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,10 @@ class JobStartError(RuntimeError):
     """A job has already started and cannot be started again."""
 
 
+class JobTimeoutError(RuntimeError):
+    """The overall wall-clock time budget for a job was exceeded."""
+
+
 @dataclass(frozen=True)
 class TrackJobState:
     """The observable processing state of a single playlist track."""
@@ -87,6 +92,8 @@ class ProcessingJob:
         output_dir: str | Path,
         resolver_factory: ResolverFactory,
         max_workers: int = 1,
+        max_download_workers: int | None = None,
+        timeout: float | None = None,
         m3u_extended: bool = True,
         m3u_relative: bool = False,
     ) -> None:
@@ -97,6 +104,8 @@ class ProcessingJob:
         self.output_dir = Path(output_dir)
         self.resolver_factory = resolver_factory
         self.max_workers = max(1, int(max_workers))
+        self.max_download_workers = max(1, int(max_download_workers or self.max_workers))
+        self.timeout = timeout
         self.m3u_extended = m3u_extended
         self.m3u_relative = m3u_relative
         self.manager: JobManager | None = None
@@ -108,6 +117,9 @@ class ProcessingJob:
         self._searched: int = 0
         self._error: str | None = None
         self._m3u_path: Path | None = None
+        self._deadline: float | None = (
+            time.monotonic() + timeout if timeout is not None else None
+        )
         self._track_states: list[TrackJobState] = [
             TrackJobState(index, track.title, tuple(track.artists), "queued")
             for index, track in enumerate(self.tracks)
@@ -205,13 +217,20 @@ class ProcessingJob:
         need a download are processed in a second concurrent pass. Searches
         therefore run ahead while downloads from phase two are still in
         progress, instead of each worker doing search-and-download in a chunk.
+
+        Downloads use a separate, smaller concurrency cap
+        (``max_download_workers``) so the per-track yt-dlp/ffmpeg work can
+        never spawn an uncontrolled number of processes. ``timeout`` bounds
+        the whole job so a runaway playlist fails instead of running forever.
         """
+        self._check_deadline()
         tracks = self.tracks
         if self.max_workers <= 1 or len(tracks) <= 1:
             results: list[TrackResolution] = []
             for index, track in enumerate(tracks):
                 with self._lock:
                     self._current_index = index
+                self._check_deadline()
                 result = resolver.resolve(
                     track, stage_callback=self._stage_reporter(index)
                 )
@@ -233,6 +252,7 @@ class ProcessingJob:
                 for index, track in enumerate(tracks)
             }
             for future in as_completed(future_to_index):
+                self._check_deadline()
                 index = future_to_index[future]
                 outcome = future.result()
                 prepared[index] = outcome
@@ -253,11 +273,12 @@ class ProcessingJob:
                 results[index] = plan
 
         if download_plans:
+            self._check_deadline()
             phase_two = lambda index_plan: resolver.complete(
                 index_plan[1], stage_callback=self._stage_reporter(index_plan[0])
             )
             with ThreadPoolExecutor(
-                max_workers=self.max_workers,
+                max_workers=self.max_download_workers,
                 thread_name_prefix=f"spotm3u-download-{self.job_id}",
             ) as pool:
                 future_to_index = {
@@ -265,12 +286,20 @@ class ProcessingJob:
                     for index_plan in download_plans
                 }
                 for future in as_completed(future_to_index):
+                    self._check_deadline()
                     index = future_to_index[future]
                     result = future.result()
                     self._finalize_track(index, result)
                     results[index] = result
 
         return [result for result in results if result is not None]
+
+    def _check_deadline(self) -> None:
+        """Raise when the whole job has exceeded its ``timeout`` budget."""
+        if self._deadline is None:
+            return
+        if time.monotonic() >= self._deadline:
+            raise JobTimeoutError(f"job timed out after {self.timeout} seconds")
 
     def _stage_reporter(self, index: int) -> Callable[[TrackStage], None]:
         def report(stage: TrackStage) -> None:
@@ -407,6 +436,7 @@ class JobManager:
 __all__ = [
     "JobManager",
     "JobStartError",
+    "JobTimeoutError",
     "ProcessingJob",
     "TrackJobState",
     "TrackProcessingStatus",

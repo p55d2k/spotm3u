@@ -86,9 +86,11 @@ class OnlineSourceSearcher:
         *,
         max_results: int = 8,
         max_search_workers: int = DEFAULT_SEARCH_WORKERS,
+        socket_timeout: int = 30,
     ) -> None:
         self.max_results = max_results
         self.max_search_workers = max_search_workers
+        self.socket_timeout = socket_timeout
 
     def search(self, track: Track) -> tuple[SourceCandidate, ...]:
         """Aggregate candidates from every focused query for ``track``.
@@ -144,6 +146,7 @@ class OnlineSourceSearcher:
                     "extract_flat": True,
                     "noplaylist": True,
                     "default_search": "ytsearch",
+                    "socket_timeout": self.socket_timeout,
                 }
             ) as ydl:
                 info = ydl.extract_info(

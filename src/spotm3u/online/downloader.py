@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -29,11 +30,17 @@ def download_track(
     retries: int = 5,
     fragment_retries: int = 5,
     socket_timeout: int = 30,
+    timeout: float | None = 600,
 ) -> Path:
     """Download ``source_url`` and return its verified local MP3 path.
 
     ``output_dir`` is the caller-owned job/library directory. All yt-dlp
     intermediate files and the final file are constrained to that directory.
+
+    ``timeout`` bounds the entire download wall-clock time so a hung yt-dlp or
+    ffmpeg run cannot occupy a worker forever. It is raised as a
+    :class:`DownloadError`; ``socket_timeout`` remains the network-level
+    fallback that bounds each socket operation.
     """
     _validate_source_url(source_url)
     destination = Path(output_dir).expanduser().resolve()
@@ -43,6 +50,49 @@ def download_track(
         raise DownloadError(f"cannot create download directory: {destination}") from exc
 
     output_path = destination / _output_name(track, source_url)
+    if timeout is not None and timeout > 0:
+        try:
+            return _run_with_timeout(
+                timeout,
+                _download_guarded,
+                track,
+                source_url,
+                destination,
+                output_path,
+                quality=quality,
+                retries=retries,
+                fragment_retries=fragment_retries,
+                socket_timeout=socket_timeout,
+            )
+        except TimeoutError as exc:
+            _prune_partial(output_path)
+            raise DownloadError(
+                f"download timed out after {timeout:.0f}s: {output_path.name}"
+            ) from exc
+    return _download_guarded(
+        track,
+        source_url,
+        destination,
+        output_path,
+        quality=quality,
+        retries=retries,
+        fragment_retries=fragment_retries,
+        socket_timeout=socket_timeout,
+    )
+
+
+def _download_guarded(
+    track: Track,
+    source_url: str,
+    destination: Path,
+    output_path: Path,
+    *,
+    quality: str,
+    retries: int,
+    fragment_retries: int,
+    socket_timeout: int,
+) -> Path:
+    """Run :func:`_download_to` under the per-output-path lock."""
     with _output_lock(output_path):
         return _download_to(
             track,
@@ -54,6 +104,50 @@ def download_track(
             fragment_retries=fragment_retries,
             socket_timeout=socket_timeout,
         )
+
+
+def _run_with_timeout(
+    timeout: float,
+    fn: Callable[..., Path],
+    /,
+    *args: object,
+    **kwargs: object,
+) -> Path:
+    """Run ``fn`` in a daemon thread and bound its wall-clock execution.
+
+    The worker is a daemon so a genuinely hung yt-dlp/ffmpeg call cannot keep
+    the job thread pool alive; the timeout surfaces as a raise here while any
+    stuck underlying call finishes or dies on its own in the background.
+    """
+    outcome: list[Path] = []
+    failure: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            outcome.append(fn(*args, **kwargs))
+        except BaseException as exc:  # noqa: BLE001 - re-raised for the caller
+            failure.append(exc)
+
+    worker = threading.Thread(
+        target=target,
+        name="spotm3u-download",
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError(f"operation exceeded {timeout}s")
+    if failure:
+        raise failure[0]
+    return outcome[0]
+
+
+def _prune_partial(output_path: Path) -> None:
+    """Best-effort removal of a partially written download after a timeout."""
+    try:
+        output_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _output_lock(path: Path) -> threading.Lock:
@@ -135,9 +229,10 @@ def download_source(
     output_dir: str | Path,
     *,
     quality: str = "192",
+    timeout: float | None = 600,
 ) -> Path:
     """Compatibility-oriented source-first wrapper around :func:`download_track`."""
-    return download_track(track, source_url, output_dir, quality=quality)
+    return download_track(track, source_url, output_dir, quality=quality, timeout=timeout)
 
 
 def _validate_source_url(source_url: str) -> None:

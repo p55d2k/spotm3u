@@ -26,6 +26,10 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.port == 5001
     assert config.resolve_workers == 4
     assert config.max_upload_size == DEFAULT_MAX_UPLOAD_SIZE
+    assert config.max_search_workers == 4
+    assert config.search_socket_timeout == 30
+    assert config.max_download_workers == 2
+    assert config.download_timeout == 600
     assert config.m3u_extended is True
     assert config.m3u_relative is False
 
@@ -46,9 +50,12 @@ def test_load_config_parses_known_values(tmp_path) -> None:
         [search]
         max_results = 12
         max_search_workers = 2
+        socket_timeout = 15
 
         [download]
         audio_quality = "320"
+        workers = 1
+        timeout = 300
         retries = 3
         fragment_retries = 2
         socket_timeout = 60
@@ -68,7 +75,10 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.max_upload_size == 10485760
     assert config.max_results == 12
     assert config.max_search_workers == 2
+    assert config.search_socket_timeout == 15
     assert config.audio_quality == "320"
+    assert config.max_download_workers == 1
+    assert config.download_timeout == 300
     assert config.retries == 3
     assert config.fragment_retries == 2
     assert config.socket_timeout == 60

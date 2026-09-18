@@ -37,8 +37,11 @@ class Config:
     # [search]
     max_results: int = 8
     max_search_workers: int = 4
+    search_socket_timeout: int = 30
     # [download]
     audio_quality: str = "192"
+    max_download_workers: int = 2
+    download_timeout: int = 600
     retries: int = 5
     fragment_retries: int = 5
     socket_timeout: int = 30
@@ -54,7 +57,10 @@ class Config:
             "RESOLVE_WORKERS": self.resolve_workers,
             "SEARCH_MAX_RESULTS": self.max_results,
             "SEARCH_MAX_WORKERS": self.max_search_workers,
+            "SEARCH_SOCKET_TIMEOUT": self.search_socket_timeout,
             "DOWNLOAD_QUALITY": self.audio_quality,
+            "DOWNLOAD_MAX_WORKERS": self.max_download_workers,
+            "DOWNLOAD_TIMEOUT": self.download_timeout,
             "DOWNLOAD_RETRIES": self.retries,
             "DOWNLOAD_FRAGMENT_RETRIES": self.fragment_retries,
             "DOWNLOAD_SOCKET_TIMEOUT": self.socket_timeout,
@@ -79,7 +85,10 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "upload.max_upload_size": "max_upload_size",
     "search.max_results": "max_results",
     "search.max_search_workers": "max_search_workers",
+    "search.socket_timeout": "search_socket_timeout",
     "download.audio_quality": "audio_quality",
+    "download.workers": "max_download_workers",
+    "download.timeout": "download_timeout",
     "download.retries": "retries",
     "download.fragment_retries": "fragment_retries",
     "download.socket_timeout": "socket_timeout",

@@ -392,7 +392,10 @@ def _build_processing_job(
 ) -> ProcessingJob:
     max_results = int(app.config.get("SEARCH_MAX_RESULTS", 8))
     max_search_workers = int(app.config.get("SEARCH_MAX_WORKERS", 4))
+    search_socket_timeout = int(app.config.get("SEARCH_SOCKET_TIMEOUT", 30))
     quality = str(app.config.get("DOWNLOAD_QUALITY", "192"))
+    max_download_workers = int(app.config.get("DOWNLOAD_MAX_WORKERS", 2))
+    download_timeout = float(app.config.get("DOWNLOAD_TIMEOUT", 600))
     retries = int(app.config.get("DOWNLOAD_RETRIES", 5))
     fragment_retries = int(app.config.get("DOWNLOAD_FRAGMENT_RETRIES", 5))
     socket_timeout = int(app.config.get("DOWNLOAD_SOCKET_TIMEOUT", 30))
@@ -402,6 +405,7 @@ def _build_processing_job(
         searcher = OnlineSourceSearcher(
             max_results=max_results,
             max_search_workers=max_search_workers,
+            socket_timeout=search_socket_timeout,
         )
         downloader = partial(
             download_track,
@@ -409,6 +413,7 @@ def _build_processing_job(
             retries=retries,
             fragment_retries=fragment_retries,
             socket_timeout=socket_timeout,
+            timeout=download_timeout,
         )
         return TrackResolver(
             local_resolver,
@@ -426,6 +431,7 @@ def _build_processing_job(
         output_dir=output_dir,
         resolver_factory=resolver_factory,
         max_workers=int(app.config.get("RESOLVE_WORKERS", 4)),
+        max_download_workers=max_download_workers,
         m3u_extended=bool(app.config.get("M3U_EXTENDED", True)),
         m3u_relative=bool(app.config.get("M3U_RELATIVE", False)),
     )

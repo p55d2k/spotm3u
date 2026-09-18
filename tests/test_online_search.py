@@ -182,3 +182,35 @@ def test_search_returns_empty_without_yt_dlp(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "yt_dlp", None)
     results = OnlineSourceSearcher().search(Track(title="Song", artists=["Artist"]))
     assert results == ()
+
+
+def test_search_applies_socket_timeout_to_query_options(monkeypatch) -> None:
+    captured: dict = {}
+
+    class NoResultYtdl:
+        def __init__(self, options: dict):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, spec, download=False):
+            return {"entries": []}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "yt_dlp",
+        types.SimpleNamespace(
+            YoutubeDL=NoResultYtdl,
+            utils=types.SimpleNamespace(DownloadError=RuntimeError),
+        ),
+    )
+
+    OnlineSourceSearcher(max_search_workers=1, socket_timeout=42).search(
+        Track(title="Song", artists=["Artist"])
+    )
+
+    assert captured.get("socket_timeout") == 42

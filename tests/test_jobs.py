@@ -483,3 +483,78 @@ def test_job_m3u_defaults_use_extended_absolute_paths(tmp_path: Path) -> None:
     assert m3u.startswith("#EXTM3U")
     assert "#EXTINF:200,Artist - A" in m3u
     assert str(local_file) in m3u
+
+
+class DownloadCapResolver:
+    """Records the peak concurrency of the download (complete) phase only."""
+
+    lock = threading.Lock()
+    complete_active = 0
+    complete_max = 0
+
+    def __init__(self, outcomes_by_index):
+        self.outcomes_by_index = outcomes_by_index
+
+    def prepare(self, track, *, stage_callback=None):
+        return PreparedTrack(track, candidates=(), rankings=())
+
+    def complete(self, prepared, *, stage_callback=None):
+        with type(self).lock:
+            type(self).complete_active += 1
+            type(self).complete_max = max(
+                type(self).complete_max, type(self).complete_active
+            )
+        try:
+            time.sleep(0.1)
+        finally:
+            with type(self).lock:
+                type(self).complete_active -= 1
+        return self.outcomes_by_index.pop(0)
+
+
+def test_job_download_concurrency_is_capped_independently(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B"), _track("C"), _track("D")]
+    outcomes = [_resolution(track, "missing") for track in tracks]
+    DownloadCapResolver.complete_active = 0
+    DownloadCapResolver.complete_max = 0
+
+    job = ProcessingJob(
+        job_id="download-cap",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=tmp_path / "output",
+        resolver_factory=lambda: DownloadCapResolver(outcomes),
+        max_workers=4,
+        max_download_workers=1,
+    )
+    job.start()
+    job.wait(timeout=10)
+
+    assert job.as_dict()["status"] == "completed"
+    assert DownloadCapResolver.complete_max == 1, "downloads must not run in parallel"
+
+
+def test_job_respects_overall_timeout(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B")]
+
+    class SlowResolver:
+        def resolve(self, track, *, stage_callback=None):
+            time.sleep(0.5)
+            return _resolution(track, "missing")
+
+    job = ProcessingJob(
+        job_id="slow",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=tmp_path / "output",
+        resolver_factory=SlowResolver,
+        timeout=0.1,
+    )
+    job.start()
+    job.wait(timeout=10)
+
+    snapshot = job.as_dict()
+    assert snapshot["status"] == "failed"
+    assert "timed out" in snapshot["error"]

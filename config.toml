@@ -27,7 +27,7 @@
 # Defaults to <music_library>/spotm3u-downloads.
 # download_dir = "~/Music/spotm3u-downloads"
 
-# How many tracks are resolved in parallel (downloads included).
+# How many tracks are resolved in parallel (search phase only).
 # resolve_workers = 4
 
 [upload]
@@ -41,9 +41,22 @@
 # How many search queries run at once for one track.
 # max_search_workers = 4
 
+# Per-socket-operation timeout (seconds) applied to each search query so a
+# hung source cannot occupy a worker forever.
+# socket_timeout = 30
+
 [download]
 # MP3 bitrate used by yt-dlp when extracting downloaded audio.
 # audio_quality = "192"
+
+# How many tracks are downloaded at once. A separate, smaller cap than
+# resolve_workers so the per-track yt-dlp/ffmpeg work never spawns an
+# uncontrolled number of processes.
+# workers = 2
+
+# Maximum wall-clock time (seconds) for a single download before it is
+# abandoned. Set to 0 to disable.
+# timeout = 600
 
 # Download retry counts (total and per fragment) and the network timeout
 # (seconds) used for each download.
