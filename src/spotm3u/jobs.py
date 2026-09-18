@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
 
+from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
 from .models import Track
 from .resolution import (
@@ -17,6 +19,8 @@ from .resolution import (
     TrackResolver,
     TrackStage,
 )
+
+logger = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 TrackProcessingStatus = Literal[
@@ -186,8 +190,16 @@ class ProcessingJob:
             thread.join(timeout)
 
     def _run(self) -> None:
+        track_log = TrackLogger(logger, job_id=self.job_id)
+        track_log.info(
+            "job started playlist=%s tracks=%d output=%s",
+            self.playlist_name,
+            len(self.tracks),
+            self.output_dir,
+        )
         try:
             resolver = self.resolver_factory()
+            attach_job_logging(resolver, job_id=self.job_id)
             output_dir = self.output_dir
             output_dir.mkdir(parents=True, exist_ok=True)
             results = self._resolve_all(resolver)
@@ -203,11 +215,18 @@ class ProcessingJob:
                 self._m3u_path = m3u_path
                 self._current_index = None
                 self._status = "completed"
+            track_log.info(
+                "job completed m3u_path=%s successful=%d failed=%d",
+                m3u_path,
+                self.successful,
+                self.failed,
+            )
         except Exception as exc:  # pragma: no cover - defensive final state
             with self._lock:
                 self._current_index = None
                 self._error = str(exc)
                 self._status = "failed"
+            track_log.exception("job failed: %s", exc)
 
     def _resolve_all(self, resolver: TrackResolver) -> list[TrackResolution]:
         """Resolve every track, optionally in parallel, keeping playlist order.
@@ -321,6 +340,8 @@ class ProcessingJob:
                 current.source_url,
                 current.resolution,
             )
+        log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
+        log.debug("stage=%s index=%d", status, index)
 
     def _mark_searched(
         self, index: int, status: TrackProcessingStatus | None = None
@@ -340,6 +361,9 @@ class ProcessingJob:
                     current.source_url,
                     current.resolution,
                 )
+        TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).debug(
+            "searched index=%d", index
+        )
 
     def _finalize_track(self, index: int, result: TrackResolution) -> None:
         status = TRACK_STATUS_TERMINAL.get(result.status, "failed")
@@ -355,6 +379,23 @@ class ProcessingJob:
                 str(result.local_path) if result.local_path is not None else None,
                 result.source_url,
                 result.status,
+            )
+        log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
+        if result.successful:
+            log.info(
+                "finalized index=%d status=%s resolution=%s path=%s",
+                index,
+                result.status,
+                result.status,
+                result.local_path,
+            )
+        else:
+            log.warning(
+                "finalized index=%d status=%s resolution=%s reason=%s",
+                index,
+                status,
+                result.status,
+                result.reason or "no reason given",
             )
 
     def snapshot(self) -> dict[str, object]:

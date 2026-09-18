@@ -30,6 +30,11 @@
 # How many tracks are resolved in parallel (search phase only).
 # resolve_workers = 4
 
+# Logging verbosity for developer diagnostics. Per-track records always
+# include the job and track identifiers. Use DEBUG for full stage tracing.
+# Also read from the SPOTM3U_LOG_LEVEL environment variable when unset.
+# log_level = "INFO"
+
 [upload]
 # Maximum accepted ZIP size in bytes (default 50 MiB = 52428800).
 # max_upload_size = 52428800

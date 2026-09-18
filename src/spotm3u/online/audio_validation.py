@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import re
 import wave
 from typing import Literal
 
+from ..log import track_identifier
 from ..models import Track
+
+logger = logging.getLogger(__name__)
 
 AudioValidationStatus = Literal["valid", "invalid", "uncertain"]
 
@@ -70,7 +74,7 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
 
     expected = track.duration_ms / 1000 if track.duration_ms else None
     if expected and abs(duration - expected) > max(3.0, expected * 0.08):
-        return AudioValidation(
+        verdict = AudioValidation(
             audio_path,
             "invalid",
             ("duration mismatch",),
@@ -78,13 +82,21 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
             audio_format,
             metadata,
         )
+        logger.warning(
+            "audio validation track=%s path=%s status=invalid reason=expected %.1fs got %.1fs",
+            track_identifier(track),
+            audio_path,
+            expected,
+            duration,
+        )
+        return verdict
 
     content_text = " ".join((*metadata.values(), audio_path.stem))
     if _CONTENT_WARNING_RE.search(content_text):
         reasons.append("suspected speech, dialogue, or sound effects")
 
     if _is_silent_wav(audio_path):
-        return AudioValidation(
+        verdict = AudioValidation(
             audio_path,
             "invalid",
             ("file contains no audible samples",),
@@ -92,8 +104,14 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
             audio_format,
             metadata,
         )
+        logger.warning(
+            "audio validation track=%s path=%s status=invalid reason=silent file",
+            track_identifier(track),
+            audio_path,
+        )
+        return verdict
 
-    return AudioValidation(
+    verdict = AudioValidation(
         audio_path,
         "uncertain" if reasons else "valid",
         tuple(reasons),
@@ -101,6 +119,22 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
         audio_format,
         metadata,
     )
+    if verdict.status == "valid":
+        logger.debug(
+            "audio validation track=%s path=%s status=valid duration=%.1f format=%s",
+            track_identifier(track),
+            audio_path,
+            duration,
+            audio_format,
+        )
+    else:
+        logger.warning(
+            "audio validation track=%s path=%s status=uncertain reasons=%s",
+            track_identifier(track),
+            audio_path,
+            "; ".join(reasons),
+        )
+    return verdict
 
 
 def _metadata(parsed: object) -> dict[str, str]:

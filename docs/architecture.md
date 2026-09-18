@@ -190,3 +190,14 @@ Those files may be:
 
 - existing local files from Task 10
 - successfully downloaded MP3 files
+
+## Diagnostics
+
+Every per-track processing record is logged with a job and track identifier so
+a failed track can be traced through its stages (local resolution, search,
+source validation, download, audio validation) up to its final failure reason.
+Structured context is provided by `src/spotm3u/log.py`; the `spotm3u` package
+logger is configured through `[web] log_level` in `config.toml` or the
+`SPOTM3U_LOG_LEVEL` environment variable (set to `DEBUG` for full stage
+tracing). Credentials, authentication secrets, and private data are never
+logged.

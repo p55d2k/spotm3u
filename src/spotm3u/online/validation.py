@@ -9,11 +9,15 @@ validated separately afterwards.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Literal
 
+from ..log import track_identifier
 from ..models import Track
 from .ranking import rank_source_candidate
 from .search import SourceCandidate
+
+logger = logging.getLogger(__name__)
 
 ValidationStatus = Literal["accepted", "rejected", "uncertain"]
 
@@ -35,9 +39,29 @@ def validate_source_candidate(track: Track, candidate: SourceCandidate) -> Sourc
     """Classify a candidate before download without claiming audio is clean."""
     ranking = rank_source_candidate(track, candidate)
     if ranking.confidence == "rejected":
-        return SourceValidation(candidate, "rejected", ranking.reasons)
+        verdict = SourceValidation(candidate, "rejected", ranking.reasons)
+        logger.debug(
+            "source validation track=%s url=%s status=rejected reasons=%s",
+            track_identifier(track),
+            candidate.url,
+            "; ".join(ranking.reasons),
+        )
+        return verdict
     if ranking.confidence == "uncertain":
-        return SourceValidation(candidate, "uncertain", ranking.reasons)
+        verdict = SourceValidation(candidate, "uncertain", ranking.reasons)
+        logger.debug(
+            "source validation track=%s url=%s status=uncertain reasons=%s",
+            track_identifier(track),
+            candidate.url,
+            "; ".join(ranking.reasons),
+        )
+        return verdict
+    logger.debug(
+        "source validation track=%s url=%s status=accepted reasons=%s",
+        track_identifier(track),
+        candidate.url,
+        "; ".join(ranking.reasons),
+    )
     return SourceValidation(candidate, "accepted", ranking.reasons)
 
 

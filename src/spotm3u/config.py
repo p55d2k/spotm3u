@@ -35,6 +35,7 @@ class Config:
     music_library: str | None = None
     download_dir: str | None = None
     resolve_workers: int = 4
+    log_level: str | None = None
     # [upload]
     max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE
     max_decompressed_size: int = DEFAULT_MAX_DECOMPRESSED_SIZE
@@ -76,6 +77,8 @@ class Config:
             "M3U_EXTENDED": self.m3u_extended,
             "M3U_RELATIVE": self.m3u_relative,
         }
+        if self.log_level:
+            values["LOG_LEVEL"] = self.log_level
         if self.upload_root:
             values["UPLOAD_ROOT"] = str(Path(self.upload_root).expanduser())
         if self.music_library:
@@ -91,6 +94,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "web.music_library": "music_library",
     "web.download_dir": "download_dir",
     "web.resolve_workers": "resolve_workers",
+    "web.log_level": "log_level",
     "upload.max_upload_size": "max_upload_size",
     "upload.max_decompressed_size": "max_decompressed_size",
     "upload.max_archive_entries": "max_archive_entries",

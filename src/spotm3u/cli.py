@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 
 from . import __version__
+from .log import configure_logging
 from .spotify.authentication import (
     SPOTIFY_HOME_URL,
     AuthenticationTimeoutError,
@@ -36,6 +37,7 @@ def main(
     ] = None,
 ) -> None:
     """Show the application entry point without starting browser automation."""
+    configure_logging()
     console.print("[bold]Spotify → Local M3U[/bold]")
     console.print("Reusable playlist, local-audio, and M3U services are ready.")
 

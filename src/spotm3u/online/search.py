@@ -12,10 +12,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
+from ..log import track_identifier
 from ..models import Track
 from ..normalization import normalize
+
+logger = logging.getLogger(__name__)
 
 # Cap on concurrent network queries for one track. Queries run in parallel
 # because each one is an independent yt-dlp request; keeping the count modest
@@ -104,17 +108,21 @@ class OnlineSourceSearcher:
         """
         queries = build_search_queries(track)
         if not queries:
+            logger.debug("search track=%s queries=0 status=skipped", track_identifier(track))
             return ()
 
         try:
             import yt_dlp  # type: ignore
         except ImportError:  # pragma: no cover - optional dependency in tests
+            logger.warning(
+                "search track=%s status=failed reason=yt_dlp unavailable", track_identifier(track)
+            )
             return ()
 
         workers = min(len(queries), self.max_search_workers)
         if workers <= 1:
             results_per_query = [
-                self._run_query(yt_dlp, query) for query in queries
+                self._run_query(yt_dlp, query, track) for query in queries
             ]
         else:
             with ThreadPoolExecutor(
@@ -122,7 +130,7 @@ class OnlineSourceSearcher:
                 thread_name_prefix="spotm3u-search",
             ) as pool:
                 results_per_query = list(
-                    pool.map(lambda query: self._run_query(yt_dlp, query), queries)
+                    pool.map(lambda query: self._run_query(yt_dlp, query, track), queries)
                 )
 
         results: list[SourceCandidate] = []
@@ -133,9 +141,17 @@ class OnlineSourceSearcher:
                     continue
                 seen_urls.add(candidate.url)
                 results.append(candidate)
+        logger.debug(
+            "search track=%s queries=%d status=ok candidates=%d",
+            track_identifier(track),
+            len(queries),
+            len(results),
+        )
         return tuple(results)
 
-    def _run_query(self, yt_dlp: Any, query: str) -> list[SourceCandidate]:
+    def _run_query(
+        self, yt_dlp: Any, query: str, track: Track
+    ) -> list[SourceCandidate]:
         """Run one focused query and return its coerced candidates."""
         try:
             with yt_dlp.YoutubeDL(
@@ -152,9 +168,22 @@ class OnlineSourceSearcher:
                 info = ydl.extract_info(
                     f"ytsearch{self.max_results}:{query}", download=False
                 )
-        except (yt_dlp.utils.DownloadError, OSError):
+        except (yt_dlp.utils.DownloadError, OSError) as exc:
+            logger.warning(
+                "search track=%s query=%r status=failed reason=%s",
+                track_identifier(track),
+                query,
+                exc,
+            )
             return []
-        return OnlineSourceSearcher._coerce_results(info, source_query=query)
+        candidates = OnlineSourceSearcher._coerce_results(info, source_query=query)
+        logger.debug(
+            "search track=%s query=%r status=ok candidates=%d",
+            track_identifier(track),
+            query,
+            len(candidates),
+        )
+        return candidates
 
     @staticmethod
     def _coerce_results(info: Any, *, source_query: str | None = None) -> list[SourceCandidate]:

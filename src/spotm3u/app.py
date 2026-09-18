@@ -13,6 +13,7 @@ from .audio.resolver import LocalAudioResolver
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, ProcessingJob
+from .log import configure_logging
 from .models import Playlist
 from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, download_track
@@ -33,6 +34,7 @@ def create_app(config: dict | None = None) -> Flask:
     """
     app = Flask(__name__)
     settings = load_user_config().to_app_config()
+    configure_logging(settings.get("LOG_LEVEL"))
     app.config.from_mapping(
         {
             "SECRET_KEY": secrets.token_hex(32),

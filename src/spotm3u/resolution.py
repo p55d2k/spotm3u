@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Callable, Literal
 
 from .audio.resolver import LocalAudioResolver
+from .log import TrackLogger
 from .models import ResolvedTrack, Track
 from .online.audio_validation import AudioValidation, validate_downloaded_audio
 from .online.cache import DownloadCache
@@ -14,6 +16,8 @@ from .online.downloader import DownloadError, download_track
 from .online.ranking import CandidateRanking, rank_source_candidates
 from .online.search import OnlineSourceSearcher, SourceCandidate
 from .online.validation import SourceValidation, validate_source_candidate
+
+logger = logging.getLogger(__name__)
 
 ResolutionStatus = Literal[
     "local", "downloaded", "missing", "ambiguous", "rejected", "failed", "uncertain"
@@ -146,12 +150,19 @@ class TrackResolver:
         searcher: OnlineSourceSearcher | None = None,
         downloader: DownloadFunction = download_track,
         cache: DownloadCache | None = None,
+        log: TrackLogger | None = None,
     ) -> None:
         self.local_resolver = local_resolver
         self.output_dir = Path(output_dir)
         self.searcher = searcher or OnlineSourceSearcher()
         self.downloader = downloader
         self.cache = cache
+        self._log = log or TrackLogger(logger)
+
+    def set_log_context(self, log: TrackLogger) -> None:
+        """Replace the logging context (e.g. to add a background job id)."""
+        if log is not None:
+            self._log = log
 
     def prepare(
         self,
@@ -171,6 +182,8 @@ class TrackResolver:
             if stage_callback is not None:
                 stage_callback(stage)
 
+        log = self._log.with_track(track)
+        log.info("stage=resolving-local")
         report("resolving-local")
         local = self.local_resolver.resolve(track)
         if local.resolved is not None and _is_real_file(local.resolved.local_path):
@@ -180,20 +193,27 @@ class TrackResolver:
                 resolution_method="local",
                 status="local",
             )
+            log.info("local match found path=%s", local.resolved.local_path)
             return TrackResolution(
                 track, "local", resolved=resolved, candidates=(), reasons=("local match",)
             )
 
+        log.info("no local match status=%s", local.status)
+        log.info("stage=searching")
         report("searching")
         try:
             candidates = tuple(self.searcher.search(track))
         except (OSError, RuntimeError, ValueError) as exc:
+            log.error("source search failed: %s", exc)
             return TrackResolution(track, "failed", reasons=(f"source search failed: {exc}",))
         if not candidates:
             status: ResolutionStatus = "ambiguous" if local.status == "ambiguous" else "missing"
+            log.warning("search returned no candidates status=%s", status)
             return TrackResolution(track, status, reasons=("no online source candidates",))
 
         rankings = rank_source_candidates(track, candidates)
+        log.info("search returned %d candidates status=ok", len(candidates))
+        log.debug("ranking computed for %d candidates", len(rankings))
         return PreparedTrack(track, candidates, rankings)
 
     def complete(
@@ -216,20 +236,35 @@ class TrackResolver:
             if stage_callback is not None:
                 stage_callback(stage)
 
+        log = self._log.with_track(track)
         rejected_urls: list[str] = []
         download_failures = 0
         invalid_downloads: list[str] = []
         uncertain_download: tuple[
             Path, CandidateRanking, SourceValidation, AudioValidation
         ] | None = None
-        for ranking in rankings:
+        for position, ranking in enumerate(rankings, start=1):
             report("validating-source")
             source_validation = validate_source_candidate(track, ranking.candidate)
+            log.info(
+                "stage=validating-source candidate=%d url=%s [%s] score=%.2f source_status=%s",
+                position,
+                ranking.candidate.url,
+                ranking.candidate.source_query or "?",
+                ranking.score,
+                source_validation.status,
+            )
             if source_validation.status == "rejected":
                 rejected_urls.append(ranking.candidate.url)
+                log.warning(
+                    "candidate rejected url=%s reasons=%s",
+                    ranking.candidate.url,
+                    "; ".join(source_validation.reasons) or "no reason given",
+                )
                 continue
 
             report("downloading")
+            log.info("stage=downloading url=%s", ranking.candidate.url)
             downloaded: Path | None = None
             reused_from_cache = False
             if self.cache is not None:
@@ -237,6 +272,7 @@ class TrackResolver:
                 if cached is not None:
                     downloaded = cached
                     reused_from_cache = True
+                    log.info("download reused from cache path=%s", cached)
             if downloaded is None:
                 try:
                     downloaded = self.downloader(
@@ -244,15 +280,29 @@ class TrackResolver:
                     )
                 except (DownloadError, OSError, RuntimeError) as exc:
                     download_failures += 1
+                    log.warning("download failed url=%s error=%s", ranking.candidate.url, exc)
                     continue
+                log.info("download completed path=%s", downloaded)
 
             report("validating-audio")
             audio_validation = validate_downloaded_audio(track, downloaded)
+            log.info(
+                "stage=validating-audio path=%s audio_status=%s reasons=%s",
+                downloaded,
+                audio_validation.status,
+                "; ".join(audio_validation.reasons) or "none",
+            )
             if audio_validation.status == "invalid" or not _is_real_file(downloaded):
+                failure_reason = "downloaded file is not usable"
+                if audio_validation.reasons:
+                    failure_reason = "; ".join(audio_validation.reasons)
+                invalid_downloads.append(failure_reason)
                 if not reused_from_cache and downloaded is not None:
                     _discard_file(downloaded)
-                invalid_downloads.extend(
-                    audio_validation.reasons or ("downloaded file is not usable",)
+                log.warning(
+                    "downloaded audio invalid path=%s reason=%s",
+                    downloaded,
+                    failure_reason,
                 )
                 continue
             if audio_validation.status == "uncertain":
@@ -261,6 +311,11 @@ class TrackResolver:
                     ranking,
                     source_validation,
                     audio_validation,
+                )
+                log.warning(
+                    "downloaded audio unverified path=%s reasons=%s",
+                    downloaded,
+                    "; ".join(audio_validation.reasons) or "no reason given",
                 )
                 continue
 
@@ -275,6 +330,7 @@ class TrackResolver:
                 status="downloaded",
             )
             reasons = ("reused cached download",) if reused_from_cache else ()
+            log.info("resolution status=downloaded url=%s path=%s", ranking.candidate.url, downloaded)
             return TrackResolution(
                 track,
                 "downloaded",
@@ -289,6 +345,12 @@ class TrackResolver:
 
         if uncertain_download is not None:
             downloaded, ranking, source_validation, audio_validation = uncertain_download
+            log.warning(
+                "resolution status=uncertain url=%s path=%s reasons=%s",
+                ranking.candidate.url,
+                downloaded,
+                "; ".join(audio_validation.reasons) or "downloaded audio is unverified",
+            )
             return TrackResolution(
                 track,
                 "uncertain",
@@ -302,6 +364,10 @@ class TrackResolver:
             )
 
         if invalid_downloads:
+            log.error(
+                "resolution status=failed reasons=all downloaded candidates failed audio validation; %s",
+                "; ".join(invalid_downloads),
+            )
             return TrackResolution(
                 track,
                 "failed",
@@ -314,6 +380,10 @@ class TrackResolver:
             )
 
         if download_failures:
+            log.error(
+                "resolution status=failed reasons=%d download attempt(s) failed",
+                download_failures,
+            )
             return TrackResolution(
                 track,
                 "failed",
@@ -322,6 +392,9 @@ class TrackResolver:
                 reasons=(f"{download_failures} download attempt(s) failed",),
             )
 
+        log.error(
+            "resolution status=rejected reasons=no candidate passed source validation"
+        )
         return TrackResolution(
             track,
             "rejected",

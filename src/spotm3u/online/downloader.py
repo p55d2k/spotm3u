@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
+from ..log import track_identifier
 from ..models import Track
 from .audio_validation import validate_downloaded_audio
+
+logger = logging.getLogger(__name__)
 
 # Per-output-path lock so concurrent downloads targeting the same local file
 # (same track duplicate or explicit overwrite) serialize rather than corrupt.
@@ -66,6 +70,12 @@ def download_track(
             )
         except TimeoutError as exc:
             _prune_partial(output_path)
+            logger.warning(
+                "download track=%s url=%s status=failed reason=timeout %.0fs",
+                track_identifier(track),
+                source_url,
+                timeout,
+            )
             raise DownloadError(
                 f"download timed out after {timeout:.0f}s: {output_path.name}"
             ) from exc
@@ -209,17 +219,40 @@ def _download_to(
             result = ydl.download([source_url])
     except Exception as exc:
         _prune_partial(output_path)
+        logger.warning(
+            "download track=%s url=%s status=failed reason=%s",
+            track_identifier(track),
+            source_url,
+            exc,
+        )
         raise DownloadError(f"download failed for {source_url}") from exc
 
     if result not in (None, 0):
         _prune_partial(output_path)
+        logger.warning(
+            "download track=%s url=%s status=failed reason=exit code %s",
+            track_identifier(track),
+            source_url,
+            result,
+        )
         raise DownloadError(f"download failed for {source_url} (exit code {result})")
     if not _is_complete_mp3(output_path, destination):
         _prune_partial(output_path)
+        logger.warning(
+            "download track=%s url=%s status=failed reason=no complete mp3",
+            track_identifier(track),
+            source_url,
+        )
         raise DownloadError(f"download did not produce a complete MP3: {output_path.name}")
     validation = validate_downloaded_audio(track, output_path)
     if validation.status == "invalid":
         _prune_partial(output_path)
+        logger.warning(
+            "download track=%s url=%s status=failed reason=audio invalid: %s",
+            track_identifier(track),
+            source_url,
+            ", ".join(validation.reasons),
+        )
         raise DownloadError(
             f"downloaded audio is invalid: {', '.join(validation.reasons)}"
         )
@@ -228,6 +261,12 @@ def _download_to(
     except DownloadError:
         _prune_partial(output_path)
         raise
+    logger.info(
+        "download track=%s url=%s status=ok path=%s",
+        track_identifier(track),
+        source_url,
+        output_path,
+    )
     return output_path
 
 
