@@ -37,7 +37,6 @@
                 {{ playlist.track_count if playlist.track_count is not none else playlist.tracks|length }}
                 track{{ '' if (playlist.track_count if playlist.track_count is not none else playlist.tracks|length) == 1 else 's' }}
               </span>
-              <small>Choose this playlist to download</small>
             </label>
           {% endfor %}
       </div>
@@ -47,7 +46,6 @@
       <p role="status">The export did not contain any playlists.</p>
       {% endif %}
       <p class="page-note">Playlists with more than 50 songs can take a while to finish. You can leave this tab open while spotm3u works.</p>
-      <p><a class="secondary-link" href="{{ url_for('index') }}">Upload another ZIP</a></p>
     </main>
     <script>
       const playlistForm = document.getElementById("batch-form");
@@ -74,6 +72,22 @@
       document.getElementById("download-all").addEventListener("click", () => {
         checks.forEach((check) => { check.checked = true; });
         playlistForm.requestSubmit();
+      });
+      playlistForm.addEventListener("submit", (event) => {
+        const selected = checks.filter((check) => check.checked);
+        if (selected.length === 1) {
+          event.preventDefault();
+          const form = document.createElement("form");
+          form.method = "post";
+          form.action = "{{ url_for('select_playlist', job_id=job_id) }}";
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "playlist_id";
+          input.value = selected[0].value;
+          form.appendChild(input);
+          document.body.appendChild(form);
+          form.submit();
+        }
       });
       search.addEventListener("input", () => {
         const query = search.value.trim().toLowerCase();

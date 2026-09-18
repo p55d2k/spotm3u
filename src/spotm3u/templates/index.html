@@ -39,22 +39,29 @@
         {% if error %}
         <p class="error" role="alert">{{ error }}</p>
         {% endif %}
-        <label for="export-file">Spotify playlist export ZIP</label>
-        <input
-          id="export-file"
-          name="file"
-          type="file"
-          accept=".zip,application/zip"
-          required
-        >
-        <p class="field-help">ZIP files from Exportify are supported. Large playlists may take a while; keep this tab open while spotm3u works.</p>
+        <label class="upload-zone" for="export-file">
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <span class="upload-title">Choose your Spotify playlist export</span>
+          <span class="upload-filename" id="upload-filename">ZIP file from Exportify · up to your configured upload limit</span>
+          <input
+            id="export-file"
+            name="file"
+            type="file"
+            accept=".zip,application/zip"
+            required
+          >
+        </label>
+        <p class="field-help">Large playlists may take a while; keep this tab open while spotm3u works.</p>
         <button type="submit" id="upload-button">Upload playlist export</button>
       </form>
     </main>
     <script>
       document.getElementById("export-file").addEventListener("change", (event) => {
         const file = event.target.files[0];
-        if (file) document.getElementById("upload-button").textContent = "Upload " + file.name;
+        if (file) {
+          document.getElementById("upload-filename").textContent = file.name;
+          document.getElementById("upload-button").textContent = "Upload playlist export";
+        }
       });
       document.getElementById("upload-form").addEventListener("submit", () => {
         const button = document.getElementById("upload-button");

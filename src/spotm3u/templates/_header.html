@@ -8,6 +8,44 @@
     <span data-theme-label>Dark mode</span>
   </button>
 </header>
+{% set endpoint = request.endpoint or "index" %}
+{% if workflow_stage is defined %}
+  {% set current_stage = workflow_stage %}
+{% elif endpoint in ("index", "upload") %}
+  {% set current_stage = 1 %}
+{% elif endpoint in ("playlists", "select_playlist", "select_playlists_batch") %}
+  {% set current_stage = 2 %}
+{% elif endpoint in ("processing", "start_processing", "processing_status", "batch_processing", "start_batch_processing", "batch_processing_status") %}
+  {% set current_stage = 3 %}
+{% else %}
+  {% set current_stage = 4 %}
+{% endif %}
+<nav class="workflow" aria-label="Conversion progress" data-current-stage="{{ current_stage }}">
+  {% for number, name in [(1, "Upload"), (2, "Choose playlists"), (3, "Convert"), (4, "Done")] %}
+  <div class="workflow-step {{ 'current' if number == current_stage else '' }} {{ 'complete' if number < current_stage else '' }}" {% if number == current_stage %}aria-current="step"{% endif %}>
+    <span class="workflow-number">{{ number }}</span>
+    <span>{{ name }}</span>
+  </div>
+  {% if not loop.last %}<span class="workflow-line {{ 'complete' if number < current_stage else '' }}" aria-hidden="true"></span>{% endif %}
+  {% endfor %}
+</nav>
+{% if endpoint in ("playlists", "select_playlist", "select_playlists_batch") or workflow_stage|default(0) == 2 %}
+<div class="context-nav">
+  <a class="back-link" href="{{ url_for('index') }}">← Cancel and upload a different ZIP</a>
+</div>
+{% elif endpoint in ("processing", "start_processing", "processing_status") %}
+<div class="context-nav">
+  <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">← Back to playlist selection</a>
+</div>
+{% elif endpoint in ("batch_processing", "start_batch_processing", "batch_processing_status") %}
+<div class="context-nav">
+  <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">← Back to playlist selection</a>
+</div>
+{% elif endpoint in ("processing_result", "batch_processing_result") %}
+<div class="context-nav">
+  <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">← Back to playlist selection</a>
+</div>
+{% endif %}
 <script>
   (() => {
     const root = document.documentElement;

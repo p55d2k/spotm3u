@@ -22,8 +22,8 @@
           <div id="bar" class="progress-bar"></div>
         </div>
         <dl class="stats">
+          <div><dt>Finding files</dt><dd id="stat-searched">0</dd></div>
           <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
-          <div><dt>Total tracks</dt><dd id="stat-total">0</dd></div>
           <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
         </dl>
@@ -38,7 +38,7 @@
       const status = document.getElementById("status");
       const bar = document.getElementById("bar");
       const statCompleted = document.getElementById("stat-completed");
-      const statTotal = document.getElementById("stat-total");
+      const statSearched = document.getElementById("stat-searched");
       const statSuccessful = document.getElementById("stat-successful");
       const statFailed = document.getElementById("stat-failed");
       const currentTrack = document.getElementById("current-track");
@@ -64,8 +64,11 @@
         status.textContent = state.status === "completed"
           ? "Batch complete"
           : state.status === "failed" ? "Batch finished with errors" : "Processing playlists";
-        bar.style.width = (state.total ? Math.round(state.completed / state.total * 100) : 0) + "%";
+        const searchProgress = state.total ? state.searched / state.total : 0;
+        const completionProgress = state.total ? state.completed / state.total : 0;
+        bar.style.width = Math.round((searchProgress * 50 + completionProgress * 50)) + "%";
         statCompleted.textContent = state.completed + " / " + state.total;
+        statSearched.textContent = state.searched + " / " + state.total;
         statTotal.textContent = state.total;
         statSuccessful.textContent = state.successful;
         statFailed.textContent = state.failed;
@@ -82,6 +85,7 @@
           heading.textContent = playlist.playlist.name;
           const detail = document.createElement("p");
           detail.textContent = stageLabel(playlist.status) + " · " +
+            playlist.searched + " / " + playlist.playlist.total_tracks + " found · " +
             playlist.completed + " / " + playlist.playlist.total_tracks + " tracks · " +
             playlist.successful + " successful · " + playlist.failed + " failed";
           const trackBar = document.createElement("div");

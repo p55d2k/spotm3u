@@ -11,7 +11,7 @@
     {% include "_header.html" %}
     <main class="card">
       <p class="eyebrow">Step 3 · Processing playlist</p>
-      <h1>{{ playlist_name }}</h1>
+      <h1>Convert "{{ playlist_name }}"</h1>
       <p class="intro">{{ total_tracks }} tracks · You can leave this tab open while spotm3u works.</p>
 
       <form id="start-form" method="post" action="{{ url_for('start_processing', job_id=job_id, playlist_id=playlist_id) }}">
@@ -33,9 +33,7 @@
           <div><dt>Searched</dt><dd id="stat-searched">0</dd></div>
           <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
           <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
-          <div><dt>Downloaded</dt><dd id="stat-downloaded">0</dd></div>
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
-          <div><dt>Ambiguous</dt><dd id="stat-ambiguous">0</dd></div>
         </dl>
         <p id="current-track" class="current-track"></p>
         <p id="job-error" class="error" hidden></p>
@@ -49,10 +47,8 @@
       const statusText = document.getElementById("job-status-text");
       const statCompleted = document.getElementById("stat-completed");
       const statSearched = document.getElementById("stat-searched");
-      const statDownloaded = document.getElementById("stat-downloaded");
       const statSuccessful = document.getElementById("stat-successful");
       const statFailed = document.getElementById("stat-failed");
-      const statAmbiguous = document.getElementById("stat-ambiguous");
       const currentTrackText = document.getElementById("current-track");
       const jobError = document.getElementById("job-error");
       const trackList = document.getElementById("track-list");
@@ -105,9 +101,7 @@
         statCompleted.textContent = state.completed + " / " + total;
         statSearched.textContent = searched + " / " + state.playlist.total_tracks;
         statSuccessful.textContent = state.successful;
-        statDownloaded.textContent = (state.counts && state.counts.downloaded) || 0;
         statFailed.textContent = state.failed;
-        statAmbiguous.textContent = state.ambiguous;
         currentTrackText.textContent = state.current_track
           ? "Current: " + state.current_track.title + " — " + stageLabel(state.current_track.status)
           : "";

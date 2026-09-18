@@ -72,12 +72,13 @@ def create_app(config: dict | None = None) -> Flask:
                 max_archive_entries=app.config["MAX_ARCHIVE_ENTRIES"],
             )
         except UploadError as error:
-            return render_template("index.html", error=str(error)), 400
+            return render_template("index.html", error=str(error), workflow_stage=1), 400
         except (OSError, ValueError):
             app.logger.exception("Unable to store uploaded archive")
             return render_template(
                 "index.html",
                 error="The upload could not be stored. Please try again.",
+                workflow_stage=1,
             ), 500
 
         _sweep_old_jobs(app)
@@ -86,12 +87,13 @@ def create_app(config: dict | None = None) -> Flask:
             playlists = parse_exportify(job.extracted)
         except ExportifyParseError as error:
             app.logger.info("Uploaded archive is not a valid Exportify export: %s", error)
-            return render_template("index.html", error=str(error)), 400
+            return render_template("index.html", error=str(error), workflow_stage=1), 400
         except (OSError, UnicodeError):
             app.logger.exception("Unable to read uploaded Exportify archive")
             return render_template(
                 "index.html",
                 error="The uploaded export could not be read. Please try again.",
+                workflow_stage=1,
             ), 400
 
         session["job_id"] = job.job_id
@@ -99,6 +101,7 @@ def create_app(config: dict | None = None) -> Flask:
             "playlists.html",
             job_id=job.job_id,
             playlists=playlists,
+            workflow_stage=2,
         ), 201
 
     @app.get("/playlists/<job_id>")
@@ -498,6 +501,7 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
     states = [job.as_dict() for job in jobs]
     total = sum(int(state["playlist"]["total_tracks"]) for state in states)
     completed = sum(int(state["completed"]) for state in states)
+    searched = sum(int(state["searched"]) for state in states)
     return {
         "status": (
             "completed" if states and all(state["status"] == "completed" for state in states)
@@ -505,6 +509,7 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
             else "running"
         ),
         "completed": completed,
+        "searched": searched,
         "total": total,
         "successful": sum(int(state["successful"]) for state in states),
         "failed": sum(int(state["failed"]) for state in states),

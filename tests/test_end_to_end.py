@@ -150,7 +150,6 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert b"Successfully resolved" in resp.data
     assert b"Local matches" in resp.data
-    assert b"Downloaded" in resp.data
     assert b"Missing" in resp.data
     assert b"Total tracks: 3" in resp.data
 

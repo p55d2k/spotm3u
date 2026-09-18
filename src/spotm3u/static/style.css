@@ -39,6 +39,7 @@
   --selected: #193b70;
   --control: #263447;
   --track: #2a3748;
+  --stat-line: #334155;
 }
 
 :root {
@@ -46,6 +47,7 @@
   --selected: #eff6ff;
   --control: #eef3fb;
   --track: #e9eef5;
+  --stat-line: #edf0f4;
 }
 
 * { box-sizing: border-box; }
@@ -72,7 +74,7 @@ body::before {
 main {
   margin: 0 auto;
   max-width: 58rem;
-  padding: 4.5rem 1.25rem 4rem;
+  padding: 2.75rem 1.25rem 2.5rem;
 }
 
 main.card {
@@ -80,16 +82,16 @@ main.card {
   border: 1px solid var(--line);
   border-radius: 24px;
   box-shadow: 0 24px 70px rgb(16 24 40 / 9%);
-  margin-top: 3.5rem;
+  margin-top: 2.25rem;
   margin-bottom: 3.5rem;
-  padding: clamp(1.35rem, 5vw, 3.25rem);
+  padding: clamp(1.25rem, 3.5vw, 2.25rem);
 }
 
 .site-header {
   align-items: center;
   display: flex;
   justify-content: space-between;
-  margin: 1.25rem auto 0;
+  margin: 1rem auto 0;
   max-width: 58rem;
   padding: 0 1.25rem;
 }
@@ -132,24 +134,85 @@ main.card {
   box-shadow: none;
 }
 
-main.card::before {
-  background: var(--blue);
-  border-radius: 999px;
-  content: "";
-  display: block;
-  height: 4px;
-  margin: -2.25rem auto 2rem;
-  width: 3rem;
-}
+
 
 .eyebrow {
   color: var(--blue);
   font-size: 0.73rem;
   font-weight: 800;
   letter-spacing: 0.11em;
-  margin: 0 0 0.7rem;
+  margin: 0 0 0.4rem;
   text-transform: uppercase;
 }
+
+.workflow {
+  align-items: center;
+  display: flex;
+  margin: 1rem auto 0;
+  max-width: 58rem;
+  padding: 0 1.25rem;
+}
+
+.workflow-step {
+  align-items: center;
+  color: var(--faint);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.workflow-step.current,
+.workflow-step.complete { color: var(--blue); }
+
+.workflow-number {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 0.7rem;
+  height: 1.5rem;
+  justify-content: center;
+  width: 1.5rem;
+}
+
+.workflow-step.current .workflow-number {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.workflow-step.complete .workflow-number {
+  background: var(--blue-soft);
+  border-color: var(--blue-soft);
+}
+
+.workflow-line {
+  background: var(--line);
+  flex: 1 1 auto;
+  height: 1px;
+  margin: 0 0.65rem;
+}
+
+.workflow-line.complete { background: var(--blue); }
+
+.context-nav {
+  margin: 0.75rem auto 0;
+  max-width: 58rem;
+  padding: 0 1.25rem;
+}
+
+.back-link {
+  color: var(--muted);
+  display: inline-block;
+  font-size: 0.9rem;
+  margin-top: 0;
+  text-decoration: none;
+}
+
+.back-link:hover { color: var(--blue); }
 
 h1 {
   font-size: clamp(2rem, 5vw, 3.35rem);
@@ -162,14 +225,14 @@ h1 {
 h2 {
   font-size: 1.05rem;
   letter-spacing: -0.02em;
-  margin: 2.25rem 0 1rem;
+  margin: 1.25rem 0 0.65rem;
 }
 
 .intro {
   color: var(--muted);
   font-size: 1.05rem;
   line-height: 1.65;
-  margin: 1rem 0 2.25rem;
+  margin: 0.6rem 0 1.25rem;
   max-width: 48rem;
 }
 
@@ -214,8 +277,8 @@ form {
   border-top: 1px solid var(--line);
   display: grid;
   gap: 0.75rem;
-  margin-top: 2.25rem;
-  padding-top: 1.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
 }
 
 label { font-weight: 700; }
@@ -231,6 +294,50 @@ input[type="search"] {
   padding: 0.75rem 0.9rem;
   width: 100%;
 }
+
+input[type="file"] { 
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
+}
+
+.upload-zone {
+  align-items: center;
+  background: var(--input);
+  border: 1px dashed #9dbcf3;
+  border-radius: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1.2rem;
+  text-align: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.upload-zone:hover,
+.upload-zone:focus-within {
+  background: var(--hover);
+  border-color: var(--blue);
+}
+
+.upload-icon {
+  align-items: center;
+  background: var(--blue-soft);
+  border-radius: 50%;
+  color: var(--blue);
+  display: inline-flex;
+  font-size: 1.25rem;
+  font-weight: 800;
+  height: 2.2rem;
+  justify-content: center;
+  width: 2.2rem;
+}
+
+.upload-title { font-weight: 750; }
+.upload-filename { color: var(--muted); font-size: 0.82rem; }
 
 input[type="file"]:hover,
 input[type="search"]:focus {
@@ -289,8 +396,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 
 .playlist-toolbar {
   border-bottom: 1px solid var(--line);
-  margin-top: 2.25rem;
-  padding-bottom: 1.25rem;
+  margin-top: 1rem;
+  padding-bottom: 0.75rem;
 }
 
 .playlist-toolbar label { display: block; margin-bottom: 0.5rem; }
@@ -299,7 +406,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .playlist-list {
   display: grid;
   gap: 0.65rem;
-  margin: 1rem 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0.65rem 0;
 }
 
 .playlist-card {
@@ -334,11 +442,11 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .playlist-card span, .playlist-card small { color: var(--muted); font-size: 0.82rem; grid-column: 2; }
 .playlist-card small { grid-column: 3; grid-row: 1 / span 2; }
 
-.selection-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.55rem; margin: 1rem 0; }
+.selection-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.65rem 0; }
 .selection-actions button:not(:last-child) { background: var(--control); color: var(--ink); }
 .selection-actions button:not(:last-child):hover { background: var(--hover); box-shadow: none; }
 
-.progress { margin-top: 1.75rem; }
+.progress { margin-top: 1rem; }
 .status-line { font-weight: 750; margin: 0 0 0.65rem; }
 .progress-track { background: var(--track); border-radius: 999px; height: 0.7rem; overflow: hidden; }
 .progress-bar { background: linear-gradient(90deg, var(--blue), #60a5fa); height: 100%; transition: width 0.4s ease; width: 0; }
@@ -347,28 +455,28 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   display: grid;
   gap: 0.7rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 1rem 0 0;
+  margin: 0.65rem 0 0;
   padding: 0;
 }
 
-.stats div { background: var(--input); border: 1px solid #edf0f4; border-radius: 12px; padding: 0.75rem 0.85rem; }
+.stats div { background: var(--input); border: 1px solid var(--stat-line); border-radius: 12px; padding: 0.75rem 0.85rem; }
 .stats dt { color: var(--muted); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
 .stats dd { font-size: 1.2rem; font-weight: 750; margin: 0.25rem 0 0; }
-.current-track { color: var(--muted); margin: 1rem 0 0; }
+.current-track { color: var(--muted); margin: 0.65rem 0 0; }
 
-.batch-playlists { display: grid; gap: 0.9rem; margin-top: 1.5rem; }
+.batch-playlists { display: grid; gap: 0.6rem; margin-top: 0.9rem; }
 .batch-playlist { border: 1px solid var(--line); border-radius: 14px; padding: 1rem; }
 .batch-playlist.active { border-color: var(--blue); box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }
 .batch-playlist h2 { margin: 0; }
 .batch-playlist p { color: var(--muted); margin: 0.5rem 0; }
 
-.download { margin: 1.25rem 0; }
+.download { margin: 0.75rem 0; }
 .download a { color: var(--blue); font-weight: 750; }
 
 .track-list {
   counter-reset: track;
   list-style: none;
-  margin: 1.5rem 0 0;
+  margin: 0.9rem 0 0;
   max-height: 20rem;
   overflow-y: auto;
   padding-left: 0;
@@ -383,10 +491,14 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .track-ambiguous { color: var(--amber); }
 
 @media (max-width: 38rem) {
-  main { padding: 2rem 0.75rem 2.5rem; }
-  main.card { margin-top: 1.5rem; margin-bottom: 2.5rem; padding: 1.25rem; }
-  main.card::before { margin-top: -0.25rem; }
+  main { padding: 1.5rem 0.75rem 1.5rem; }
+  main.card { margin-top: 1rem; margin-bottom: 1.5rem; padding: 1.1rem; }
+  .workflow { margin-top: 0.85rem; overflow-x: auto; padding-bottom: 0.15rem; }
+  .context-nav { margin-top: 0.55rem; padding: 0 0.75rem; }
+  .workflow-step { font-size: 0.7rem; }
+  .workflow-line { margin: 0 0.35rem; }
   .playlist-card { grid-template-columns: 1.3rem minmax(0, 1fr); }
   .playlist-card small { grid-column: 2; grid-row: auto; }
   .selection-actions button { flex: 1 1 auto; }
+  .playlist-list { grid-template-columns: 1fr; }
 }

@@ -399,7 +399,6 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert b"Local matches" in response.data
-    assert b"Downloaded" in response.data
     assert b"Successfully resolved" in response.data
     assert b"Total tracks: 1" in response.data
     assert f"/processing/{job_id}/1/playlist.m3u".encode() in response.data
