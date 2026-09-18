@@ -1,27 +1,23 @@
 # spotm3u
 
 `spotm3u` is a local Python CLI for turning Spotify playlist metadata into
-portable `.m3u` playlists. It is designed around the normal Spotify website
-and a local music library; it does not use the Spotify Web API as a core
-dependency and does not handle Spotify passwords.
+portable `.m3u` playlists. It works with Spotify Free and does not use the
+Spotify Web API or require Spotify passwords.
 
-The reusable backend foundation includes generic playlist and track models,
-text normalization, local audio resolution, and UTF-8 M3U writing. Spotify
-browser automation remains isolated under `spotm3u.spotify` for compatibility,
-but is not started by the CLI workflow.
+The user exports their playlists through Exportify, downloads the ZIP, and
+uploads it to the Flask web app. The app matches tracks against the local music
+library and downloads missing tracks from online sources using yt-dlp.
 
 ## Requirements
 
 - Python 3.13+
 - [`uv`](https://docs.astral.sh/uv/)
-- Playwright's Chromium browser (installed separately after dependencies)
 
 ## Setup
 
 ```bash
 uv venv
 uv sync
-uv run playwright install chromium
 uv run pre-commit install
 ```
 
@@ -33,9 +29,7 @@ uv run spotm3u --help
 uv run spotm3u --version
 ```
 
-`spotm3u` currently reports that the reusable backend is available. Browser
-session data, when used directly through the isolated Spotify modules, remains
-local-only in `.browser-data/` and must not be copied or committed.
+`spotm3u` reports that the reusable backend is available.
 
 The Flask web app can be started with:
 
@@ -43,7 +37,7 @@ The Flask web app can be started with:
 uv run spotm3u-web
 ```
 
-Open `http://127.0.0.1:5000/` to view the web app homepage.
+Open `http://127.0.0.1:5001/` to view the web app homepage.
 
 The installed command can also be used directly after activating the uv
 environment:
