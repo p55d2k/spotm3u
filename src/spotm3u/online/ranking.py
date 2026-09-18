@@ -43,6 +43,7 @@ _VERSION_KEYS = (
     "concert",
     "acoustic",
     "instrumental",
+    "vocal",
     "radio edit",
     "extended",
     "deluxe",
@@ -125,6 +126,8 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     candidate_core, candidate_versions = split_title(candidate.title)
     candidate_text = _candidate_text(candidate)
     profile = source_profile(candidate)
+    requested_instrumental = _is_instrumental_title(track.title)
+    requested_vocal = _is_vocal_title(track.title)
     requested_artists = _artist_keys(track)
 
     # Strip the requested artist's name from candidate-title cores so that
@@ -215,7 +218,21 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     source_label = quality_label(profile.quality)
     reasons.append(f"source quality: {source_label}")
 
-    version_score = 5.0 if requested_versions and requested_versions <= candidate_versions else 0.0
+    version_score = 0.0
+    if requested_versions and requested_versions <= candidate_versions:
+        version_score += 5.0
+    if requested_instrumental:
+        if profile.instrumental:
+            version_score += 12.0
+            reasons.append("instrumental version matches")
+        elif profile.vocal:
+            version_score -= 20.0
+            reasons.append("vocal version conflicts with instrumental request")
+        else:
+            reasons.append("instrumental status unavailable")
+    elif requested_vocal and profile.instrumental:
+        version_score -= 12.0
+        reasons.append("instrumental version conflicts with vocal request")
 
     uploader_score = 3.0 if artist_in_uploader or artist_in_explicit else 0.0
 
@@ -257,7 +274,14 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
         not _requested_allows_marker(track.title, marker, requested_versions)
         for marker in performance_markers
     )
-    version_wrong = conflict is not None and not _requested_has_marker(track.title, conflict)
+    version_wrong = (
+        conflict is not None
+        and not _requested_has_marker(track.title, conflict)
+        and not (requested_instrumental and conflict == "vocal")
+        and not (requested_vocal and conflict == "instrumental")
+    )
+    instrumental_wrong = requested_instrumental and profile.vocal and not profile.instrumental
+    vocal_wrong = requested_vocal and profile.instrumental
     explicit_conflict = bool(
         candidate_artist_text
         and not artist_in_explicit
@@ -286,6 +310,10 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
         rejection_reason = "live/performance version conflicts with requested version"
     elif version_wrong:
         rejection_reason = f"version conflict: {conflict}"
+    elif instrumental_wrong:
+        rejection_reason = "vocal version conflicts with instrumental request"
+    elif vocal_wrong:
+        rejection_reason = "instrumental version conflicts with vocal request"
     elif duration_wrong:
         rejection_reason = "duration differs substantially"
 
@@ -301,10 +329,12 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
         and not music_video
         and not alternate_wrong
         and not performance_wrong
+        and not instrumental_wrong
+        and not vocal_wrong
     ):
         confidence = "strong"
         accepted = True
-    elif not non_music_markers and not alternate_wrong and not performance_wrong and not version_wrong:
+    elif not non_music_markers and not alternate_wrong and not performance_wrong and not version_wrong and not instrumental_wrong and not vocal_wrong:
         confidence = "plausible"
         accepted = True
     else:
@@ -377,6 +407,14 @@ def _requested_allows_marker(
 
 def _requested_has_marker(requested_title: str, marker: str) -> bool:
     return marker in _cjk_text(requested_title)
+
+
+def _is_instrumental_title(title: str | None) -> bool:
+    return bool(re.search(r"\b(?:instrumental(?:\s+version)?|inst\.?|no vocals?)\b", title or "", re.IGNORECASE))
+
+
+def _is_vocal_title(title: str | None) -> bool:
+    return bool(re.search(r"\b(?:vocal(?:\s+version)?|with vocals?)\b", title or "", re.IGNORECASE))
 
 
 def _candidate_text(candidate: SourceCandidate) -> str:

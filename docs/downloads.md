@@ -20,6 +20,7 @@ runs instead of being downloaded again.
 Track
 → source search (all queries aggregated)
 → candidate ranking (identity first, then source quality)
+→ recording/version validation (including instrumental vs vocal)
 → source validation
 → yt-dlp
 → MP3
@@ -102,6 +103,12 @@ retrying forever.
 Successful yt-dlp execution does not automatically mean successful track resolution.
 
 The resulting audio must pass downloaded-audio validation before being included in the final playlist.
+
+Playable cinematic and instrumental files may contain ambience, impacts, or
+vocal-like textures. These are warning-level signals unless there is strong
+evidence of actual spoken dialogue; clear speech remains rejectable. A
+downloaded vocal version of an explicitly instrumental target fails recording
+validation and triggers candidate retry.
 
 ## Cache
 

@@ -43,7 +43,7 @@ _ALTERNATE_RE = re.compile(
 )
 
 _PERFORMANCE_RE = re.compile(
-    r"\b(?:live|现场|演唱会|concert|acoustic|unplugged|instrumental)\b",
+    r"\b(?:live|现场|演唱会|concert|acoustic|unplugged)\b",
     re.IGNORECASE,
 )
 
@@ -72,6 +72,8 @@ class SourceProfile:
     lyrics: bool = False
     audio: bool = False
     official: bool = False
+    instrumental: bool = False
+    vocal: bool = False
     markers: tuple[str, ...] = ()
 
     @property
@@ -82,6 +84,8 @@ class SourceProfile:
 def source_profile(candidate: SourceCandidate) -> SourceProfile:
     """Classify a candidate into identity-independent source-quality tiers."""
     text = _intent_text(candidate)
+    instrumental = bool(re.search(r"\b(?:instrumental|inst\.?|no vocals?)\b", text, re.IGNORECASE))
+    vocal = bool(re.search(r"\b(?:vocal(?:s)?|with vocals?)\b", text, re.IGNORECASE))
     non_music = tuple(dict.fromkeys(marker for marker in _NON_MUSIC_RE.findall(text) if marker))
     alternate = _match(_ALTERNATE_RE, text)
     performance = _match(_PERFORMANCE_RE, text)
@@ -130,6 +134,8 @@ def source_profile(candidate: SourceCandidate) -> SourceProfile:
         lyrics=lyrics,
         audio=audio,
         official=official,
+        instrumental=instrumental,
+        vocal=vocal,
         markers=tuple(markers),
     )
 

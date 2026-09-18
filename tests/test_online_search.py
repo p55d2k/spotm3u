@@ -54,6 +54,15 @@ def test_search_filter_avoids_live_and_remix_indicators() -> None:
     assert all("remix" not in query.lower() for query in queries)
 
 
+def test_instrumental_search_uses_instrumental_variant_without_lyrics() -> None:
+    track = Track(title="Idea 22 Instrumental", artists=["Artist"])
+
+    queries = build_search_queries(track)
+
+    assert any("instrumental" in query.lower() for query in queries)
+    assert not any("lyrics" in query.lower() for query in queries)
+
+
 def test_build_search_queries_handle_punctuation_features_and_version() -> None:
     track = Track(
         title="Can't Stop (Live from Tokyo)",

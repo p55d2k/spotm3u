@@ -77,3 +77,25 @@ def test_ranking_result_is_structured() -> None:
     assert isinstance(result, CandidateRanking)
     assert 0 <= result.score <= 100
     assert result.confidence in {"strong", "plausible", "uncertain", "rejected"}
+
+
+def test_instrumental_request_rejects_vocal_version() -> None:
+    track = Track("Idea 22 Instrumental", ["Artist"], duration_ms=210_000)
+    result = rank_source_candidate(track, candidate("Idea 22 Vocal Version", "Artist"))
+
+    assert result.confidence == "rejected"
+    assert any("vocal version conflicts" in reason for reason in result.reasons)
+
+
+def test_instrumental_candidate_beats_unmarked_candidate() -> None:
+    track = Track("The Beach - Instrumental", ["Artist"], duration_ms=210_000)
+    ranked = rank_source_candidates(
+        track,
+        [
+            candidate("The Beach", "Artist"),
+            candidate("The Beach - Instrumental", "Artist"),
+        ],
+    )
+
+    assert ranked[0].candidate.title.endswith("Instrumental")
+    assert ranked[0].accepted

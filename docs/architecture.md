@@ -36,14 +36,15 @@ For every Track:
 2. If a suitable local file exists, use it.
 3. Otherwise search online sources.
 4. Rank plausible candidates.
-5. Reject only candidates with strong evidence of being unsuitable.
-6. Download a plausible candidate with yt-dlp.
-7. Validate the downloaded audio.
-8. If validation fails, try another plausible candidate when available.
-9. Store the successful local file.
-10. Enrich the resolved MP3 with album artwork and standard ID3 metadata when possible.
-11. Keep the track in a resolved state even if artwork is unavailable.
-12. Pass the resolved file to the M3U writer.
+5. Validate recording/version identity, including instrumental versus vocal.
+6. Reject only candidates with strong evidence of being unsuitable.
+7. Download a plausible candidate with yt-dlp.
+8. Validate the downloaded audio.
+9. If validation fails, try another plausible candidate when available.
+10. Store the successful local file.
+11. Enrich the resolved MP3 with album artwork and standard ID3 metadata when possible.
+12. Keep the track in a resolved state even if artwork is unavailable.
+13. Pass the resolved file to the M3U writer.
 
 ## Important Matching Principle
 

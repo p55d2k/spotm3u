@@ -16,9 +16,12 @@ logger = logging.getLogger(__name__)
 
 AudioValidationStatus = Literal["valid", "invalid", "uncertain"]
 
+_CONTENT_HARD_RE = re.compile(
+    r"\b(?:speech|spoken|dialogue|dialog|interview|podcast|reaction)\b",
+    re.IGNORECASE,
+)
 _CONTENT_WARNING_RE = re.compile(
-    r"\b(?:speech|spoken|dialogue|dialog|interview|movie|scene|trailer|"
-    r"podcast|reaction|sound effects?|soundtrack)\b",
+    r"\b(?:movie|scene|trailer|sound effects?|soundtrack)\b",
     re.IGNORECASE,
 )
 
@@ -92,6 +95,24 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
         return verdict
 
     content_text = " ".join((*metadata.values(), audio_path.stem))
+    hard_content = _CONTENT_HARD_RE.search(content_text)
+    if hard_content:
+        verdict = AudioValidation(
+            audio_path,
+            "invalid",
+            ("strong evidence of spoken dialogue or non-music content",),
+            duration,
+            audio_format,
+            metadata,
+        )
+        logger.warning(
+            "audio validation track=%s path=%s status=invalid reason=%s",
+            track_identifier(track),
+            audio_path,
+            verdict.reasons[0],
+        )
+        return verdict
+
     if _CONTENT_WARNING_RE.search(content_text):
         reasons.append("suspected speech, dialogue, or sound effects")
 
@@ -113,7 +134,7 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
 
     verdict = AudioValidation(
         audio_path,
-        "uncertain" if reasons else "valid",
+        "valid",
         tuple(reasons),
         duration,
         audio_format,

@@ -56,7 +56,7 @@ def test_corrupt_and_missing_files_are_invalid(tmp_path, monkeypatch):
     assert validate_downloaded_audio(TRACK, Path("missing.mp3")).status == "invalid"
 
 
-def test_obvious_speech_is_uncertain(tmp_path, monkeypatch):
+def test_obvious_speech_is_rejected(tmp_path, monkeypatch):
     path = tmp_path / "dialogue.mp3"
     path.write_bytes(b"audio")
     parsed = types.SimpleNamespace(
@@ -67,8 +67,23 @@ def test_obvious_speech_is_uncertain(tmp_path, monkeypatch):
 
     result = validate_downloaded_audio(TRACK, path)
 
-    assert result.status == "uncertain"
-    assert "speech" in result.reasons[0]
+    assert result.status == "invalid"
+    assert "dialogue" in result.reasons[0]
+
+
+def test_cinematic_metadata_warning_does_not_reject_audio(tmp_path, monkeypatch):
+    path = tmp_path / "cornfield-chase.mp3"
+    path.write_bytes(b"audio")
+    parsed = types.SimpleNamespace(
+        info=types.SimpleNamespace(length=200),
+        tags={"genre": ["soundtrack"]},
+    )
+    install_mutagen(monkeypatch, parsed)
+
+    result = validate_downloaded_audio(TRACK, path)
+
+    assert result.status == "valid"
+    assert result.reasons == ("suspected speech, dialogue, or sound effects",)
 
 
 def test_silent_audio_is_invalid(tmp_path, monkeypatch):

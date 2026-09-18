@@ -104,6 +104,12 @@ uploads by other artists.
 
 ## Source-Quality Preference
 
+Recording identity includes explicit version attributes. Instrumental targets
+must prefer instrumental candidates; an explicitly vocal candidate is strong
+contradictory evidence and is rejected. Missing version metadata lowers
+confidence but does not prove a mismatch. Instrumental searches include
+instrumental variants and do not blindly prioritize lyric queries.
+
 Preference order for the **same correct recording** (best first):
 
 1. official audio / audio upload
@@ -296,6 +302,11 @@ A source can have correct title and artist metadata while containing:
 - unrelated speech
 
 Therefore the application must perform downloaded-audio validation after yt-dlp finishes.
+
+Downloaded-audio heuristics distinguish hard evidence of spoken dialogue from
+warning-only musical textures such as soundtrack, ambience, and sound effects.
+Warnings are logged without automatically failing a playable cinematic or
+instrumental file; clear spoken-dialogue evidence remains a hard failure.
 
 ## Downloaded Audio Validation
 

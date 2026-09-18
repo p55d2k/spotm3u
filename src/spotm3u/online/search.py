@@ -31,6 +31,7 @@ DEFAULT_SEARCH_WORKERS = 4
 # other artists (e.g. ``演员`` by Hebe Tien instead of by Joker Xue).
 SEARCH_QUERY_TEMPLATES = (
     "{artist} {title}",
+    "{artist} {title} instrumental",
     "{artist} {title} lyrics",
     "{artist} {title} lyric",
     "{artist} {title} official audio",
@@ -222,6 +223,17 @@ def build_search_queries(track: Track) -> tuple[str, ...]:
 
     if artists:
         templates = SEARCH_QUERY_TEMPLATES
+        if not _is_instrumental_title(title):
+            templates = tuple(
+                template for template in templates
+                if "instrumental" not in template
+            )
+        else:
+            title = _strip_instrumental_marker(title)
+            templates = tuple(
+                template for template in templates
+                if "lyrics" not in template and "lyric" not in template
+            )
         artist_text = " ".join(artists)
     else:
         templates = TITLE_ONLY_QUERY_TEMPLATES
@@ -239,6 +251,24 @@ def build_search_queries(track: Track) -> tuple[str, ...]:
             seen.add(normalized.casefold())
             deduped.append(normalized)
     return tuple(deduped)
+
+
+def _is_instrumental_title(title: str) -> bool:
+    lowered = title.casefold()
+    return (
+        "instrumental" in lowered
+        or "inst." in lowered
+        or lowered.endswith(" inst")
+        or " no vocal" in lowered
+    )
+
+
+def _strip_instrumental_marker(title: str) -> str:
+    parts = [
+        part for part in title.split()
+        if part.casefold().rstrip(".") not in {"instrumental", "inst", "vocals", "vocal"}
+    ]
+    return " ".join(parts)
 
 
 def search_online_sources(track: Track, *, max_results: int = 8) -> tuple[SourceCandidate, ...]:
