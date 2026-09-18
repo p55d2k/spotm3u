@@ -101,3 +101,113 @@ def test_job_id_is_stored_in_session_and_jobs_are_session_scoped(tmp_path) -> No
 
     assert client.get(f"/playlists/{job_id}").status_code == 200
     assert other_client.get(f"/playlists/{job_id}").status_code == 404
+
+
+class NoCandidates:
+    def search(self, track):
+        return ()
+
+
+def _job_directory(tmp_path) -> str:
+    return next(
+        path for path in tmp_path.iterdir() if path.name.startswith("job-")
+    ).name.removeprefix("job-")
+
+
+def _upload_and_select(tmp_path, client, playlist_id: str = "1") -> tuple[str, object]:
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 201
+    job_id = _job_directory(tmp_path)
+    selection = client.post(
+        f"/playlists/{job_id}/select",
+        data={"playlist_id": playlist_id},
+    )
+    assert selection.status_code == 302
+    return job_id, selection
+
+
+def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.post(f"/processing/{job_id}/1/start")
+
+    assert response.status_code == 202
+    state = response.get_json()
+    assert state["job_id"] == job_id
+    assert state["playlist"]["id"] == "1"
+    assert state["playlist"]["total_tracks"] == 1
+    assert state["status"] in {"running", "completed"}
+    assert state["output_dir"] == str(tmp_path / f"job-{job_id}" / "output")
+
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+    status = client.get(f"/processing/{job_id}/1/status")
+    assert status.status_code == 200
+    final = status.get_json()
+    assert final["status"] == "completed"
+    assert final["completed"] == 1
+    assert final["failed"] == 1
+    assert final["tracks"][0]["status"] == "failed"
+    assert final["m3u_path"] == str(tmp_path / f"job-{job_id}" / "output" / "playlist.m3u")
+
+
+def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+    final = client.get(f"/processing/{job_id}/1/status").get_json()
+
+    assert final["status"] == "completed"
+    assert final["successful"] == 1
+    assert final["failed"] == 0
+    m3u_path = tmp_path / f"job-{job_id}" / "output" / "playlist.m3u"
+    assert str(music / "Artist - First.mp3") in m3u_path.read_text(encoding="utf-8")
+
+
+def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    first = client.post(f"/processing/{job_id}/1/start")
+    job = client.application.config["JOB_MANAGER"].get(job_id)
+    job.wait(timeout=5)
+    second = client.post(f"/processing/{job_id}/1/start")
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+
+
+def test_status_endpoint_requires_matching_playlist(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.get(f"/processing/{job_id}/0/status")
+
+    assert response.status_code == 404

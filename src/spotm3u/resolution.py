@@ -19,6 +19,20 @@ ResolutionStatus = Literal[
 ]
 DownloadFunction = Callable[[Track, str, str | Path], Path]
 
+TrackStage = Literal[
+    "queued",
+    "resolving-local",
+    "searching",
+    "validating-source",
+    "downloading",
+    "validating-audio",
+    "complete",
+    "failed",
+    "ambiguous",
+    "skipped",
+]
+TrackStageCallback = Callable[[TrackStage], None]
+
 
 @dataclass(frozen=True)
 class TrackResolution:
@@ -122,8 +136,18 @@ class TrackResolver:
         self.searcher = searcher or OnlineSourceSearcher()
         self.downloader = downloader
 
-    def resolve(self, track: Track) -> TrackResolution:
+    def resolve(
+        self,
+        track: Track,
+        *,
+        stage_callback: TrackStageCallback | None = None,
+    ) -> TrackResolution:
         """Resolve one track without allowing an uncertain result to succeed."""
+        def report(stage: TrackStage) -> None:
+            if stage_callback is not None:
+                stage_callback(stage)
+
+        report("resolving-local")
         local = self.local_resolver.resolve(track)
         if local.resolved is not None and _is_real_file(local.resolved.local_path):
             resolved = ResolvedTrack(
@@ -136,6 +160,7 @@ class TrackResolver:
                 track, "local", resolved=resolved, candidates=(), reasons=("local match",)
             )
 
+        report("searching")
         try:
             candidates = tuple(self.searcher.search(track))
         except (OSError, RuntimeError, ValueError) as exc:
@@ -149,6 +174,7 @@ class TrackResolver:
         rejected_seen = False
         rejected_url: str | None = None
         for ranking in rankings:
+            report("validating-source")
             source_validation = validate_source_candidate(track, ranking.candidate)
             if source_validation.status == "uncertain":
                 ambiguous_seen = True
@@ -158,6 +184,7 @@ class TrackResolver:
                 rejected_url = rejected_url or ranking.candidate.url
                 continue
 
+            report("downloading")
             try:
                 downloaded = self.downloader(
                     track, ranking.candidate.url, self.output_dir
@@ -173,6 +200,7 @@ class TrackResolver:
                     reasons=(f"download failed: {exc}",),
                 )
 
+            report("validating-audio")
             audio_validation = validate_downloaded_audio(track, downloaded)
             if audio_validation.status == "invalid":
                 return TrackResolution(
@@ -249,4 +277,11 @@ def _is_real_file(path: str | Path) -> bool:
         return False
 
 
-__all__ = ["ResolutionReport", "ResolutionStatus", "TrackResolution", "TrackResolver"]
+__all__ = [
+    "ResolutionReport",
+    "ResolutionStatus",
+    "TrackResolution",
+    "TrackResolver",
+    "TrackStage",
+    "TrackStageCallback",
+]

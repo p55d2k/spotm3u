@@ -5,10 +5,15 @@ import re
 import secrets
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
+from .audio.resolver import LocalAudioResolver
 from .exportify import ExportifyParseError, parse_exportify
+from .jobs import JobManager, ProcessingJob
+from .models import Playlist
+from .online import OnlineSourceSearcher
+from .resolution import TrackResolver
 from .uploads import UploadError, default_upload_root, store_upload
 
 
@@ -23,6 +28,8 @@ def create_app(config: dict | None = None) -> Flask:
         MAX_CONTENT_LENGTH=DEFAULT_MAX_UPLOAD_SIZE,
         UPLOAD_ROOT=default_upload_root(),
         SECRET_KEY=secrets.token_hex(32),
+        MUSIC_LIBRARY=str(Path.home() / "Music"),
+        JOB_MANAGER=JobManager(),
     )
     if config:
         app.config.update(config)
@@ -157,6 +164,67 @@ def create_app(config: dict | None = None) -> Flask:
             ), 404
         return render_template("processing.html")
 
+    @app.post("/processing/<job_id>/<playlist_id>/start")
+    def start_processing(job_id: str, playlist_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        if job_directory is None or not _selection_matches(
+            job_directory, playlist_id
+        ):
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 404
+
+        try:
+            playlist_data = parse_exportify(job_directory / "extracted")
+        except (ExportifyParseError, OSError, UnicodeError) as error:
+            app.logger.info("Unable to load playlists for job %s: %s", job_id, error)
+            return render_template(
+                "index.html",
+                error="The playlist selection has expired. Please upload the ZIP again.",
+            ), 400
+
+        playlist_index = _valid_playlist_index(playlist_id, len(playlist_data))
+        if playlist_index is None:
+            return render_template(
+                "index.html",
+                error="That playlist is not available for this upload.",
+            ), 400
+
+        manager = app.config["JOB_MANAGER"]
+        existing = manager.get(job_id)
+        if existing is not None and existing.status != "queued":
+            return jsonify(existing.as_dict()), 409
+
+        playlist = playlist_data[playlist_index]
+        job = _build_processing_job(
+            job_id=job_id,
+            playlist_id=playlist_id,
+            playlist=playlist,
+            output_dir=job_directory / "output",
+            music_library=app.config["MUSIC_LIBRARY"],
+        )
+        manager.submit(job)
+        job.start()
+        return jsonify(job.as_dict()), 202
+
+    @app.get("/processing/<job_id>/<playlist_id>/status")
+    def processing_status(job_id: str, playlist_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        if job_directory is None or not _selection_matches(
+            job_directory, playlist_id
+        ):
+            return jsonify(
+                {"error": "That playlist selection has expired. Please upload the ZIP again."}
+            ), 404
+
+        job = app.config["JOB_MANAGER"].get(job_id)
+        if job is None or job.playlist_id != playlist_id:
+            return jsonify(
+                {"error": "That processing job could not be found."}
+            ), 404
+        return jsonify(job.as_dict())
+
     @app.errorhandler(RequestEntityTooLarge)
     def upload_too_large(_error):
         return render_template(
@@ -210,6 +278,37 @@ def _selection_matches(job_directory: Path, playlist_id: str) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return state.get("selected_playlist_id") == playlist_id
+
+
+def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:
+    if not playlist_id.isdigit():
+        return None
+    index = int(playlist_id)
+    if index < 0 or index >= playlist_count:
+        return None
+    return index
+
+
+def _build_processing_job(
+    *,
+    job_id: str,
+    playlist_id: str,
+    playlist: Playlist,
+    output_dir: Path,
+    music_library: str | Path,
+) -> ProcessingJob:
+    def resolver_factory() -> TrackResolver:
+        local_resolver = LocalAudioResolver(music_library)
+        return TrackResolver(local_resolver, output_dir, searcher=OnlineSourceSearcher())
+
+    return ProcessingJob(
+        job_id=job_id,
+        playlist_id=playlist_id,
+        playlist_name=playlist.name,
+        tracks=playlist.tracks,
+        output_dir=output_dir,
+        resolver_factory=resolver_factory,
+    )
 
 
 def run() -> None:
