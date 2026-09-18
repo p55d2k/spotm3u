@@ -28,8 +28,10 @@
           <div id="progress-bar" class="progress-bar"></div>
         </div>
         <dl class="stats">
+          <div><dt>Searched</dt><dd id="stat-searched">0</dd></div>
           <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
           <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
+          <div><dt>Downloaded</dt><dd id="stat-downloaded">0</dd></div>
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
           <div><dt>Ambiguous</dt><dd id="stat-ambiguous">0</dd></div>
         </dl>
@@ -44,6 +46,8 @@
       const progressBar = document.getElementById("progress-bar");
       const statusText = document.getElementById("job-status-text");
       const statCompleted = document.getElementById("stat-completed");
+      const statSearched = document.getElementById("stat-searched");
+      const statDownloaded = document.getElementById("stat-downloaded");
       const statSuccessful = document.getElementById("stat-successful");
       const statFailed = document.getElementById("stat-failed");
       const statAmbiguous = document.getElementById("stat-ambiguous");
@@ -57,6 +61,7 @@
         queued: "Queued",
         "resolving-local": "Finding local audio",
         searching: "Searching online",
+        searched: "Search complete",
         "validating-source": "Checking source",
         downloading: "Downloading",
         "validating-audio": "Checking downloaded audio",
@@ -88,11 +93,17 @@
       function render(state) {
         progressSection.hidden = false;
         const total = state.playlist.total_tracks || 1;
-        const percent = total > 0 ? Math.round((state.completed / total) * 100) : 0;
+        const searched = state.searched || 0;
+        const percent =
+          total > 0
+            ? Math.round((searched / total) * 50 + (state.completed / total) * 50)
+            : 0;
         progressBar.style.width = percent + "%";
         statusText.textContent = statusLabel(state.status);
-        statCompleted.textContent = state.completed + " / " + state.playlist.total_tracks;
+        statCompleted.textContent = state.completed + " / " + total;
+        statSearched.textContent = searched + " / " + state.playlist.total_tracks;
         statSuccessful.textContent = state.successful;
+        statDownloaded.textContent = (state.counts && state.counts.downloaded) || 0;
         statFailed.textContent = state.failed;
         statAmbiguous.textContent = state.ambiguous;
         currentTrackText.textContent = state.current_track

@@ -175,15 +175,27 @@ button:hover {
 }
 
 .track-list {
+  counter-reset: track;
+  list-style: none;
   margin: 1.5rem 0 0;
   max-height: 18rem;
   overflow-y: auto;
-  padding-left: 1.25rem;
+  padding-left: 0;
 }
 
 .track-list li {
+  counter-increment: track;
   font-size: 0.9rem;
   margin: 0.2rem 0;
+}
+
+.track-list li::before {
+  content: counter(track) ".";
+  color: #52606d;
+  display: inline-block;
+  min-width: 1.5rem;
+  padding-right: 0.6rem;
+  text-align: right;
 }
 
 .track-reason {
@@ -194,6 +206,10 @@ button:hover {
 
 .track-complete {
   color: #1f7a4d;
+}
+
+.track-searched {
+  color: #52606d;
 }
 
 .track-local,
