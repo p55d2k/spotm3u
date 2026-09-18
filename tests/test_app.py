@@ -82,8 +82,10 @@ def test_playlist_selection_shows_clickable_playlist_cards(tmp_path) -> None:
     assert b"class=\"playlist-card\"" in response.data
     assert b"one" in response.data
     assert b"two" in response.data
-    assert response.data.count(b'name="playlist_id"') == 4
-    assert b"Download selected playlists" in response.data
+    assert response.data.count(b'name="playlist_id"') == 2
+    assert b"Download selected" in response.data
+    assert b"Download all" in response.data
+    assert b"Search by playlist name" in response.data
 
 
 def test_playlist_selection_rejects_playlist_outside_job(tmp_path) -> None:

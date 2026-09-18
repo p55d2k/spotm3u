@@ -15,37 +15,32 @@
       {% endif %}
       {% if playlists %}
       <form method="post" action="{{ url_for('select_playlists_batch', job_id=job_id) }}" id="batch-form">
-      <div class="playlist-grid">
+      <div class="playlist-toolbar">
+        <label for="playlist-search">Search playlists</label>
+        <input id="playlist-search" type="search" placeholder="Search by playlist name" autocomplete="off">
+        <div class="selection-actions">
+          <button type="button" id="select-all">Select all</button>
+          <button type="button" id="deselect-all">Deselect all</button>
+          <button type="button" id="download-all">Download all</button>
+          <button type="submit" id="batch-submit" disabled>Download selected</button>
+        </div>
+        <p id="playlist-count" class="field-help" role="status"></p>
+      </div>
+      <div class="playlist-list" id="playlist-list">
           {% for playlist in playlists %}
-            <label class="playlist-card">
+            <label class="playlist-card" data-playlist-name="{{ playlist.name|lower }}">
               <input type="checkbox" name="playlist_id" value="{{ loop.index0 }}">
               <strong>{{ playlist.name }}</strong>
               <span>
                 {{ playlist.track_count if playlist.track_count is not none else playlist.tracks|length }}
                 track{{ '' if (playlist.track_count if playlist.track_count is not none else playlist.tracks|length) == 1 else 's' }}
               </span>
-              <small>Select for batch download</small>
+              <small>Choose this playlist to download</small>
             </label>
           {% endfor %}
       </div>
-      <div class="selection-actions">
-        <button type="button" id="select-all">Select all</button>
-        <button type="button" id="deselect-all">Deselect all</button>
-        <button type="submit" id="batch-submit" disabled>Download selected playlists</button>
-      </div>
       </form>
-      <p>Or open one playlist:</p>
-      <div class="playlist-grid">
-        {% for playlist in playlists %}
-        <form method="post" action="{{ url_for('select_playlist', job_id=job_id) }}">
-          <input type="hidden" name="playlist_id" value="{{ loop.index0 }}">
-          <button class="playlist-card" type="submit">
-            <strong>{{ playlist.name }}</strong>
-            <small>Open playlist</small>
-          </button>
-        </form>
-        {% endfor %}
-      </div>
+      <p id="no-playlists-found" class="page-note" hidden>No playlists match your search.</p>
       {% else %}
       <p role="status">The export did not contain any playlists.</p>
       {% endif %}
@@ -53,10 +48,17 @@
       <p><a class="secondary-link" href="{{ url_for('index') }}">Upload another ZIP</a></p>
     </main>
     <script>
-      const checks = [...document.querySelectorAll('#batch-form input[type="checkbox"]')];
+      const playlistForm = document.getElementById("batch-form");
+      const cards = [...document.querySelectorAll(".playlist-card")];
+      const checks = cards.map((card) => card.querySelector('input[type="checkbox"]'));
       const submit = document.getElementById("batch-submit");
+      const count = document.getElementById("playlist-count");
+      const search = document.getElementById("playlist-search");
+      const noResults = document.getElementById("no-playlists-found");
       function updateBatchAction() {
         submit.disabled = !checks.some((check) => check.checked);
+        count.textContent = checks.filter((check) => check.checked).length + " selected · " +
+          cards.filter((card) => !card.hidden).length + " shown";
       }
       checks.forEach((check) => check.addEventListener("change", updateBatchAction));
       document.getElementById("select-all").addEventListener("click", () => {
@@ -67,6 +69,21 @@
         checks.forEach((check) => { check.checked = false; });
         updateBatchAction();
       });
+      document.getElementById("download-all").addEventListener("click", () => {
+        checks.forEach((check) => { check.checked = true; });
+        playlistForm.requestSubmit();
+      });
+      search.addEventListener("input", () => {
+        const query = search.value.trim().toLowerCase();
+        let visible = 0;
+        cards.forEach((card) => {
+          card.hidden = query !== "" && !card.dataset.playlistName.includes(query);
+          if (!card.hidden) visible += 1;
+        });
+        noResults.hidden = visible !== 0;
+        updateBatchAction();
+      });
+      updateBatchAction();
     </script>
   </body>
 </html>
