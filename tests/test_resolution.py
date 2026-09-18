@@ -3,7 +3,7 @@ from pathlib import Path
 from spotm3u.audio import LocalAudioResolver
 from spotm3u.models import Track
 from spotm3u.online import SourceCandidate
-from spotm3u.resolution import TrackResolver
+from spotm3u.resolution import ResolutionReport, TrackResolver
 
 
 TRACK = Track("Song", ["Artist"], duration_ms=200_000)
@@ -87,5 +87,45 @@ def test_uncertain_sources_never_succeed(tmp_path: Path) -> None:
         downloader=lambda *args: (_ for _ in ()).throw(AssertionError("must not download")),
     ).resolve(TRACK)
 
-    assert result.status == "uncertain"
+    assert result.status == "ambiguous"
     assert not result.successful
+
+
+def test_downloaded_audio_uncertainty_is_not_success(tmp_path: Path, monkeypatch) -> None:
+    downloaded = tmp_path / "output" / "song.mp3"
+    downloaded.parent.mkdir()
+    downloaded.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "spotm3u.resolution.validate_downloaded_audio",
+        lambda track, path: type("Validation", (), {
+            "status": "uncertain",
+            "reasons": ("speech detected",),
+        })(),
+    )
+
+    result = TrackResolver(
+        LocalAudioResolver(tmp_path / "empty"),
+        tmp_path / "output",
+        searcher=Searcher((candidate(),)),
+        downloader=lambda track, url, output: downloaded,
+    ).resolve(TRACK)
+
+    assert result.status == "uncertain"
+    assert result.reason == "speech detected"
+    assert result.as_dict()["local_path"] == str(downloaded)
+    assert not result.successful
+
+
+def test_resolution_report_exposes_all_track_outcomes(tmp_path: Path) -> None:
+    report = TrackResolver(
+        LocalAudioResolver(tmp_path / "empty"),
+        tmp_path / "output",
+        searcher=Searcher(()),
+    ).resolve_report([TRACK, TRACK])
+
+    assert isinstance(report, ResolutionReport)
+    assert report.counts["missing"] == 2
+    assert report.as_dict()["total"] == 2
+    assert report.as_dict()["tracks"][0]["track"]["title"] == "Song"
+    assert report.as_dict()["tracks"][0]["status"] == "missing"
+    assert report.as_dict()["tracks"][0]["reason"]

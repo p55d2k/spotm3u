@@ -27,6 +27,7 @@ class TrackResolution:
     track: Track
     status: ResolutionStatus
     resolved: ResolvedTrack | None = None
+    output_path: Path | None = None
     source_url: str | None = None
     candidates: tuple[SourceCandidate, ...] = ()
     ranking: tuple[CandidateRanking, ...] = ()
@@ -36,11 +37,73 @@ class TrackResolution:
 
     @property
     def local_path(self) -> Path | None:
-        return self.resolved.local_path if self.resolved else None
+        return self.resolved.local_path if self.resolved else self.output_path
 
     @property
     def successful(self) -> bool:
         return self.status in {"local", "downloaded"} and self.resolved is not None
+
+    @property
+    def reason(self) -> str:
+        """Return a concise explanation suitable for a job result."""
+        return "; ".join(self.reasons)
+
+    def as_dict(self) -> dict[str, object]:
+        """Return the result in a JSON-compatible job-result shape."""
+        track = self.track
+        return {
+            "track": {
+                "title": track.title,
+                "artists": list(track.artists),
+                "album": track.album,
+                "duration_ms": track.duration_ms,
+                "spotify_id": track.spotify_id,
+                "spotify_url": track.spotify_url,
+            },
+            "status": self.status,
+            "reason": self.reason,
+            "source_url": self.source_url,
+            "local_path": str(self.local_path) if self.local_path is not None else None,
+        }
+
+
+@dataclass(frozen=True)
+class ResolutionReport:
+    """The complete, ordered result of processing a playlist job."""
+
+    results: tuple[TrackResolution, ...]
+
+    @property
+    def successful(self) -> tuple[TrackResolution, ...]:
+        return tuple(result for result in self.results if result.successful)
+
+    @property
+    def unsuccessful(self) -> tuple[TrackResolution, ...]:
+        return tuple(result for result in self.results if not result.successful)
+
+    @property
+    def counts(self) -> dict[str, int]:
+        return {
+            status: sum(result.status == status for result in self.results)
+            for status in (
+                "local",
+                "downloaded",
+                "missing",
+                "ambiguous",
+                "rejected",
+                "failed",
+                "uncertain",
+            )
+        }
+
+    def as_dict(self) -> dict[str, object]:
+        """Return all per-track outcomes and status counts for the job."""
+        return {
+            "total": len(self.results),
+            "successful": len(self.successful),
+            "counts": self.counts,
+            "tracks": [result.as_dict() for result in self.results],
+        }
 
 
 class TrackResolver:
@@ -82,15 +145,17 @@ class TrackResolver:
             return TrackResolution(track, status, reasons=("no online source candidates",))
 
         rankings = rank_source_candidates(track, candidates)
-        uncertain_seen = False
+        ambiguous_seen = False
         rejected_seen = False
+        rejected_url: str | None = None
         for ranking in rankings:
             source_validation = validate_source_candidate(track, ranking.candidate)
             if source_validation.status == "uncertain":
-                uncertain_seen = True
+                ambiguous_seen = True
                 continue
             if source_validation.status == "rejected":
                 rejected_seen = True
+                rejected_url = rejected_url or ranking.candidate.url
                 continue
 
             try:
@@ -118,6 +183,7 @@ class TrackResolver:
                     ranking=rankings,
                     validation=source_validation,
                     audio_validation=audio_validation,
+                    output_path=downloaded,
                     reasons=audio_validation.reasons,
                 )
             if audio_validation.status == "uncertain" or not _is_real_file(downloaded):
@@ -129,6 +195,7 @@ class TrackResolver:
                     ranking=rankings,
                     validation=source_validation,
                     audio_validation=audio_validation,
+                    output_path=downloaded,
                     reasons=audio_validation.reasons or ("downloaded file is not usable",),
                 )
 
@@ -150,10 +217,17 @@ class TrackResolver:
                 audio_validation=audio_validation,
             )
 
-        status = "uncertain" if uncertain_seen else "rejected" if rejected_seen else "missing"
+        status: ResolutionStatus
+        if rejected_seen:
+            status = "rejected"
+        elif ambiguous_seen:
+            status = "ambiguous"
+        else:
+            status = "missing"
         return TrackResolution(
             track,
             status,
+            source_url=rejected_url,
             candidates=candidates,
             ranking=rankings,
             reasons=("no candidate passed source validation",),
@@ -163,6 +237,10 @@ class TrackResolver:
         """Resolve tracks in playlist order, including intentional duplicates."""
         return [self.resolve(track) for track in tracks]
 
+    def resolve_report(self, tracks: list[Track]) -> ResolutionReport:
+        """Resolve a playlist and retain every outcome as a job report."""
+        return ResolutionReport(tuple(self.resolve_all(tracks)))
+
 
 def _is_real_file(path: str | Path) -> bool:
     try:
@@ -171,4 +249,4 @@ def _is_real_file(path: str | Path) -> bool:
         return False
 
 
-__all__ = ["ResolutionStatus", "TrackResolution", "TrackResolver"]
+__all__ = ["ResolutionReport", "ResolutionStatus", "TrackResolution", "TrackResolver"]
