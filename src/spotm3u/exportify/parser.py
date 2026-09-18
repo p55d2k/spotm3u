@@ -89,7 +89,7 @@ def _parse_csv(filename: str, content: str) -> Playlist:
     except csv.Error as error:
         raise ExportifyParseError(f"{filename} contains malformed CSV data.") from error
 
-    playlist_name = Path(filename).stem
+    playlist_name = _clean_playlist_name(Path(filename).stem)
     return Playlist(id=None, name=playlist_name, track_count=len(tracks), tracks=tracks)
 
 
@@ -135,7 +135,7 @@ def _parse_json(filename: str, content: str) -> list[Playlist]:
         ]
         if len(tracks) != len(raw_tracks):
             raise ExportifyParseError(f"{filename} playlist {index} contains a malformed track.")
-        name = _text(item.get("name") or item.get("playlist_name")) or Path(filename).stem
+        name = _clean_playlist_name(_text(item.get("name") or item.get("playlist_name")) or Path(filename).stem)
         playlist_id = _text(item.get("id") or item.get("playlist_id"))
         playlists.append(
             Playlist(id=playlist_id, name=name, track_count=len(tracks), tracks=tracks)
@@ -195,6 +195,10 @@ def _text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _clean_playlist_name(value: str) -> str:
+    return value.replace("_", " ").strip()
 
 
 def _artists(value: object) -> list[str]:
