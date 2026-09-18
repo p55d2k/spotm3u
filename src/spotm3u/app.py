@@ -162,7 +162,31 @@ def create_app(config: dict | None = None) -> Flask:
                 "index.html",
                 error="That playlist selection has expired. Please upload the ZIP again.",
             ), 404
-        return render_template("processing.html")
+
+        try:
+            playlist_data = parse_exportify(job_directory / "extracted")
+        except (ExportifyParseError, OSError, UnicodeError) as error:
+            app.logger.info("Unable to load playlists for job %s: %s", job_id, error)
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 400
+
+        playlist_index = _valid_playlist_index(playlist_id, len(playlist_data))
+        if playlist_index is None:
+            return render_template(
+                "index.html",
+                error="That playlist is not available for this upload.",
+            ), 400
+
+        playlist = playlist_data[playlist_index]
+        return render_template(
+            "processing.html",
+            job_id=job_id,
+            playlist_id=playlist_id,
+            playlist_name=playlist.name,
+            total_tracks=len(playlist.tracks),
+        )
 
     @app.post("/processing/<job_id>/<playlist_id>/start")
     def start_processing(job_id: str, playlist_id: str):

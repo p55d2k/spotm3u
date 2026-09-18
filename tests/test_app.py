@@ -211,3 +211,17 @@ def test_status_endpoint_requires_matching_playlist(tmp_path, monkeypatch) -> No
     response = client.get(f"/processing/{job_id}/0/status")
 
     assert response.status_code == 404
+
+
+def test_processing_page_shows_playlist_details(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.get(f"/processing/{job_id}/1")
+
+    assert response.status_code == 200
+    assert b"two" in response.data
+    assert b"Total tracks: 1" in response.data
+    assert f"/processing/{job_id}/1/start".encode() in response.data
+    assert b"Start processing" in response.data
+    assert b'action="' + f"/processing/{job_id}/1/start".encode() + b'"' in response.data

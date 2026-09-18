@@ -99,3 +99,92 @@ button:hover {
   white-space: nowrap;
   width: 1px;
 }
+
+[hidden] {
+  display: none !important;
+}
+
+.progress {
+  margin-top: 1.5rem;
+}
+
+.status-line {
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.progress-track {
+  background: #e4e9ef;
+  border-radius: 999px;
+  height: 0.6rem;
+  overflow: hidden;
+}
+
+.progress-bar {
+  background: #1f7a4d;
+  height: 100%;
+  transition: width 0.4s ease;
+  width: 0;
+}
+
+.stats {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.stats div {
+  background: #f5f7fa;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+}
+
+.stats dt {
+  color: #52606d;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stats dd {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0.2rem 0 0;
+}
+
+.current-track {
+  color: #52606d;
+  margin: 1rem 0 0;
+}
+
+.error {
+  color: #a61b1b;
+  font-weight: 700;
+}
+
+.track-list {
+  margin: 1.5rem 0 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  padding-left: 1.25rem;
+}
+
+.track-list li {
+  font-size: 0.9rem;
+  margin: 0.2rem 0;
+}
+
+.track-complete {
+  color: #1f7a4d;
+}
+
+.track-failed {
+  color: #a61b1b;
+}
+
+.track-ambiguous {
+  color: #8a6d00;
+}
