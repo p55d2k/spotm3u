@@ -389,6 +389,7 @@ def _build_processing_job(
         tracks=playlist.tracks,
         output_dir=output_dir,
         resolver_factory=resolver_factory,
+        max_workers=int(app.config.get("RESOLVE_WORKERS", 4)),
     )
 
 

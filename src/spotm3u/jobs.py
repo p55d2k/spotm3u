@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
 
 from .m3u.writer import write_m3u
 from .models import Track
-from .resolution import TrackResolution, TrackResolver, TrackStage
+from .resolution import (
+    PreparedTrack,
+    TrackResolution,
+    TrackResolver,
+    TrackStage,
+)
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 TrackProcessingStatus = Literal[
     "queued",
     "resolving-local",
     "searching",
+    "searched",
     "validating-source",
     "downloading",
     "validating-audio",
@@ -79,6 +86,7 @@ class ProcessingJob:
         tracks: list[Track],
         output_dir: str | Path,
         resolver_factory: ResolverFactory,
+        max_workers: int = 1,
     ) -> None:
         self.job_id = job_id
         self.playlist_id = playlist_id
@@ -86,12 +94,14 @@ class ProcessingJob:
         self.tracks = tuple(tracks)
         self.output_dir = Path(output_dir)
         self.resolver_factory = resolver_factory
+        self.max_workers = max(1, int(max_workers))
         self.manager: JobManager | None = None
 
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._status: JobStatus = "queued"
         self._current_index: int | None = None
+        self._searched: int = 0
         self._error: str | None = None
         self._m3u_path: Path | None = None
         self._track_states: list[TrackJobState] = [
@@ -111,6 +121,11 @@ class ProcessingJob:
                 state.status in {"complete", "failed", "ambiguous"}
                 for state in self._track_states
             )
+
+    @property
+    def searched(self) -> int:
+        with self._lock:
+            return self._searched
 
     @property
     def successful(self) -> int:
@@ -159,15 +174,7 @@ class ProcessingJob:
             resolver = self.resolver_factory()
             output_dir = self.output_dir
             output_dir.mkdir(parents=True, exist_ok=True)
-            results: list[TrackResolution] = []
-            for index, track in enumerate(self.tracks):
-                with self._lock:
-                    self._current_index = index
-                result = resolver.resolve(
-                    track, stage_callback=self._stage_reporter(index)
-                )
-                self._finalize_track(index, result)
-                results.append(result)
+            results = self._resolve_all(resolver)
 
             m3u_path = output_dir / "playlist.m3u"
             write_m3u(m3u_path, results)
@@ -181,6 +188,81 @@ class ProcessingJob:
                 self._error = str(exc)
                 self._status = "failed"
 
+    def _resolve_all(self, resolver: TrackResolver) -> list[TrackResolution]:
+        """Resolve every track, optionally in parallel, keeping playlist order.
+
+        Parallel jobs run a two-phase pipeline: every track is first matched
+        locally, searched, and ranked concurrently (fast), then the tracks that
+        need a download are processed in a second concurrent pass. Searches
+        therefore run ahead while downloads from phase two are still in
+        progress, instead of each worker doing search-and-download in a chunk.
+        """
+        tracks = self.tracks
+        if self.max_workers <= 1 or len(tracks) <= 1:
+            results: list[TrackResolution] = []
+            for index, track in enumerate(tracks):
+                with self._lock:
+                    self._current_index = index
+                result = resolver.resolve(
+                    track, stage_callback=self._stage_reporter(index)
+                )
+                self._finalize_track(index, result)
+                self._mark_searched(index)
+                results.append(result)
+            return results
+
+        phase_one = lambda index, track: resolver.prepare(
+            track, stage_callback=self._stage_reporter(index)
+        )
+        prepared: list[TrackResolution | PreparedTrack | None] = [None] * len(tracks)
+        with ThreadPoolExecutor(
+            max_workers=self.max_workers,
+            thread_name_prefix=f"spotm3u-search-{self.job_id}",
+        ) as pool:
+            future_to_index = {
+                pool.submit(phase_one, index, track): index
+                for index, track in enumerate(tracks)
+            }
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                outcome = future.result()
+                prepared[index] = outcome
+                if isinstance(outcome, PreparedTrack):
+                    self._mark_searched(index, status="searched")
+                else:
+                    self._mark_searched(index)
+
+        results: list[TrackResolution | None] = [None] * len(tracks)
+        download_plans = [
+            (index, plan)
+            for index, plan in enumerate(prepared)
+            if isinstance(plan, PreparedTrack)
+        ]
+        for index, plan in enumerate(prepared):
+            if not isinstance(plan, PreparedTrack):
+                self._finalize_track(index, plan)
+                results[index] = plan
+
+        if download_plans:
+            phase_two = lambda index_plan: resolver.complete(
+                index_plan[1], stage_callback=self._stage_reporter(index_plan[0])
+            )
+            with ThreadPoolExecutor(
+                max_workers=self.max_workers,
+                thread_name_prefix=f"spotm3u-download-{self.job_id}",
+            ) as pool:
+                future_to_index = {
+                    pool.submit(phase_two, index_plan): index_plan[0]
+                    for index_plan in download_plans
+                }
+                for future in as_completed(future_to_index):
+                    index = future_to_index[future]
+                    result = future.result()
+                    self._finalize_track(index, result)
+                    results[index] = result
+
+        return [result for result in results if result is not None]
+
     def _stage_reporter(self, index: int) -> Callable[[TrackStage], None]:
         def report(stage: TrackStage) -> None:
             self._set_track_status(index, stage)
@@ -189,6 +271,7 @@ class ProcessingJob:
 
     def _set_track_status(self, index: int, status: TrackProcessingStatus) -> None:
         with self._lock:
+            self._current_index = index
             current = self._track_states[index]
             self._track_states[index] = TrackJobState(
                 current.index,
@@ -201,9 +284,29 @@ class ProcessingJob:
                 current.resolution,
             )
 
+    def _mark_searched(
+        self, index: int, status: TrackProcessingStatus | None = None
+    ) -> None:
+        with self._lock:
+            self._searched += 1
+            self._current_index = index
+            if status is not None:
+                current = self._track_states[index]
+                self._track_states[index] = TrackJobState(
+                    current.index,
+                    current.title,
+                    current.artists,
+                    status,
+                    current.reason,
+                    current.local_path,
+                    current.source_url,
+                    current.resolution,
+                )
+
     def _finalize_track(self, index: int, result: TrackResolution) -> None:
         status = TRACK_STATUS_TERMINAL.get(result.status, "failed")
         with self._lock:
+            self._current_index = index
             current = self._track_states[index]
             self._track_states[index] = TrackJobState(
                 current.index,
@@ -253,6 +356,7 @@ class ProcessingJob:
                     state.status in {"complete", "failed", "ambiguous"}
                     for state in self._track_states
                 ),
+                "searched": self._searched,
                 "successful": sum(
                     state.status == "complete" for state in self._track_states
                 ),

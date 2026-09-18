@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
 from ..models import Track
 from .audio_validation import validate_downloaded_audio
+
+# Per-output-path lock so concurrent downloads targeting the same local file
+# (same track duplicate or explicit overwrite) serialize rather than corrupt.
+_OUTPUT_LOCKS: dict[str, threading.Lock] = {}
+_OUTPUT_LOCKS_GUARD = threading.Lock()
 
 
 class DownloadError(RuntimeError):
@@ -34,6 +40,29 @@ def download_track(
         raise DownloadError(f"cannot create download directory: {destination}") from exc
 
     output_path = destination / _output_name(track, source_url)
+    with _output_lock(output_path):
+        return _download_to(track, source_url, destination, output_path, quality=quality)
+
+
+def _output_lock(path: Path) -> threading.Lock:
+    """Return a lock shared by all callers writing to the same output file."""
+    key = str(path.resolve())
+    with _OUTPUT_LOCKS_GUARD:
+        lock = _OUTPUT_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _OUTPUT_LOCKS[key] = lock
+        return lock
+
+
+def _download_to(
+    track: Track,
+    source_url: str,
+    destination: Path,
+    output_path: Path,
+    *,
+    quality: str,
+) -> Path:
     output_template = str(output_path.with_suffix(".%(ext)s"))
     try:
         output_path.unlink(missing_ok=True)

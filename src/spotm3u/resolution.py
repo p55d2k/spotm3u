@@ -120,6 +120,20 @@ class ResolutionReport:
         }
 
 
+@dataclass(frozen=True)
+class PreparedTrack:
+    """A track whose local resolution, search, and ranking are complete.
+
+    ``PreparedTrack`` means the track still needs its download phase. Terminal
+    ``TrackResolution`` outcomes are returned instead of a ``PreparedTrack``
+    when no download is needed or possible.
+    """
+
+    track: Track
+    candidates: tuple[SourceCandidate, ...]
+    rankings: tuple[CandidateRanking, ...]
+
+
 class TrackResolver:
     """Resolve tracks locally, then through the complete online pipeline."""
 
@@ -136,13 +150,20 @@ class TrackResolver:
         self.searcher = searcher or OnlineSourceSearcher()
         self.downloader = downloader
 
-    def resolve(
+    def prepare(
         self,
         track: Track,
         *,
         stage_callback: TrackStageCallback | None = None,
-    ) -> TrackResolution:
-        """Resolve one track without allowing an uncertain result to succeed."""
+    ) -> TrackResolution | PreparedTrack:
+        """Run the local match, search, and ranking phases for ``track``.
+
+        This never downloads. Terminal ``TrackResolution`` results (local
+        match, missing, ambiguous, failed search) are returned as-is; tracks
+        with download candidates come back as a :class:`PreparedTrack` for a
+        later :meth:`complete` call. Splitting the phases lets callers search
+        every track up front while later downloads are still running.
+        """
         def report(stage: TrackStage) -> None:
             if stage_callback is not None:
                 stage_callback(stage)
@@ -170,6 +191,28 @@ class TrackResolver:
             return TrackResolution(track, status, reasons=("no online source candidates",))
 
         rankings = rank_source_candidates(track, candidates)
+        return PreparedTrack(track, candidates, rankings)
+
+    def complete(
+        self,
+        prepared: PreparedTrack,
+        *,
+        stage_callback: TrackStageCallback | None = None,
+    ) -> TrackResolution:
+        """Download and validate the best candidate for a prepared track.
+
+        ``prepared`` is a :class:`PreparedTrack` returned by :meth:`prepare`.
+        Candidates are tried in ranking order, downloading and validating each
+        until one passes audio validation or every candidate is exhausted.
+        """
+        track = prepared.track
+        candidates = prepared.candidates
+        rankings = prepared.rankings
+
+        def report(stage: TrackStage) -> None:
+            if stage_callback is not None:
+                stage_callback(stage)
+
         rejected_urls: list[str] = []
         download_failures = 0
         invalid_downloads: list[str] = []
@@ -270,6 +313,18 @@ class TrackResolver:
             reasons=("no candidate passed source validation",),
         )
 
+    def resolve(
+        self,
+        track: Track,
+        *,
+        stage_callback: TrackStageCallback | None = None,
+    ) -> TrackResolution:
+        """Resolve one track without allowing an uncertain result to succeed."""
+        prepared = self.prepare(track, stage_callback=stage_callback)
+        if not isinstance(prepared, PreparedTrack):
+            return prepared
+        return self.complete(prepared, stage_callback=stage_callback)
+
     def resolve_all(self, tracks: list[Track]) -> list[TrackResolution]:
         """Resolve tracks in playlist order, including intentional duplicates."""
         return [self.resolve(track) for track in tracks]
@@ -287,6 +342,7 @@ def _is_real_file(path: str | Path) -> bool:
 
 
 __all__ = [
+    "PreparedTrack",
     "ResolutionReport",
     "ResolutionStatus",
     "TrackResolution",
