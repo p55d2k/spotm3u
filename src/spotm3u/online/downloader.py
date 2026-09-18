@@ -26,6 +26,9 @@ def download_track(
     output_dir: str | Path,
     *,
     quality: str = "192",
+    retries: int = 5,
+    fragment_retries: int = 5,
+    socket_timeout: int = 30,
 ) -> Path:
     """Download ``source_url`` and return its verified local MP3 path.
 
@@ -41,7 +44,16 @@ def download_track(
 
     output_path = destination / _output_name(track, source_url)
     with _output_lock(output_path):
-        return _download_to(track, source_url, destination, output_path, quality=quality)
+        return _download_to(
+            track,
+            source_url,
+            destination,
+            output_path,
+            quality=quality,
+            retries=retries,
+            fragment_retries=fragment_retries,
+            socket_timeout=socket_timeout,
+        )
 
 
 def _output_lock(path: Path) -> threading.Lock:
@@ -62,6 +74,9 @@ def _download_to(
     output_path: Path,
     *,
     quality: str,
+    retries: int,
+    fragment_retries: int,
+    socket_timeout: int,
 ) -> Path:
     output_template = str(output_path.with_suffix(".%(ext)s"))
     try:
@@ -87,9 +102,9 @@ def _download_to(
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "retries": 5,
-        "fragment_retries": 5,
-        "socket_timeout": 30,
+        "retries": retries,
+        "fragment_retries": fragment_retries,
+        "socket_timeout": socket_timeout,
         "ignoreerrors": False,
         "continuedl": False,
         "overwrites": True,

@@ -3,35 +3,46 @@
 import json
 import re
 import secrets
+from functools import partial
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .audio.resolver import LocalAudioResolver
+from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, ProcessingJob
 from .models import Playlist
 from .normalization import sanitize_filename_component
-from .online import OnlineSourceSearcher
+from .online import OnlineSourceSearcher, download_track
 from .resolution import TrackResolver
 from .uploads import UploadError, default_upload_root, store_upload
 
 
-DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def create_app(config: dict | None = None) -> Flask:
-    """Create and configure the Flask application."""
+    """Create and configure the Flask application.
+
+    An optional ``config.toml`` is loaded first (see ``spotm3u.config``);
+    anything passed in ``config`` overrides it. No configuration file is
+    required and every value keeps a built-in default.
+    """
     app = Flask(__name__)
+    settings = load_user_config().to_app_config()
     app.config.from_mapping(
-        MAX_CONTENT_LENGTH=DEFAULT_MAX_UPLOAD_SIZE,
-        UPLOAD_ROOT=default_upload_root(),
-        SECRET_KEY=secrets.token_hex(32),
-        MUSIC_LIBRARY=str(Path.home() / "Music"),
-        JOB_MANAGER=JobManager(),
+        {
+            "SECRET_KEY": secrets.token_hex(32),
+            "JOB_MANAGER": JobManager(),
+            **settings,
+        }
     )
+    if not app.config.get("UPLOAD_ROOT"):
+        app.config["UPLOAD_ROOT"] = default_upload_root()
+    if not app.config.get("MUSIC_LIBRARY"):
+        app.config["MUSIC_LIBRARY"] = str(Path.home() / "Music")
     if config:
         app.config.update(config)
 
@@ -378,9 +389,29 @@ def _build_processing_job(
     output_dir: Path,
     music_library: str | Path,
 ) -> ProcessingJob:
+    max_results = int(app.config.get("SEARCH_MAX_RESULTS", 8))
+    max_search_workers = int(app.config.get("SEARCH_MAX_WORKERS", 4))
+    quality = str(app.config.get("DOWNLOAD_QUALITY", "192"))
+    retries = int(app.config.get("DOWNLOAD_RETRIES", 5))
+    fragment_retries = int(app.config.get("DOWNLOAD_FRAGMENT_RETRIES", 5))
+    socket_timeout = int(app.config.get("DOWNLOAD_SOCKET_TIMEOUT", 30))
+
     def resolver_factory() -> TrackResolver:
         local_resolver = LocalAudioResolver(music_library)
-        return TrackResolver(local_resolver, output_dir, searcher=OnlineSourceSearcher())
+        searcher = OnlineSourceSearcher(
+            max_results=max_results,
+            max_search_workers=max_search_workers,
+        )
+        downloader = partial(
+            download_track,
+            quality=quality,
+            retries=retries,
+            fragment_retries=fragment_retries,
+            socket_timeout=socket_timeout,
+        )
+        return TrackResolver(
+            local_resolver, output_dir, searcher=searcher, downloader=downloader
+        )
 
     return ProcessingJob(
         job_id=job_id,
@@ -390,9 +421,11 @@ def _build_processing_job(
         output_dir=output_dir,
         resolver_factory=resolver_factory,
         max_workers=int(app.config.get("RESOLVE_WORKERS", 4)),
+        m3u_extended=bool(app.config.get("M3U_EXTENDED", True)),
+        m3u_relative=bool(app.config.get("M3U_RELATIVE", False)),
     )
 
 
 def run() -> None:
     """Run the development web server."""
-    app.run(port=5001, debug=True)
+    app.run(port=app.config.get("PORT", 5001), debug=True)

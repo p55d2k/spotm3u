@@ -133,7 +133,9 @@ def _upload_and_select(tmp_path, client, playlist_id: str = "1") -> tuple[str, o
 def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
     ).test_client()
@@ -166,7 +168,9 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
     ).test_client()
@@ -186,7 +190,9 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
 def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
     ).test_client()
@@ -204,7 +210,9 @@ def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:
 def test_status_endpoint_requires_matching_playlist(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
     ).test_client()
@@ -233,7 +241,9 @@ def test_download_dir_override_respected(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     download_dir = tmp_path / "custom-downloads"
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app(
         {
             "UPLOAD_ROOT": tmp_path,
@@ -257,7 +267,9 @@ def test_download_dir_override_respected(tmp_path, monkeypatch) -> None:
 def test_download_m3u_route_returns_playlist(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -275,7 +287,9 @@ def test_download_m3u_route_returns_playlist(tmp_path, monkeypatch) -> None:
 def test_download_m3u_route_requires_completed_job(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -288,7 +302,9 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
     ).test_client()
@@ -310,7 +326,9 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
 def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
     app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
     client = app.test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
@@ -352,7 +370,7 @@ def test_result_page_exposes_rejected_reasons(tmp_path, monkeypatch) -> None:
             return ()
 
     monkeypatch.setattr(
-        "spotm3u.app.OnlineSourceSearcher", lambda: RejectingCandidates()
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: RejectingCandidates()
     )
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}

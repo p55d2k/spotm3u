@@ -87,6 +87,8 @@ class ProcessingJob:
         output_dir: str | Path,
         resolver_factory: ResolverFactory,
         max_workers: int = 1,
+        m3u_extended: bool = True,
+        m3u_relative: bool = False,
     ) -> None:
         self.job_id = job_id
         self.playlist_id = playlist_id
@@ -95,6 +97,8 @@ class ProcessingJob:
         self.output_dir = Path(output_dir)
         self.resolver_factory = resolver_factory
         self.max_workers = max(1, int(max_workers))
+        self.m3u_extended = m3u_extended
+        self.m3u_relative = m3u_relative
         self.manager: JobManager | None = None
 
         self._lock = threading.Lock()
@@ -177,7 +181,12 @@ class ProcessingJob:
             results = self._resolve_all(resolver)
 
             m3u_path = output_dir / "playlist.m3u"
-            write_m3u(m3u_path, results)
+            write_m3u(
+                m3u_path,
+                results,
+                extended=self.m3u_extended,
+                relative_to=self.output_dir if self.m3u_relative else None,
+            )
             with self._lock:
                 self._m3u_path = m3u_path
                 self._current_index = None

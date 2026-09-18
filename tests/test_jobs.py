@@ -440,3 +440,46 @@ def test_job_parallel_resolution_recovers_when_a_track_raises(tmp_path: Path) ->
     snapshot = job.as_dict()
     assert snapshot["status"] == "failed"
     assert snapshot["error"] == "exploded"
+
+
+def test_job_m3u_options_control_relative_and_extended_output(tmp_path: Path) -> None:
+    tracks = [_track("A")]
+    local_file = tmp_path / "library" / "Artist - A.mp3"
+    local_file.parent.mkdir()
+    local_file.write_bytes(b"audio")
+    output = tmp_path / "output"
+
+    job = ProcessingJob(
+        job_id="m3u-options",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=output,
+        resolver_factory=lambda: FakeResolver(
+            [_resolution(tracks[0], "local", path=local_file)]
+        ),
+        m3u_extended=False,
+        m3u_relative=True,
+    )
+    job.start()
+    job.wait(timeout=5)
+
+    m3u = (output / "playlist.m3u").read_text(encoding="utf-8")
+    assert "#EXTM3U" not in m3u
+    assert "../library/Artist - A.mp3" in m3u
+    assert str(local_file) not in m3u
+
+
+def test_job_m3u_defaults_use_extended_absolute_paths(tmp_path: Path) -> None:
+    tracks = [_track("A")]
+    local_file = tmp_path / "Artist - A.mp3"
+    local_file.write_bytes(b"audio")
+
+    job = _job(tracks, [_resolution(tracks[0], "local", path=local_file)], tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    m3u = (tmp_path / "output" / "playlist.m3u").read_text(encoding="utf-8")
+    assert m3u.startswith("#EXTM3U")
+    assert "#EXTINF:200,Artist - A" in m3u
+    assert str(local_file) in m3u

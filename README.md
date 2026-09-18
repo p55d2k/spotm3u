@@ -53,6 +53,21 @@ source .venv/bin/activate
 spotm3u
 ```
 
+## Configuration
+
+All settings are optional and have built-in defaults. To customize them,
+create a `config.toml` in the directory you launch the app from, or point the
+`SPOTM3U_CONFIG` environment variable at a file:
+
+```bash
+SPOTM3U_CONFIG=~/spotm3u.toml uv run spotm3u-web
+```
+
+See `config.toml` in the repo root for a fully commented example. Configurable
+areas include the port, music library and download directory, upload size
+limit, parallel track resolution, online search result counts, download bitrate
+and retries, and M3U formatting (extended header / relative paths).
+
 ## Tests
 
 ```bash

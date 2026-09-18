@@ -1,0 +1,60 @@
+# spotm3u optional configuration.
+#
+# This file is entirely optional. Every value below already matches the
+# built-in default, so you can delete the file and the app keeps working.
+#
+# The app loads it automatically when it exists in the current working
+# directory. To use a different location, set SPOTM3U_CONFIG to the file path:
+#
+#   SPOTM3U_CONFIG=~/spotm3u.toml uv run spotm3u-web
+#
+# Uncomment a line (and change its value) to customize that setting.
+# Fallback examples are shown next to each setting.
+
+[web]
+# HTTP port used by `spotm3u-web`.
+# port = 5001
+
+# Where uploaded Exportify ZIP jobs are stored temporarily.
+# Defaults to the system temp directory + "spotm3u".
+# upload_root = "/tmp/spotm3u"
+
+# Root folder searched for local audio files when matching tracks.
+# Defaults to ~/Music.
+# music_library = "~/Music"
+
+# Where downloaded MP3s and the generated playlist.m3u are written.
+# Defaults to <music_library>/spotm3u-downloads.
+# download_dir = "~/Music/spotm3u-downloads"
+
+# How many tracks are resolved in parallel (downloads included).
+# resolve_workers = 4
+
+[upload]
+# Maximum accepted ZIP size in bytes (default 50 MiB = 52428800).
+# max_upload_size = 52428800
+
+[search]
+# How many results each online search query returns.
+# max_results = 8
+
+# How many search queries run at once for one track.
+# max_search_workers = 4
+
+[download]
+# MP3 bitrate used by yt-dlp when extracting downloaded audio.
+# audio_quality = "192"
+
+# Download retry counts (total and per fragment) and the network timeout
+# (seconds) used for each download.
+# retries = 5
+# fragment_retries = 5
+# socket_timeout = 30
+
+[m3u]
+# Write an extended M3U (the #EXTM3U header plus #EXTINF metadata lines).
+# extended = true
+
+# Write paths relative to the download directory instead of absolute paths,
+# keeping the playlist portable as long as it stays next to the audio.
+# relative = false
