@@ -17,7 +17,11 @@ Exportify
 → M3U download
 
 The playlist selection page presents each parsed playlist as an independent
-button/card. After a result is available, **Download another playlist**
+button/card. Checkboxes also support Select all, Deselect all, and
+**Download selected playlists**. The batch flow reuses the single-playlist
+resolver, cache, download, and M3U pipeline for every selected playlist while
+sharing resolved audio across the batch. Each playlist receives its own M3U
+download and completion status. After a result is available, **Download another playlist**
 returns to that same selection state for the upload job; the ZIP is not
 uploaded or parsed again. The existing M3U download remains available from
 each result.

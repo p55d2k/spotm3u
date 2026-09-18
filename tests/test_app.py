@@ -82,7 +82,8 @@ def test_playlist_selection_shows_clickable_playlist_cards(tmp_path) -> None:
     assert b"class=\"playlist-card\"" in response.data
     assert b"one" in response.data
     assert b"two" in response.data
-    assert response.data.count(b'name="playlist_id"') == 2
+    assert response.data.count(b'name="playlist_id"') == 4
+    assert b"Download selected playlists" in response.data
 
 
 def test_playlist_selection_rejects_playlist_outside_job(tmp_path) -> None:
@@ -101,6 +102,45 @@ def test_playlist_selection_rejects_playlist_outside_job(tmp_path) -> None:
 
     assert selection.status_code == 400
     assert b"not available for this upload" in selection.data
+
+
+def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    (music / "Artist - Second.mp3").write_bytes(b"audio")
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 201
+    job_id = _job_directory(tmp_path)
+
+    selection = client.post(
+        f"/playlists/{job_id}/batch-select",
+        data={"playlist_id": ["0", "1"]},
+    )
+    assert selection.status_code == 302
+    assert selection.headers["Location"] == f"/processing/{job_id}/batch"
+
+    started = client.post(f"/processing/{job_id}/batch/start")
+    assert started.status_code == 202
+    manager = client.application.config["JOB_MANAGER"]
+    manager.get(job_id, "0").wait(timeout=10)
+    manager.get(job_id, "1").wait(timeout=10)
+
+    status = client.get(f"/processing/{job_id}/batch/status").get_json()
+    assert status["status"] == "completed"
+    assert status["total"] == 2
+    assert len(status["playlists"]) == 2
+    assert client.get(f"/processing/{job_id}/batch/result").status_code == 200
+    assert (music / "spotm3u-downloads" / "playlist-0.m3u").is_file()
+    assert (music / "spotm3u-downloads" / "playlist-1.m3u").is_file()
 
 
 def test_job_id_is_stored_in_session_and_jobs_are_session_scoped(tmp_path) -> None:

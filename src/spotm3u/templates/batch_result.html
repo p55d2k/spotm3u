@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Batch results - Exportify to M3U</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="card">
+      <p class="eyebrow">Batch complete</p>
+      <h1>Playlist results</h1>
+      {% for state in states %}
+      <section class="batch-playlist">
+        <h2>{{ state.playlist.name }}</h2>
+        <p>{{ state.successful }} successful, {{ state.failed }} failed of {{ state.playlist.total_tracks }} tracks.</p>
+        {% if state.m3u_path %}
+        <a href="{{ url_for('download_m3u', job_id=job_id, playlist_id=state.playlist.id) }}">Save playlist (M3U)</a>
+        {% endif %}
+        <a href="{{ url_for('processing_result', job_id=job_id, playlist_id=state.playlist.id) }}">View track details</a>
+      </section>
+      {% endfor %}
+      <p><a href="{{ url_for('playlists', job_id=job_id) }}">Download more playlists</a></p>
+    </main>
+  </body>
+</html>

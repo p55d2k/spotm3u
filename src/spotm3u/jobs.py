@@ -100,6 +100,7 @@ class ProcessingJob:
         timeout: float | None = None,
         m3u_extended: bool = True,
         m3u_relative: bool = False,
+        m3u_filename: str = "playlist.m3u",
     ) -> None:
         self.job_id = job_id
         self.playlist_id = playlist_id
@@ -112,6 +113,7 @@ class ProcessingJob:
         self.timeout = timeout
         self.m3u_extended = m3u_extended
         self.m3u_relative = m3u_relative
+        self.m3u_filename = m3u_filename
         self.manager: JobManager | None = None
 
         self._lock = threading.Lock()
@@ -204,7 +206,7 @@ class ProcessingJob:
             output_dir.mkdir(parents=True, exist_ok=True)
             results = self._resolve_all(resolver)
 
-            m3u_path = output_dir / "playlist.m3u"
+            m3u_path = output_dir / self.m3u_filename
             write_m3u(
                 m3u_path,
                 results,
@@ -466,19 +468,28 @@ class JobManager:
 
     def submit(self, job: ProcessingJob) -> None:
         with self._lock:
-            self._jobs[job.job_id] = job
+            self._jobs[self._key(job.job_id, job.playlist_id)] = job
             job.manager = self
 
-    def get(self, job_id: str) -> ProcessingJob | None:
+    @staticmethod
+    def _key(job_id: str, playlist_id: str) -> str:
+        return f"{job_id}:{playlist_id}"
+
+    def get(self, job_id: str, playlist_id: str | None = None) -> ProcessingJob | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            if playlist_id is not None:
+                return self._jobs.get(self._key(job_id, playlist_id))
+            matches = [
+                job for job in self._jobs.values() if job.job_id == job_id
+            ]
+            return matches[0] if len(matches) == 1 else None
 
     def active_job_ids(self) -> set[str]:
         """Return ids of jobs that are still queued or running."""
         with self._lock:
             return {
-                job_id
-                for job_id, job in self._jobs.items()
+                job.job_id
+                for job in self._jobs.values()
                 if job.status in {"queued", "running"}
             }
 

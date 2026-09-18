@@ -9,30 +9,63 @@
   <body>
     <main class="card">
       <p class="eyebrow">Imported playlists</p>
-      <h1>Select a playlist</h1>
+      <h1>Select playlists</h1>
       {% if error %}
       <p role="alert">{{ error }}</p>
       {% endif %}
       {% if playlists %}
+      <form method="post" action="{{ url_for('select_playlists_batch', job_id=job_id) }}" id="batch-form">
       <div class="playlist-grid">
           {% for playlist in playlists %}
-          <form method="post" action="{{ url_for('select_playlist', job_id=job_id) }}">
-            <input type="hidden" name="playlist_id" value="{{ loop.index0 }}">
-            <button class="playlist-card" type="submit">
+            <label class="playlist-card">
+              <input type="checkbox" name="playlist_id" value="{{ loop.index0 }}">
               <strong>{{ playlist.name }}</strong>
               <span>
                 {{ playlist.track_count if playlist.track_count is not none else playlist.tracks|length }}
                 track{{ '' if (playlist.track_count if playlist.track_count is not none else playlist.tracks|length) == 1 else 's' }}
               </span>
-              <small>Open playlist</small>
-            </button>
-          </form>
+              <small>Select for batch download</small>
+            </label>
           {% endfor %}
+      </div>
+      <div class="selection-actions">
+        <button type="button" id="select-all">Select all</button>
+        <button type="button" id="deselect-all">Deselect all</button>
+        <button type="submit" id="batch-submit" disabled>Download selected playlists</button>
+      </div>
+      </form>
+      <p>Or open one playlist:</p>
+      <div class="playlist-grid">
+        {% for playlist in playlists %}
+        <form method="post" action="{{ url_for('select_playlist', job_id=job_id) }}">
+          <input type="hidden" name="playlist_id" value="{{ loop.index0 }}">
+          <button class="playlist-card" type="submit">
+            <strong>{{ playlist.name }}</strong>
+            <small>Open playlist</small>
+          </button>
+        </form>
+        {% endfor %}
       </div>
       {% else %}
       <p role="status">The export did not contain any playlists.</p>
       {% endif %}
       <p><a href="{{ url_for('index') }}">Upload another ZIP</a></p>
     </main>
+    <script>
+      const checks = [...document.querySelectorAll('#batch-form input[type="checkbox"]')];
+      const submit = document.getElementById("batch-submit");
+      function updateBatchAction() {
+        submit.disabled = !checks.some((check) => check.checked);
+      }
+      checks.forEach((check) => check.addEventListener("change", updateBatchAction));
+      document.getElementById("select-all").addEventListener("click", () => {
+        checks.forEach((check) => { check.checked = true; });
+        updateBatchAction();
+      });
+      document.getElementById("deselect-all").addEventListener("click", () => {
+        checks.forEach((check) => { check.checked = false; });
+        updateBatchAction();
+      });
+    </script>
   </body>
 </html>

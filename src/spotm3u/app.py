@@ -172,6 +172,80 @@ def create_app(config: dict | None = None) -> Flask:
             url_for("processing", job_id=job_id, playlist_id=playlist_id)
         )
 
+    @app.post("/playlists/<job_id>/batch-select")
+    def select_playlists_batch(job_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        if job_directory is None:
+            return render_template("index.html", error="That upload has expired. Please upload the ZIP again."), 404
+        try:
+            playlist_data = parse_exportify(job_directory / "extracted")
+        except (ExportifyParseError, OSError, UnicodeError):
+            return render_template("index.html", error="The playlist selection has expired. Please upload the ZIP again."), 400
+        selected = request.form.getlist("playlist_id")
+        if not selected or any(_valid_playlist_index(value, len(playlist_data)) is None for value in selected):
+            return render_template("playlists.html", job_id=job_id, playlists=playlist_data, error="Choose at least one playlist before continuing."), 400
+        selected = list(dict.fromkeys(selected))
+        _save_job_state(job_directory, {"selected_playlist_ids": selected})
+        return redirect(url_for("batch_processing", job_id=job_id))
+
+    @app.get("/processing/<job_id>/batch")
+    def batch_processing(job_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        selected = _selected_playlist_ids(job_directory) if job_directory else None
+        if not selected:
+            return render_template("index.html", error="That playlist selection has expired. Please upload the ZIP again."), 404
+        playlists_data = parse_exportify(job_directory / "extracted")
+        playlists = [playlists_data[int(index)] for index in selected]
+        return render_template("batch_processing.html", job_id=job_id, playlists=list(zip(selected, playlists)))
+
+    @app.post("/processing/<job_id>/batch/start")
+    def start_batch_processing(job_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        selected = _selected_playlist_ids(job_directory) if job_directory else None
+        if not selected:
+            return jsonify({"error": "That playlist selection has expired."}), 404
+        playlist_data = parse_exportify(job_directory / "extracted")
+        manager = app.config["JOB_MANAGER"]
+        jobs = []
+        for playlist_id in selected:
+            existing = manager.get(job_id, playlist_id)
+            if existing is not None:
+                jobs.append(existing)
+                continue
+            playlist = playlist_data[int(playlist_id)]
+            job = _build_processing_job(
+                job_id=job_id,
+                playlist_id=playlist_id,
+                playlist=playlist,
+                output_dir=_download_dir(app),
+                music_library=app.config["MUSIC_LIBRARY"],
+                m3u_filename=f"playlist-{playlist_id}.m3u",
+            )
+            manager.submit(job)
+            job.start()
+            jobs.append(job)
+        return jsonify({"job_id": job_id, **_batch_status(jobs)}), 202
+
+    @app.get("/processing/<job_id>/batch/status")
+    def batch_processing_status(job_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        selected = _selected_playlist_ids(job_directory) if job_directory else None
+        if not selected:
+            return jsonify({"error": "That playlist selection has expired."}), 404
+        jobs = [app.config["JOB_MANAGER"].get(job_id, playlist_id) for playlist_id in selected]
+        return jsonify({"job_id": job_id, **_batch_status([job for job in jobs if job is not None])})
+
+    @app.get("/processing/<job_id>/batch/result")
+    def batch_processing_result(job_id: str):
+        job_directory = _current_job_directory(app, job_id)
+        selected = _selected_playlist_ids(job_directory) if job_directory else None
+        if not selected:
+            return render_template("index.html", error="That playlist selection has expired. Please upload the ZIP again."), 404
+        jobs = [app.config["JOB_MANAGER"].get(job_id, playlist_id) for playlist_id in selected]
+        if not jobs or any(job is None or job.status in {"queued", "running"} for job in jobs):
+            return redirect(url_for("batch_processing", job_id=job_id))
+        return render_template("batch_result.html", job_id=job_id, states=[job.as_dict() for job in jobs])
+
     @app.get("/processing/<job_id>/<playlist_id>")
     def processing(job_id: str, playlist_id: str):
         job_directory = _current_job_directory(app, job_id)
@@ -236,7 +310,7 @@ def create_app(config: dict | None = None) -> Flask:
             ), 400
 
         manager = app.config["JOB_MANAGER"]
-        existing = manager.get(job_id)
+        existing = manager.get(job_id, playlist_id)
         if existing is not None and existing.status != "queued":
             return jsonify(existing.as_dict()), 409
 
@@ -262,7 +336,7 @@ def create_app(config: dict | None = None) -> Flask:
                 {"error": "That playlist selection has expired. Please upload the ZIP again."}
             ), 404
 
-        job = app.config["JOB_MANAGER"].get(job_id)
+        job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id:
             return jsonify(
                 {"error": "That processing job could not be found."}
@@ -280,7 +354,7 @@ def create_app(config: dict | None = None) -> Flask:
                 error="That playlist selection has expired. Please upload the ZIP again.",
             ), 404
 
-        job = app.config["JOB_MANAGER"].get(job_id)
+        job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id:
             return render_template(
                 "index.html",
@@ -301,7 +375,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/processing/<job_id>/<playlist_id>/playlist.m3u")
     def download_m3u(job_id: str, playlist_id: str):
-        job = app.config["JOB_MANAGER"].get(job_id)
+        job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id or job.m3u_path is None:
             return jsonify(
                 {"error": "That playlist is not ready to download."}
@@ -318,7 +392,7 @@ def create_app(config: dict | None = None) -> Flask:
     def add_playlist_to_apple_music(job_id: str, playlist_id: str):
         if not apple_music_available():
             return jsonify({"error": "Apple Music integration is only available on macOS."}), 404
-        job = app.config["JOB_MANAGER"].get(job_id)
+        job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id or job.status != "completed":
             return jsonify({"error": "That playlist is not ready to import."}), 404
         state = job.as_dict()
@@ -410,6 +484,34 @@ def _selection_matches(job_directory: Path, playlist_id: str) -> bool:
     return state.get("selected_playlist_id") == playlist_id
 
 
+def _selected_playlist_ids(job_directory: Path | None) -> list[str]:
+    if job_directory is None:
+        return []
+    try:
+        state = json.loads((job_directory / "state.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return state.get("selected_playlist_ids", [])
+
+
+def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
+    states = [job.as_dict() for job in jobs]
+    total = sum(int(state["playlist"]["total_tracks"]) for state in states)
+    completed = sum(int(state["completed"]) for state in states)
+    return {
+        "status": (
+            "completed" if states and all(state["status"] == "completed" for state in states)
+            else "failed" if any(state["status"] == "failed" for state in states)
+            else "running"
+        ),
+        "completed": completed,
+        "total": total,
+        "successful": sum(int(state["successful"]) for state in states),
+        "failed": sum(int(state["failed"]) for state in states),
+        "playlists": states,
+    }
+
+
 def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:
     if not playlist_id.isdigit():
         return None
@@ -452,6 +554,7 @@ def _build_processing_job(
     playlist: Playlist,
     output_dir: Path,
     music_library: str | Path,
+    m3u_filename: str = "playlist.m3u",
 ) -> ProcessingJob:
     max_results = int(app.config.get("SEARCH_MAX_RESULTS", 8))
     max_search_workers = int(app.config.get("SEARCH_MAX_WORKERS", 4))
@@ -497,6 +600,7 @@ def _build_processing_job(
         max_download_workers=max_download_workers,
         m3u_extended=bool(app.config.get("M3U_EXTENDED", True)),
         m3u_relative=bool(app.config.get("M3U_RELATIVE", False)),
+        m3u_filename=m3u_filename,
     )
 
 
