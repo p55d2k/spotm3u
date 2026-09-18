@@ -10,7 +10,7 @@ from .log import configure_logging
 
 app = typer.Typer(
     name="spotm3u",
-    help="Create local M3U playlists from Spotify playlist metadata.",
+    help="Create local M3U playlists from Exportify playlist metadata.",
     invoke_without_command=True,
 )
 console = Console()
@@ -29,7 +29,7 @@ def main(
         typer.Option("--version", callback=version_callback, is_eager=True),
     ] = None,
 ) -> None:
-    """Show the application entry point without starting browser automation."""
+    """Show that the reusable playlist services are available."""
     configure_logging()
-    console.print("[bold]Spotify → Local M3U[/bold]")
+    console.print("[bold]Exportify → Local M3U[/bold]")
     console.print("Reusable playlist, local-audio, and M3U services are ready.")

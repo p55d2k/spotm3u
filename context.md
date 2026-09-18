@@ -10,7 +10,7 @@ The application must work with Spotify Free and must not require Spotify Premium
 
 1. Open the Flask app.
 2. Follow instructions to open Exportify.
-3. Log into Spotify through Exportify.
+3. Complete Spotify authentication through Exportify.
 4. Use Exportify's "Export All" function.
 5. Download the resulting ZIP.
 6. Return to the Flask app.

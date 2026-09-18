@@ -208,7 +208,7 @@ class LocalAudioResolver:
         return tuple(self._files[index] for index in candidates)
 
     def _fuzzy_candidates(self, title_key: str, artist_key: str) -> frozenset[int]:
-        """Return a superset of files the legacy scorer could practically match.
+        """Return a superset of files the previous scorer could practically match.
 
         Exact filename-key hits are handled by ``_match_candidates``; this pass
         covers substring, token, and character-adjacency matches so the fuzzy

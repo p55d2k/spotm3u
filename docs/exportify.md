@@ -17,7 +17,7 @@ User
  ↓
 Exportify
  ↓
-Spotify login
+Spotify authentication in Exportify
  ↓
 Export All
  ↓

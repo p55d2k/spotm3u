@@ -26,7 +26,7 @@ def test_homepage_renders() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert b"Spotify to M3U" in response.data
+    assert b"Exportify to M3U" in response.data
     assert b"Exportify" in response.data
     assert b"Export All" in response.data
     assert b"Download the playlist export ZIP" in response.data

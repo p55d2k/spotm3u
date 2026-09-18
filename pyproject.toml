@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "spotm3u"
 version = "0.1.0"
-description = "Create local M3U playlists from Spotify playlist metadata."
+description = "Create validated local M3U playlists from Exportify playlist exports."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

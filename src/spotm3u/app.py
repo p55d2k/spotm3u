@@ -343,7 +343,7 @@ def _job_directory(upload_root: Path | str, job_id: str) -> Path | None:
 
 
 def _current_job_directory(app: Flask, job_id: str) -> Path | None:
-    """Resolve a job only when it belongs to the current browser session."""
+    """Resolve a job only when it belongs to the current upload session."""
     if session.get("job_id") != job_id:
         return None
     return _job_directory(app.config["UPLOAD_ROOT"], job_id)

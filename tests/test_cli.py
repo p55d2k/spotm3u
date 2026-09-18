@@ -16,6 +16,6 @@ def test_startup_message() -> None:
     result = CliRunner().invoke(app)
 
     assert result.exit_code == 0
-    assert "Spotify" in result.stdout
+    assert "Exportify" in result.stdout
     assert "Local M3U" in result.stdout
     assert "Reusable playlist" in result.stdout

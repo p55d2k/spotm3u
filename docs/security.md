@@ -60,9 +60,8 @@ Resolve downloads through an internal job ID and known output filename.
 
 ## Credentials
 
-The application should not collect or store the user's Spotify password.
-
-Spotify authentication happens externally through Exportify.
+Spotify authentication happens externally through Exportify. The application
+does not collect or store Spotify passwords or authentication tokens.
 
 Do not log authentication tokens or unrelated credentials.
 

@@ -7,9 +7,7 @@ __pycache__/
 data_files/
 tasks.md
 tasks/
+.browser-data/
 .pytest_cache/
 *.py[cod]
 *.egg-info/
-archive/**/.git/
-archive/legacy/exportifyx
-.browser-data/
