@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from hashlib import sha256
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -82,6 +81,7 @@ def download_track(
         raise DownloadError(
             f"downloaded audio is invalid: {', '.join(validation.reasons)}"
         )
+    embed_metadata(output_path, track)
     return output_path
 
 
@@ -105,17 +105,40 @@ def _validate_source_url(source_url: str) -> None:
 
 
 def _output_name(track: Track, source_url: str) -> str:
-    identity = track.spotify_id or source_url
-    digest = sha256(identity.encode("utf-8")).hexdigest()[:12]
     title = _safe_component(track.title)
-    artists = _safe_component("-".join(track.artists))
-    stem = "-".join(part for part in (title, artists, digest) if part) or digest
+    artists = _safe_component(", ".join(track.artists))
+    stem = " - ".join(part for part in (title, artists) if part) or _safe_component(source_url)
     return f"{stem}.mp3"
 
 
 def _safe_component(value: str) -> str:
-    value = re.sub(r"[^\w.-]+", "-", value, flags=re.UNICODE).strip("-. ")
-    return value[:80].strip("-. ")
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", value, flags=re.UNICODE)
+    value = re.sub(r"\s+", " ", value).strip(" -.")
+    return value[:160].strip(" -.") or "_"
+
+
+def embed_metadata(path: str | Path, track: Track) -> None:
+    """Write Spotify-derived ID3 metadata (title, artist, album) into an MP3."""
+    try:
+        from mutagen.easyid3 import EasyID3  # type: ignore
+        from mutagen.id3 import ID3NoHeaderError  # type: ignore
+    except ImportError as exc:  # pragma: no cover - dependency is project-managed
+        raise DownloadError("mutagen is not installed") from exc
+
+    audio_path = Path(path)
+    try:
+        tags = EasyID3(str(audio_path))
+    except ID3NoHeaderError:
+        tags = EasyID3()
+    if track.title:
+        tags["title"] = track.title
+    tags["artist"] = track.artists
+    if track.album:
+        tags["album"] = track.album
+    try:
+        tags.save(str(audio_path))
+    except (OSError, ValueError, TypeError) as exc:
+        raise DownloadError(f"cannot write metadata to {audio_path.name}") from exc
 
 
 def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
@@ -127,4 +150,4 @@ def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
         return False
 
 
-__all__ = ["DownloadError", "download_source", "download_track"]
+__all__ = ["DownloadError", "download_source", "download_track", "embed_metadata"]

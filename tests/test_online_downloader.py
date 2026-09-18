@@ -52,6 +52,33 @@ def test_download_produces_safe_mp3_inside_output_directory(tmp_path, monkeypatc
     assert "FFmpegExtractAudio" in FakeYoutubeDL.options["postprocessors"][0]["key"]
 
 
+def test_download_name_follows_spotify_convention(tmp_path, monkeypatch):
+    install_fake_yt_dlp(monkeypatch)
+    track = Track(title="Wonderwall (Remastered)", artists=["Oasis"])
+
+    result = download_track(track, "https://example.com/source", tmp_path)
+
+    assert result.name == "Wonderwall (Remastered) - Oasis.mp3"
+
+
+def test_download_embeds_spotify_metadata(tmp_path, monkeypatch):
+    install_fake_yt_dlp(monkeypatch)
+    track = Track(
+        title="Wonderwall (Remastered)",
+        artists=["Oasis"],
+        album="(What's the Story) Morning Glory?",
+    )
+
+    result = download_track(track, "https://example.com/source", tmp_path)
+
+    from mutagen.easyid3 import EasyID3
+
+    tags = EasyID3(str(result))
+    assert tags["title"] == ["Wonderwall (Remastered)"]
+    assert tags["artist"] == ["Oasis"]
+    assert tags["album"] == ["(What's the Story) Morning Glory?"]
+
+
 def test_same_track_and_source_have_deterministic_name(tmp_path, monkeypatch):
     install_fake_yt_dlp(monkeypatch)
     first = download_track(TRACK, "https://example.com/source", tmp_path)
