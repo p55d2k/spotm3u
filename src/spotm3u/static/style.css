@@ -22,6 +22,50 @@ main {
   box-shadow: 0 0.75rem 2rem rgb(31 41 51 / 8%);
 }
 
+.playlist-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1.25rem 0;
+}
+
+.playlist-grid form {
+  border: 0;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.playlist-card {
+  align-items: flex-start;
+  background: #fff;
+  border: 1px solid #d9e2ec;
+  border-radius: 0.5rem;
+  color: #000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 5rem;
+  padding: 0.8rem;
+  text-align: left;
+  width: 100%;
+}
+
+.playlist-card:hover {
+  background: #f5f7fa;
+  border-color: #9fb3c8;
+}
+
+.playlist-card small {
+  opacity: 0.75;
+}
+
+@media (max-width: 30rem) {
+  .playlist-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .eyebrow {
   margin: 0 0 0.5rem;
   color: #52606d;

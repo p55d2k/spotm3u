@@ -14,22 +14,21 @@
       <p role="alert">{{ error }}</p>
       {% endif %}
       {% if playlists %}
-      <form method="post" action="{{ url_for('select_playlist', job_id=job_id) }}">
-        <ul>
+      <div class="playlist-grid">
           {% for playlist in playlists %}
-          <li>
-            <label>
-              <input type="radio" name="playlist_id" value="{{ loop.index0 }}" required>
+          <form method="post" action="{{ url_for('select_playlist', job_id=job_id) }}">
+            <input type="hidden" name="playlist_id" value="{{ loop.index0 }}">
+            <button class="playlist-card" type="submit">
               <strong>{{ playlist.name }}</strong>
-              {% if playlist.track_count is not none %}
-              <span>({{ playlist.track_count }} tracks)</span>
-              {% endif %}
-            </label>
-          </li>
+              <span>
+                {{ playlist.track_count if playlist.track_count is not none else playlist.tracks|length }}
+                track{{ '' if (playlist.track_count if playlist.track_count is not none else playlist.tracks|length) == 1 else 's' }}
+              </span>
+              <small>Open playlist</small>
+            </button>
+          </form>
           {% endfor %}
-        </ul>
-        <button type="submit">Continue</button>
-      </form>
+      </div>
       {% else %}
       <p role="status">The export did not contain any playlists.</p>
       {% endif %}

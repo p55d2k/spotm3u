@@ -74,7 +74,11 @@
         </ol>
       </section>
 
-      <p><a href="{{ url_for('index') }}">Convert another playlist</a></p>
+      <p>
+        <a href="{{ url_for('playlists', job_id=job_id) }}">Download another playlist</a>
+        ·
+        <a href="{{ url_for('index') }}">Upload another ZIP</a>
+      </p>
     </main>
   </body>
 </html>

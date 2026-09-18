@@ -16,6 +16,12 @@ Exportify
 → result
 → M3U download
 
+The playlist selection page presents each parsed playlist as an independent
+button/card. After a result is available, **Download another playlist**
+returns to that same selection state for the upload job; the ZIP is not
+uploaded or parsed again. The existing M3U download remains available from
+each result.
+
 ## Processing
 
 Each Track goes through:

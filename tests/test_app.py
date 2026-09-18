@@ -66,6 +66,25 @@ def test_playlist_selection_persists_state_and_redirects(tmp_path) -> None:
     assert client.get(selection.headers["Location"]).status_code == 200
 
 
+def test_playlist_selection_shows_clickable_playlist_cards(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
+
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    job_id = _job_directory(tmp_path)
+
+    response = client.get(f"/playlists/{job_id}")
+
+    assert response.status_code == 200
+    assert b"class=\"playlist-card\"" in response.data
+    assert b"one" in response.data
+    assert b"two" in response.data
+    assert response.data.count(b'name="playlist_id"') == 2
+
+
 def test_playlist_selection_rejects_playlist_outside_job(tmp_path) -> None:
     client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
     upload = client.post(
@@ -321,6 +340,8 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
     assert b"Successfully resolved" in response.data
     assert b"Total tracks: 1" in response.data
     assert f"/processing/{job_id}/1/playlist.m3u".encode() in response.data
+    assert f"/playlists/{job_id}".encode() in response.data
+    assert b"Download another playlist" in response.data
 
 
 def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
