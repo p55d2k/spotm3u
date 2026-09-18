@@ -51,15 +51,22 @@ and:
 
 Ranking should combine signals including:
 
+- **artist identity** (first-class, ordering-dominant)
 - title similarity
-- artist similarity
 - duration similarity
 - version compatibility
-- uploader/channel
+- uploader/channel (supporting evidence for artist identity)
 - source type
 - obvious content indicators
 
-No individual signal should normally be a hard requirement.
+Artist identity is not a small score component. For common song titles (for
+example Joker Xue's `演员`), a candidate with a conflicting artist must be
+rejected even when the title is an exact match, and a candidate whose artist
+identity is confirmed must outrank a same-title candidate that only shares the
+song name.
+
+No individual signal other than a confirmed wrong artist should normally be a
+hard requirement.
 
 ## Title Matching
 
@@ -73,8 +80,9 @@ Handle:
 - Unicode variations
 - common separators
 - version suffixes
+- `Official MV` / `Official Audio` / `MV` labels
 
-Treat core song identity separately from version information.
+Treat core song identity separately from version information and upload labels.
 
 Examples:
 
@@ -84,11 +92,28 @@ Examples:
 
 `Wonderwall (Remastered)`
 
-may represent the same underlying song.
+may represent the same underlying song, as may:
+
+`演员`
+
+`演员 Official MV`
+
+`演员 Official Audio`
 
 ## Artist Matching
 
-Artist matching should account for:
+Artist identity is a first-class signal assessed across three evidence tiers:
+
+1. explicit artist metadata
+2. title attribution (the artist name appearing in the title)
+3. uploader/channel name
+
+A confirmed identity (explicit artist or title attribution) is the strongest
+evidence and weights higher than a mere exact title match. Uploader/channel
+matching is supporting evidence and does **not** need to equal the Spotify
+artist exactly.
+
+Artist matching accounts for:
 
 - multiple artists
 - featured artists
@@ -96,10 +121,22 @@ Artist matching should account for:
 - `ft.`
 - `with`
 - minor formatting differences
+- CJK artist names and channel suffixes such as `薛之谦官方频道`
 
-The uploader/channel does not need to exactly match the Spotify artist.
+Behavior:
 
-Uploader identity is supporting evidence, not an identity requirement.
+- A candidate with an explicit artist that conflicts with the requested
+  artist is rejected when the title otherwise matches (wrong artist outweighs
+  title similarity).
+- A candidate whose requested artist appears anywhere (explicit, title, or
+  uploader/channel) is accepted even when other metadata is imperfect.
+- A candidate with no artist evidence stays plausible but can never outrank a
+  candidate with confirmed identity.
+- The uploader/channel differing from the artist is not, by itself, a reason
+  to reject.
+
+Explicit cover indicators (`cover`, `翻唱`) are strong negative signals and
+reject the candidate unless the requested artist is the performer.
 
 ## Duration
 
@@ -206,6 +243,13 @@ If multiple plausible candidates exist:
 5. If validation fails, try another plausible candidate when appropriate.
 
 This is preferable to failing immediately after one bad source.
+
+## Debug Logging
+
+Ranking logs (at DEBUG level) each candidate decision with its score, title
+similarity, the artist-evidence breakdown (explicit / title / uploader), and
+the reasons for accepting or rejecting. This makes wrong-artist or cover
+miscounts like the `演员` case traceable.
 
 ## Confidence
 

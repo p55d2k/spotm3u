@@ -68,21 +68,31 @@ Do not duplicate its functionality inside the online resolver.
 
 Searches for candidate recordings using Track metadata.
 
+Search queries always include the requested artist alongside the song title,
+so common titles such as `演员` still surface the correct artist's official
+upload instead of only other-artist covers.
+
 It returns candidates but does not decide correctness.
 
 ## Candidate Ranking
 
 Ranks candidates using:
 
+- **artist identity** (first-class, ordering-dominant)
 - title
-- artists
 - duration
 - version
-- uploader/channel
+- uploader/channel (supporting evidence for artist identity)
 - source type
 - negative content indicators
 
-Missing metadata should generally reduce available evidence rather than count as proof of mismatch.
+For common titles (e.g. `演员`), a confirmed artist identity outranks an exact
+title match, and a conflicting explicit artist rejects the candidate even when
+the title matches exactly. `Official MV`/`Official Audio` labels are separated
+from core song identity so official artist uploads still match.
+
+Missing metadata should generally reduce available evidence rather than count
+as proof of mismatch.
 
 ## Source Validation
 
@@ -91,8 +101,8 @@ Rejects candidates when there is strong evidence that they are unsuitable.
 Examples:
 
 - wrong song
-- wrong artist
-- explicit cover
+- wrong artist (a conflicting explicit artist outweighs an exact title match)
+- explicit cover by another artist (`cover`, `翻唱`)
 - karaoke
 - obvious remix
 - live recording conflicting with requested version

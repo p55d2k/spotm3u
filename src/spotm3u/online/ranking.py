@@ -4,12 +4,18 @@ Discovery is intentionally lenient: candidates with imperfect or missing
 metadata may still be plausible and worth downloading. Strong evidence of the
 wrong recording (wrong song, wrong artist, explicit covers/remixes, version
 conflicts, obvious non-music content) is what triggers rejection.
+
+Artist identity is a first-class signal: for common titles a candidate with a
+conflicting artist must be rejected even when the title matches exactly, and a
+candidate whose artist identity is confirmed outranks same-title candidates
+that only happen to share the song name.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+import logging
 import re
 from typing import Literal
 
@@ -17,11 +23,13 @@ from ..models import Track
 from ..normalization import normalize, normalize_artists
 from .search import SourceCandidate
 
+logger = logging.getLogger(__name__)
+
 Confidence = Literal["strong", "plausible", "uncertain", "rejected"]
 
 _AUDIO_LABEL_RE = re.compile(
     r"\b(?:official\s+audio|official\s+music\s+videos?|official\s+video|"
-    r"audio|lyric\s+video|lyrics)\b",
+    r"official\s*mv\b|official|\bmv\b|audio|lyric\s+video|lyrics)\b",
     re.IGNORECASE,
 )
 _REMASTER_RE = re.compile(r"\bremaster(?:ed)?\b", re.IGNORECASE)
@@ -39,7 +47,7 @@ _VERSION_KEYS = (
 )
 _CONFLICT_MARKERS = frozenset(_VERSION_KEYS)
 _ALT_CONTENT_RE = re.compile(
-    r"\b(?:cover|karaoke|remix|mashup|parody|sped[\s-]*up|slowed|nightcore|"
+    r"\b(?:cover|翻唱|karaoke|remix|mashup|parody|sped[\s-]*up|slowed|nightcore|"
     r"fan\s+made|fan\s+edit)\b",
     re.IGNORECASE,
 )
@@ -49,7 +57,7 @@ _NON_MUSIC_RE = re.compile(
     re.IGNORECASE,
 )
 _MUSIC_VIDEO_RE = re.compile(
-    r"\b(?:music\s+video|official\s+music\s+videos?|lyric\s+video)\b",
+    r"\b(?:music\s+video|official\s+music\s+videos?|\bmv\b|lyric\s+video)\b",
     re.IGNORECASE,
 )
 _POSITIVE_SOURCE_RE = re.compile(
@@ -86,7 +94,13 @@ def rank_source_candidates(
 
 
 def rank_source_candidate(track: Track, candidate: SourceCandidate) -> CandidateRanking:
-    """Return a permissive ranking for one candidate."""
+    """Return a permissive ranking where artist identity is a first-class signal.
+
+    Artist identity is examined across the explicit artist metadata, the title
+    attribution, and the uploader/channel. Confirmed identity outranks a mere
+    exact title match, and a conflicting explicit artist rejects the candidate
+    even when the title is identical (common song titles such as ``演员``).
+    """
     requested_core, requested_versions = _split_title(track.title)
     candidate_core, candidate_versions = _split_title(candidate.title)
     candidate_text = _candidate_text(candidate)
@@ -97,29 +111,41 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     ]
     candidate_artist_text = normalize_artists(candidate.artist) if candidate.artist else ""
     uploader_text = normalize_artists(candidate.uploader) if candidate.uploader else ""
-    combined_artist_text = candidate_artist_text or uploader_text
+    title_text = normalize(candidate.title)
 
     title_similarity = _similarity(requested_core, candidate_core)
-    artist_similarity = _best_similarity(requested_artists, combined_artist_text)
-    explicit_artist_similarity = _best_similarity(
-        requested_artists, candidate_artist_text
-    )
+    artist_in_explicit = _artist_present(requested_artists, candidate_artist_text)
+    artist_in_title = _artist_present(requested_artists, title_text)
+    artist_in_uploader = _artist_present(requested_artists, uploader_text)
 
-    score = 45 * title_similarity + 25 * artist_similarity
+    if artist_in_explicit or artist_in_title:
+        artist_evidence = 1.0
+    elif artist_in_uploader:
+        artist_evidence = 0.7
+    else:
+        artist_evidence = 0.0
+
     reasons: list[str] = []
-
     if title_similarity >= 0.98:
         reasons.append("title matches")
     elif title_similarity < 0.45:
         reasons.append("title mismatch")
 
-    if artist_similarity >= 0.8:
-        score += 6
-        reasons.append("artist matches")
-    elif requested_artists and not candidate_artist_text:
-        reasons.append("uploader differs")
-    elif requested_artists and explicit_artist_similarity < 0.5:
-        reasons.append("artist mismatch")
+    if artist_in_explicit:
+        reasons.append("artist matches (explicit metadata)")
+    elif artist_in_title:
+        reasons.append("artist matches (title attribution)")
+    elif artist_in_uploader:
+        reasons.append("artist matches (uploader/channel)")
+    elif requested_artists:
+        if candidate_artist_text:
+            reasons.append("artist mismatch")
+        elif uploader_text:
+            reasons.append("uploader differs (artist identity not confirmed)")
+        else:
+            reasons.append("artist identity not confirmed")
+
+    score = 45 * title_similarity + 40 * artist_evidence
 
     if track.duration_ms and candidate.duration_s is not None:
         difference = abs(candidate.duration_s - track.duration_ms / 1000)
@@ -163,9 +189,14 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
 
     alternate_wrong = bool(non_music_markers or alt_markers)
     version_wrong = conflict is not None
-    artist_wrong = _artist_mismatch(requested_artists, candidate_artist_text) and (
-        title_similarity >= 0.6
+    explicit_conflict = bool(
+        candidate_artist_text
+        and not artist_in_explicit
+        and not artist_in_title
+        and title_similarity >= 0.5
     )
+    if explicit_conflict:
+        reasons.append("explicit artist conflicts with requested artist")
     duration_wrong = bool(
         track.duration_ms
         and candidate.duration_s is not None
@@ -177,16 +208,16 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
 
     if (
         weak_evidence
+        or explicit_conflict
         or alternate_wrong
         or version_wrong
-        or artist_wrong
         or duration_wrong
     ):
         confidence: Confidence = "rejected"
         accepted = False
     elif (
         title_similarity >= 0.85
-        and artist_similarity >= 0.8
+        and artist_evidence >= 0.7
         and score >= 70
         and not non_music_markers
         and not music_video
@@ -199,6 +230,21 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     else:
         confidence = "uncertain"
         accepted = False
+
+    logger.debug(
+        "rank url=%s confidence=%s accepted=%s score=%.2f title=%.2f "
+        "artist_evidence=%.2f (explicit=%s title=%s uploader=%s) reasons=%s",
+        candidate.url,
+        confidence,
+        accepted,
+        score,
+        title_similarity,
+        artist_evidence,
+        artist_in_explicit,
+        artist_in_title,
+        artist_in_uploader,
+        "; ".join(reasons),
+    )
     return CandidateRanking(candidate, round(score, 2), confidence, accepted, tuple(reasons))
 
 
@@ -247,36 +293,21 @@ def _unique_markers(pattern: re.Pattern, text: str) -> tuple[str, ...]:
     )
 
 
-def _best_similarity(keys: list[str], text: str) -> float:
+def _artist_present(keys: list[str], text: str) -> bool:
+    """True when a requested artist identity appears in ``text``.
+
+    Substring matching handles CJK artist names and channel suffixes such as
+    ``薛之谦官方频道`` or ``Oasis - Topic`` without requiring exact equality.
+    """
     if not keys or not text:
-        return 0.0
-    return max(_similarity(key, text) for key in keys)
+        return False
+    return any(key in text for key in keys)
 
 
 def _similarity(left: str, right: str) -> float:
     if not left or not right:
         return 0.0
     return SequenceMatcher(None, left, right).ratio()
-
-
-def _token_similarity(left: str, right: str) -> float:
-    left_tokens = set(left.split())
-    right_tokens = set(right.split())
-    if not left_tokens or not right_tokens:
-        return 0.0
-    overlap = len(left_tokens & right_tokens)
-    return overlap / max(len(left_tokens | right_tokens), 1)
-
-
-def _artist_mismatch(requested_artists: list[str], candidate_artist_text: str) -> bool:
-    """True when the explicit artist clearly matches no requested artist."""
-    if not requested_artists or not candidate_artist_text:
-        return False
-    best = max(
-        _token_similarity(artist_key, candidate_artist_text)
-        for artist_key in requested_artists
-    )
-    return best < 0.5
 
 
 def _collapse(value: str) -> str:
