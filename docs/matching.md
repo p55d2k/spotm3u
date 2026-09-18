@@ -13,125 +13,251 @@ There are two resolution paths:
 
 Task 10 handles matching Spotify/Exportify metadata against existing local audio files.
 
-Its responsibility is to determine whether an existing local file represents the requested track.
+The local resolver should remain independent from online source selection.
 
-Do not duplicate this logic inside the online resolver.
+## Online Matching
 
-## Online Source Matching
+For tracks without a suitable local file, the application searches online sources.
 
-For tracks without a suitable local file, the project searches online sources.
+The online pipeline is:
 
-Online matching should compare:
+Track
+→ search candidates
+→ rank candidates
+→ reject obviously unsuitable candidates
+→ download plausible candidate
+→ validate downloaded audio
+→ accept/reject result
 
-- title
-- artist(s)
-- duration
-- album
-- version information
+## Core Principle
+
+Online matching should be **permissive during discovery and conservative during validation**.
+
+The system should not require perfect metadata before downloading.
+
+A candidate with incomplete metadata may still be the correct recording.
+
+Conversely, a candidate with perfect-looking metadata may still contain unwanted dialogue or sound effects.
+
+Therefore:
+
+**metadata match ≠ guaranteed correct audio**
+
+and:
+
+**missing metadata ≠ incorrect audio**
+
+## Candidate Ranking
+
+Ranking should combine signals including:
+
+- title similarity
+- artist similarity
+- duration similarity
+- version compatibility
 - uploader/channel
 - source type
+- obvious content indicators
 
-## Actual Recording Requirement
+No individual signal should normally be a hard requirement.
 
-The desired result is the actual standalone music recording.
+## Title Matching
 
-A source is not acceptable merely because it contains the requested song.
+Normalize titles before comparison.
 
-Examples of potentially unsuitable sources:
+Handle:
 
-- music videos containing dialogue or scene audio
-- movie clips
+- case
+- punctuation
+- whitespace
+- Unicode variations
+- common separators
+- version suffixes
+
+Treat core song identity separately from version information.
+
+Examples:
+
+`Wonderwall`
+
+`Wonderwall - Remastered`
+
+`Wonderwall (Remastered)`
+
+may represent the same underlying song.
+
+## Artist Matching
+
+Artist matching should account for:
+
+- multiple artists
+- featured artists
+- `feat.`
+- `ft.`
+- `with`
+- minor formatting differences
+
+The uploader/channel does not need to exactly match the Spotify artist.
+
+Uploader identity is supporting evidence, not an identity requirement.
+
+## Duration
+
+Duration is a useful signal, not a strict equality requirement.
+
+Allow reasonable differences caused by:
+
+- different masters
+- intros/outros
+- silence
+- platform trimming
+- metadata rounding
+- remastering
+
+A missing duration should not automatically reject a candidate.
+
+A large duration mismatch can be strong evidence against a candidate.
+
+## Version Information
+
+Version markers must be interpreted rather than blindly compared.
+
+Examples:
+
+- Remastered
+- Live
+- Acoustic
+- Radio Edit
+- Extended
+- Deluxe
+- Single Version
+
+A missing version marker does not automatically mean the source is wrong.
+
+A clear conflicting version should receive a strong penalty or rejection.
+
+Example:
+
+Requested:
+`Song - Remastered`
+
+Potentially acceptable:
+`Song`
+
+Clearly conflicting:
+`Song - Live`
+
+## Source Type
+
+Prefer standalone music/audio sources.
+
+Penalize or reject obvious:
+
+- music videos
+- movie scenes
 - trailers
 - interviews
+- podcasts
 - reactions
-- live performances
+- compilations
 - covers
 - karaoke
 - remixes
 - mashups
 - sped-up/slowed versions
-- fan edits
-- videos with substantial cinematic effects
 
-## Ranking
+However, incomplete source metadata should not itself cause rejection.
 
-Candidate selection should use multiple signals.
+## Actual Audio Requirement
 
-Positive signals:
+The desired result is the actual music recording.
 
-- title similarity
-- artist similarity
-- duration similarity
-- expected version
-- official/artist/audio-source indicators
+A source can have correct title and artist metadata while containing:
 
-Negative signals:
-
-- music-video indicators
-- live indicators
-- remix/edit indicators
-- cover indicators
-- movie/scene indicators
-- dialogue/interview indicators
-
-No single signal should determine correctness.
-
-## Duration
-
-Duration is useful but not absolute.
-
-Reasons for legitimate differences include:
-
-- different masters
-- intros/outros
-- metadata rounding
-- platform trimming
-- silence at the beginning/end
-
-A small difference should not automatically reject a source.
-
-A large difference is a useful warning.
-
-## Downloaded Audio
-
-After yt-dlp downloads a source, validate the resulting audio separately.
-
-This matters because metadata can look correct even when the source contains:
-
-- speech
 - dialogue
-- sound effects
-- crowd noise
+- cinematic effects
 - scene audio
+- crowd noise
+- unrelated speech
 
-Where technically possible, inspect the downloaded audio for obvious interruptions.
+Therefore the application must perform downloaded-audio validation after yt-dlp finishes.
+
+## Downloaded Audio Validation
+
+Downloaded audio should be checked for:
+
+- readable audio stream
+- expected duration
+- format
+- obvious silence
+- obvious interruptions
+- obvious speech/non-music sections where technically detectable
+
+This is a second validation layer.
+
+## Candidate Retry
+
+If multiple plausible candidates exist:
+
+1. Rank them.
+2. Try the strongest candidate.
+3. Download it.
+4. Validate the resulting audio.
+5. If validation fails, try another plausible candidate when appropriate.
+
+This is preferable to failing immediately after one bad source.
 
 ## Confidence
 
-The system should distinguish:
+Use confidence to decide whether a candidate is plausible.
+
+Do not interpret low confidence as proof of incorrectness.
+
+Suggested conceptual states:
 
 ### Strong
 
-Metadata and source characteristics strongly agree with the requested recording.
+Multiple signals agree and no major conflict exists.
+
+### Plausible
+
+Some metadata is missing or imperfect, but nothing strongly indicates the wrong recording.
 
 ### Uncertain
 
-The candidate is plausible but important information is missing or contradictory.
+Important information conflicts or multiple substantially different recordings are plausible.
 
 ### Rejected
 
-The candidate clearly appears to be the wrong recording or unsuitable content.
+There is strong evidence that the source is incorrect or unsuitable.
+
+## Ambiguous
+
+Use `ambiguous` only for genuine ambiguity.
+
+Do not mark a candidate ambiguous merely because:
+- duration is unavailable
+- uploader differs
+- metadata is incomplete
+- title contains harmless extra text
+- version formatting differs
 
 ## Conservative Behavior
 
-False positives are worse than missing tracks.
+The system should be conservative about **accepting obviously bad audio**, not conservative about **finding any plausible candidate at all**.
 
-Never silently turn a weak match into a successful result.
+The desired tradeoff is:
+
+false positive after audio validation
+>
+false negative caused by missing metadata
+
+but the system should still avoid downloading obviously unsuitable sources.
 
 ## Important Limitation
 
-Automatic detection of "music only" is not perfect.
+Automatic detection of "music only" is imperfect.
 
-The system may detect obvious problems, but it cannot mathematically guarantee that an arbitrary recording contains no speech or sound effects.
+The application cannot guarantee that an arbitrary recording contains no speech or sound effects.
 
-The application should expose uncertainty rather than pretending otherwise.
+It should detect obvious problems and expose uncertainty rather than pretending the classifier is omniscient.

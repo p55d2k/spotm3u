@@ -4,54 +4,77 @@
 
 Use Flask with:
 
-- Jinja2 templates
-- vanilla HTML/CSS/JS unless existing project requirements dictate otherwise
+- Jinja2
+- vanilla HTML/CSS/JS unless existing project requirements require otherwise
 
 ## User Flow
 
-### 1. Homepage
+Exportify
+→ ZIP upload
+→ playlist selection
+→ processing
+→ result
+→ M3U download
 
-Explain that the user should:
+## Processing
 
-1. Open Exportify.
-2. Log into Spotify there.
-3. Export their playlists.
-4. Download the resulting ZIP.
-5. Upload the ZIP to this application.
+Each Track goes through:
 
-The application does not handle the Spotify login.
+1. Local audio resolution
+2. Online search if no local match exists
+3. Candidate ranking
+4. Source validation
+5. yt-dlp download
+6. Downloaded-audio validation
+7. Retry with another candidate if appropriate
+8. Final resolution
 
-### 2. ZIP Upload
+## Processing States
 
-The user uploads the Exportify ZIP.
+Useful states include:
 
-The backend:
+- queued
+- resolving-local
+- searching
+- ranking
+- validating-source
+- downloading
+- validating-audio
+- retrying-source
+- complete
+- failed
+- ambiguous
 
-- validates the upload
-- extracts it into a controlled job directory
-- parses playlists
+## Important UI Behavior
 
-### 3. Playlist Selection
+Do not show:
 
-Display playlists discovered from the Exportify export.
+"Failed: no candidate passed source validation"
 
-The user selects one.
+when the system simply has not yet attempted plausible candidates.
 
-### 4. Processing
+Differentiate:
 
-The selected playlist is processed.
+- no plausible candidates found
+- candidate rejected before download
+- download failed
+- downloaded audio failed validation
+- multiple candidates remained ambiguous
 
-For each track:
+## Progress
 
-Local resolver
-→ online search if needed
-→ source validation
-→ yt-dlp download
-→ downloaded-audio validation
+For each track, show the current meaningful stage.
 
-The UI should expose progress.
+Examples:
 
-### 5. Result
+- Finding local audio
+- Searching for source
+- Checking source
+- Downloading
+- Checking downloaded audio
+- Trying another source
+
+## Result
 
 Display:
 
@@ -61,22 +84,13 @@ Display:
 - downloaded tracks
 - failed tracks
 - ambiguous tracks
-- rejected/uncertain tracks
+- rejected tracks
+- uncertain tracks
 
-Provide the generated M3U when available.
+For failures, display the actual processing reason.
 
 ## Important
 
-The web UI must never imply that a track was successfully resolved when only a weak/uncertain source was found.
+A track should only be marked successful after the final local audio file has passed the relevant validation.
 
-## Job State
-
-Processing should use a job abstraction rather than performing a large playlist synchronously inside a single HTTP request.
-
-The frontend can poll a job-status endpoint or use another lightweight progress mechanism.
-
-## Security
-
-Client requests must never directly provide arbitrary filesystem paths.
-
-Job IDs should resolve only to internal job directories.
+A track should not be marked failed merely because its metadata was imperfect.

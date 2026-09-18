@@ -2,9 +2,9 @@
 
 ## Purpose
 
-The project downloads online sources only after source selection and validation.
+The project downloads online sources for tracks that cannot be resolved from the existing local audio library.
 
-The downloaded audio becomes a local file that can be referenced by the generated M3U.
+Downloaded audio becomes local MP3 files that can be referenced by the generated M3U.
 
 ## Pipeline
 
@@ -13,54 +13,71 @@ Track
 → candidate ranking
 → source validation
 → yt-dlp
-→ audio extraction/conversion
 → MP3
 → downloaded-audio validation
 → resolved local file
 
+## Important
+
+Source validation should not be so strict that every imperfect candidate is rejected before downloading.
+
+A plausible candidate may need to be downloaded before the application can determine whether its actual audio is suitable.
+
+## Candidate Retry
+
+When several plausible candidates exist:
+
+1. Download the highest-ranked candidate.
+2. Validate the resulting audio.
+3. If invalid, try another plausible candidate.
+4. Stop when a valid recording is found or candidates are exhausted.
+
+Do not retry obviously unsuitable candidates.
+
 ## yt-dlp
 
-The project uses yt-dlp for online source downloading.
+Use yt-dlp for downloading.
 
-Existing yt-dlp code should be reused where practical.
+Reuse existing downloader code where practical.
 
 The downloader should:
 
-- accept a validated source URL
+- accept a source URL
 - download the source
-- extract audio
-- convert to MP3 using ffmpeg where necessary
-- return a controlled local path
-- report failures explicitly
+- extract/convert audio
+- produce MP3
+- store output in a controlled directory
+- report failures
+- detect incomplete output
+
+## ffmpeg
+
+Use ffmpeg for audio extraction/conversion where required by the selected yt-dlp format.
 
 ## Output Naming
 
-Output filenames must be filesystem-safe.
+Use filesystem-safe deterministic filenames.
 
-Do not use raw Spotify titles/artists directly as shell commands or filesystem paths.
-
-Avoid collisions between tracks with similar names.
+Do not use raw metadata as shell commands.
 
 ## Temporary Files
 
-yt-dlp/ffmpeg temporary files must remain inside controlled job directories.
-
-Temporary files should be removed after successful processing when they are no longer needed.
+Temporary yt-dlp/ffmpeg files must remain inside controlled job directories.
 
 ## Concurrency
 
-Downloads should use bounded concurrency.
+Use bounded concurrency.
 
-Do not create an unlimited number of simultaneous yt-dlp/ffmpeg processes.
+Avoid spawning an uncontrolled number of yt-dlp or ffmpeg processes.
 
 ## Validation
 
-A successful yt-dlp process does not automatically mean the final track is valid.
+Successful yt-dlp execution does not automatically mean successful track resolution.
 
-The resulting audio must pass downloaded-audio validation before being included in the final M3U.
+The resulting audio must pass downloaded-audio validation before being included in the final playlist.
 
 ## Cache
 
-Successfully resolved downloads may be reused for later jobs when their track/source identity is sufficiently strong.
+Successful downloads may be cached and reused when their association with the requested recording is sufficiently strong.
 
-Caching must not rely only on filenames.
+Cache reuse must not rely solely on filenames.

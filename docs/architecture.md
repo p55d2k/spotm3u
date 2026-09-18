@@ -11,197 +11,149 @@ The application does not use:
 - Spotify Web API
 - Spotify Premium
 
-The user workflow is:
+Workflow:
 
 Exportify
-→ Exportify ZIP
-→ Flask upload
+→ ZIP upload
 → Exportify parser
 → playlist selection
-→ local audio resolution
+→ local audio resolver
 → online source search when necessary
-→ source ranking/validation
+→ candidate ranking
+→ source validation
 → yt-dlp download
-→ downloaded audio validation
+→ downloaded-audio validation
 → M3U generation
 → M3U download
 
-## Important Existing Component
+## Resolution Strategy
 
-Task 10 already implements the local audio resolver.
+For every Track:
 
-Do not replace it.
+1. Try the existing local audio resolver.
+2. If a suitable local file exists, use it.
+3. Otherwise search online sources.
+4. Rank plausible candidates.
+5. Reject only candidates with strong evidence of being unsuitable.
+6. Download a plausible candidate with yt-dlp.
+7. Validate the downloaded audio.
+8. If validation fails, try another plausible candidate when available.
+9. Store the successful local file.
+10. Pass the resolved file to the M3U writer.
 
-The local resolver searches the user's existing audio library for suitable MP3/FLAC/etc. files.
+## Important Matching Principle
 
-The new online pipeline is a fallback/additional resolution strategy.
+The online resolver must not require perfect metadata.
 
-## Resolution Architecture
+The pipeline is intentionally:
 
-For each Track:
+**permissive candidate discovery**
+→ **download**
+→ **actual audio validation**
+→ **final acceptance**
 
-1. Try local audio resolution.
-2. If a suitable local file exists:
-   - use it
-3. Otherwise:
-   - search online sources
-   - rank candidates
-   - validate the selected candidate
-   - download using yt-dlp
-   - convert to MP3
-   - validate the resulting audio
-4. Store the resulting local audio path.
-5. Use the local path when generating the M3U.
+This prevents harmless metadata differences from causing large numbers of false failures.
 
-Conceptually:
+## Local Audio Resolver
 
-Track
-├── Local Audio Resolver
-│ └── existing local audio file
-│
-└── Online Resolver
-├── Source Search
-├── Candidate Ranking
-├── Source Validation
-├── yt-dlp Download
-└── Downloaded Audio Validation
-└── downloaded MP3
+Task 10 is the existing local resolver.
 
-## Core Models
+It searches existing MP3/FLAC/etc. files and attempts to match them to Tracks.
 
-### Track
+It remains a separate resolution strategy.
 
-Represents the Spotify/Exportify track metadata.
+Do not duplicate its functionality inside the online resolver.
 
-Suggested fields:
+## Online Source Search
+
+Searches for candidate recordings using Track metadata.
+
+It returns candidates but does not decide correctness.
+
+## Candidate Ranking
+
+Ranks candidates using:
 
 - title
 - artists
-- album
-- duration_ms
-- spotify_id
-- spotify_url
-
-### SourceCandidate
-
-Represents an online candidate.
-
-Suggested fields:
-
-- url
-- title
+- duration
+- version
 - uploader/channel
-- duration_s
-- source_type
-- metadata
-- ranking/confidence
+- source type
+- negative content indicators
 
-### ResolvedTrack
+Missing metadata should generally reduce available evidence rather than count as proof of mismatch.
 
-Represents the final local audio associated with a Track.
+## Source Validation
 
-Suggested fields:
+Rejects candidates when there is strong evidence that they are unsuitable.
 
-- track
-- local_path
-- resolution_method
-- source_url
-- status
-- validation information
+Examples:
 
-## Module Boundaries
+- wrong song
+- wrong artist
+- explicit cover
+- karaoke
+- obvious remix
+- live recording conflicting with requested version
+- movie scene
+- trailer
+- interview
+- reaction
 
-### Exportify Parser
+It should not reject candidates simply because metadata is incomplete.
 
-Responsible only for:
+## yt-dlp Downloader
 
-- reading Exportify files
-- parsing playlists
-- creating Track objects
+Downloads accepted/plausible online candidates and converts them to MP3.
 
-### Track Normalization
+The downloader is independent of source ranking.
 
-Responsible for:
+## Downloaded Audio Validation
 
-- normalization
-- title/artist comparison utilities
-- version-marker handling
+Validates the actual resulting audio.
 
-### Local Audio Resolver
+This may inspect:
 
-Responsible for:
+- duration
+- format
+- readability
+- silence
+- obvious speech
+- obvious interruptions
+- other detectable non-music content
 
-- finding existing local audio
-- matching Track metadata to local files
+The system must acknowledge that automatic "music only" detection is imperfect.
 
-This is Task 10 and should remain independent.
+## Candidate Retry
 
-### Online Source Search
+If a plausible candidate fails after download validation, another plausible candidate may be attempted.
 
-Responsible for:
+Therefore source resolution can look like:
 
-- searching for online candidates
-- returning candidate metadata
+Candidate A
+→ download
+→ invalid
 
-It does not download files.
+Candidate B
+→ download
+→ valid
 
-### Candidate Ranking
+## M3U Writer
 
-Responsible for:
+Receives the final ordered local audio paths.
 
-- comparing candidates against Track metadata
-- ranking candidates
-- exposing confidence
+It does not perform:
+- searching
+- matching
+- downloading
+- validation
 
-### Source Validation
+## Final Output
 
-Responsible for:
+The generated M3U references local audio files.
 
-- rejecting obviously unsuitable sources
-- deciding whether a candidate may proceed to download
+Those files may be:
 
-### yt-dlp Downloader
-
-Responsible for:
-
-- downloading an accepted source
-- extracting/converting audio to MP3
-- returning the resulting local path
-
-### Downloaded Audio Validation
-
-Responsible for:
-
-- checking the resulting audio file
-- verifying duration/format/readability
-- detecting obvious unwanted content where technically possible
-
-### M3U Writer
-
-Responsible only for:
-
-- receiving ordered local audio paths
-- writing the M3U
-
-It must not perform matching or downloading.
-
-## Key Principle
-
-Source selection and audio validation are separate.
-
-A source can have perfect-looking metadata and still contain unwanted dialogue or sound effects.
-
-Therefore:
-
-metadata match
-≠
-guaranteed clean recording
-
-## Output
-
-The final M3U references the actual local MP3 files produced by:
-
-- existing local library resolution, or
-- successful yt-dlp downloads.
-
-The M3U itself does not download anything.
+- existing local files from Task 10
+- successfully downloaded MP3 files
