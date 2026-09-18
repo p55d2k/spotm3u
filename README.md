@@ -79,7 +79,7 @@ winget install Gyan.FFmpeg
 ```
 
 Open a new terminal so `ffmpeg.exe` is on `PATH`, then use the same `uv sync`
-and `uv run spotm3u-web` commands below. Configure Windows paths with TOML
+and `uv run spotm3u` commands below. Configure Windows paths with TOML
 forward slashes (for example `C:/Users/you/Music`) or `~`; no Unix shell,
 `/tmp`, or POSIX-only dependency is required.
 
@@ -89,7 +89,7 @@ forward slashes (for example `C:/Users/you/Music`) or `~`; no Unix shell,
 git clone https://github.com/p55d2k/spotm3u.git
 cd spotm3u
 uv sync
-uv run spotm3u-web
+uv run spotm3u
 ```
 
 Open <http://127.0.0.1:5001/>. Optional configuration can be copied from

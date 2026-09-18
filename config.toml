@@ -6,13 +6,13 @@
 # The app loads it automatically when it exists in the current working
 # directory. To use a different location, set SPOTM3U_CONFIG to the file path:
 #
-#   SPOTM3U_CONFIG=~/spotm3u.toml uv run spotm3u-web
+#   SPOTM3U_CONFIG=~/spotm3u.toml uv run spotm3u
 #
 # Uncomment a line (and change its value) to customize that setting.
 # Fallback examples are shown next to each setting.
 
 [web]
-# HTTP port used by `spotm3u-web`.
+# HTTP port used by `spotm3u`.
 # port = 5001
 
 # Where uploaded Exportify ZIP jobs are stored temporarily.

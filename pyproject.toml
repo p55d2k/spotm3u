@@ -12,15 +12,12 @@ dependencies = [
     "flask>=3.1",
     "mutagen>=1.47",
     "requests>=2.32",
-    "rich>=14.0",
-    "typer>=0.16",
     "yt-dlp>=2025.1.15",
     "zhconv>=1.4",
 ]
 
 [project.scripts]
-spotm3u = "spotm3u.cli:app"
-spotm3u-web = "spotm3u.app:run"
+spotm3u = "spotm3u.app:run"
 
 [dependency-groups]
 dev = [
