@@ -100,6 +100,18 @@ When processing completes, offer a `Save playlist (M3U)` link to
 `GET /processing/<job_id>/<playlist_id>/playlist.m3u`, which downloads the
 generated playlist as an attachment.
 
+## Apple Music (macOS)
+
+On macOS, a completed result also offers **Add to Apple Music**. The app uses
+the system `osascript` command to ask the Music app to create or reuse a user
+playlist and add each resolved local file in playlist order. Each entry is
+added separately so duplicates are preserved where Music permits them.
+
+The integration is not shown on other platforms. Music reports per-entry
+errors back to the app; unresolved tracks and import failures are reported as
+partial results rather than being claimed as successful. The M3U download
+remains available independently.
+
 The M3U and any downloaded MP3s are written to the persistent download
 directory so the playlist continues to reference real local files.
 

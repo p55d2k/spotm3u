@@ -10,6 +10,7 @@ from flask import Flask, jsonify, redirect, render_template, request, send_file,
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .audio.resolver import LocalAudioResolver
+from .apple_music import AppleMusicError, add_to_apple_music, apple_music_available
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, ProcessingJob
@@ -295,6 +296,7 @@ def create_app(config: dict | None = None) -> Flask:
             job_id=job_id,
             playlist_id=playlist_id,
             state=state,
+            apple_music_available=apple_music_available(),
         )
 
     @app.get("/processing/<job_id>/<playlist_id>/playlist.m3u")
@@ -311,6 +313,47 @@ def create_app(config: dict | None = None) -> Flask:
             ), 404
         name = sanitize_filename_component(job.playlist_name) or job.playlist_id
         return send_file(m3u_path, as_attachment=True, download_name=f"{name}.m3u")
+
+    @app.post("/processing/<job_id>/<playlist_id>/apple-music")
+    def add_playlist_to_apple_music(job_id: str, playlist_id: str):
+        if not apple_music_available():
+            return jsonify({"error": "Apple Music integration is only available on macOS."}), 404
+        job = app.config["JOB_MANAGER"].get(job_id)
+        if job is None or job.playlist_id != playlist_id or job.status != "completed":
+            return jsonify({"error": "That playlist is not ready to import."}), 404
+        state = job.as_dict()
+        paths = [
+            track["local_path"]
+            for track in state["tracks"]
+            if track["status"] == "complete" and track["local_path"]
+        ]
+        unresolved = len(state["tracks"]) - len(paths)
+        try:
+            result = add_to_apple_music(job.playlist_name, paths)
+        except AppleMusicError as error:
+            app.logger.warning("Apple Music import failed job=%s: %s", job_id, error)
+            return render_template(
+                "result.html",
+                job_id=job_id,
+                playlist_id=playlist_id,
+                state={**state, "apple_music_error": str(error)},
+                apple_music_available=True,
+            ), 502
+        return render_template(
+            "result.html",
+            job_id=job_id,
+            playlist_id=playlist_id,
+            state={
+                **state,
+                "apple_music": {
+                    "imported": result.imported,
+                    "failed": result.failed,
+                    "unresolved": unresolved,
+                    "partial": bool(result.failed or unresolved),
+                },
+            },
+            apple_music_available=True,
+        )
 
     @app.errorhandler(RequestEntityTooLarge)
     def upload_too_large(_error):

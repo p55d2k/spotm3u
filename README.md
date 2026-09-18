@@ -48,6 +48,8 @@ Exportify; spotm3u receives only the resulting ZIP.
   audio, retrying another plausible source when appropriate.
 - 📝 **Lossless M3U export** — preserves playlist order and duplicates; failed
   or ambiguous tracks are reported rather than silently omitted.
+- 🍎 **Apple Music export on macOS** — sends resolved local files to a Music
+  playlist through the system automation interface and reports partial imports.
 - 🛡️ **Resource and security controls** — bounded work, safe ZIP extraction,
   controlled paths, cleanup, and structured diagnostics.
 
