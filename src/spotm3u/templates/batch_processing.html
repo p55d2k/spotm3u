@@ -56,7 +56,7 @@
         event.preventDefault();
         form.hidden = true;
         const response = await fetch(form.action, {method: "POST"});
-        if (response.ok) render((await response.json()).status);
+        if (response.ok) render(await response.json());
       });
     </script>
   </body>

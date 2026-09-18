@@ -143,6 +143,27 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
     assert (music / "spotm3u-downloads" / "playlist-1.m3u").is_file()
 
 
+def test_batch_processing_page_renders_full_start_state(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(export_zip()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    job_id = _job_directory(tmp_path)
+    selection = client.post(
+        f"/playlists/{job_id}/batch-select",
+        data={"playlist_id": ["0", "1"]},
+    )
+
+    assert selection.status_code == 302
+    response = client.get(f"/processing/{job_id}/batch")
+
+    assert response.status_code == 200
+    assert b"Download selected playlists" in response.data
+    assert b"undefined / undefined" not in response.data
+
+
 def test_job_id_is_stored_in_session_and_jobs_are_session_scoped(tmp_path) -> None:
     app = create_app({"UPLOAD_ROOT": tmp_path})
     client = app.test_client()
