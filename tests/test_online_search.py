@@ -25,6 +25,15 @@ def test_build_search_queries_include_title_artist_and_audio_hints() -> None:
     assert any("lyrics" in query.lower() for query in queries)
 
 
+def test_build_search_queries_keep_collaborating_artists_separate() -> None:
+    queries = build_search_queries(
+        Track(title="Song", artists=["Jay Chou", "Gary Yang"])
+    )
+
+    assert "jay chou gary yang song" in queries[0].lower()
+    assert "jay chougary yang" not in " ".join(queries).lower()
+
+
 def test_coerce_results_returns_empty_when_search_has_no_results() -> None:
     assert OnlineSourceSearcher._coerce_results({"entries": []}) == []
 

@@ -295,6 +295,15 @@ def test_enrich_metadata_preserves_featured_artists(tmp_path, monkeypatch):
     assert "TPE1" in result.fields_written
 
 
+def test_metadata_writes_collaborating_artists_as_multiple_id3_values(monkeypatch):
+    saved_tags = _mock_id3_operations(monkeypatch)
+    track = Track("Song", ["Jay Chou", "Gary Yang"], album="Album")
+
+    _write_all_metadata(Path("/fake/path.mp3"), track)
+
+    assert saved_tags["/fake/path.mp3"]["TPE1"].text == ["Jay Chou", "Gary Yang"]
+
+
 def test_enrich_metadata_missing_album_artist(tmp_path, monkeypatch):
     """Test handling of missing album/artist for artwork."""
     saved_tags = _mock_id3_operations(monkeypatch)

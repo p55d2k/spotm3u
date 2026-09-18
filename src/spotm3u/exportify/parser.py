@@ -202,10 +202,16 @@ def _clean_playlist_name(value: str) -> str:
 
 
 def _artists(value: object) -> list[str]:
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [artist for item in value if (artist := _text(item))]
     text = _text(value)
-    return [artist.strip() for artist in text.split(";") if artist.strip()] if text else []
+    if not text:
+        return []
+    return [
+        artist.strip()
+        for artist in re.split(r";|\r?\n", text)
+        if artist.strip()
+    ]
 
 
 def _integer(value: object) -> int | None:

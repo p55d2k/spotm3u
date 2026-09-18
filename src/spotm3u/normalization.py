@@ -53,7 +53,11 @@ def normalize_artists(artists: list[str] | str | None) -> str:
     """Normalize one or more artist names into a comparison string."""
     if isinstance(artists, str):
         artists = re.split(r"\s*(?:,|;|/|\||&|\band\b)\s*", artists, flags=re.IGNORECASE)
-    text = " ".join(_FEATURING_RE.sub(" ", artist) for artist in (artists or []))
+    text = " ".join(
+        _FEATURING_RE.sub(" ", artist)
+        for artist in (artists or [])
+        if artist
+    )
     return normalize(text)
 
 

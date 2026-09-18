@@ -112,6 +112,9 @@ On macOS, a completed result also offers **Add to Apple Music**. The app uses
 the system `osascript` command to ask the Music app to create or reuse a user
 playlist and add each resolved local file in playlist order. Each entry is
 added separately so duplicates are preserved where Music permits them.
+Resolved files retain the individual artist values in their ID3 metadata, so
+collaborations are imported as collaborations rather than one concatenated
+artist name.
 
 The integration is not shown on other platforms. Music reports per-entry
 errors back to the app; unresolved tracks and import failures are reported as

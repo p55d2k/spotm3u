@@ -47,6 +47,16 @@ def test_parse_exportify_zip_converts_underscores_to_spaces_in_playlist_name() -
     assert playlists[0].name == "my spotify playlist"
 
 
+def test_parse_exportify_zip_preserves_collaborating_artists() -> None:
+    archive = export_zip(
+        ("collab.csv", "Track Name,Artist Name(s)\nSong,Jay Chou;Gary Yang\n")
+    )
+
+    playlists = parse_exportify_zip(archive)
+
+    assert playlists[0].tracks[0].artists == ["Jay Chou", "Gary Yang"]
+
+
 def test_parse_exportify_zip_rejects_missing_title_column() -> None:
     archive = export_zip(("playlist.csv", "Artist Name(s)\nArtist\n"))
 

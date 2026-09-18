@@ -188,6 +188,12 @@ Artist identity is a first-class signal assessed across three evidence tiers:
 2. title attribution (the artist name appearing in the title)
 3. uploader/channel name
 
+Track artist metadata remains a list of individual credited artists. Search
+queries join those values with spaces only at the query boundary, and plain
+text displays use comma separators. ID3 metadata writes each artist as a
+separate TPE1 value so collaborations remain recognizable to music players and
+Apple Music.
+
 A confirmed identity (explicit artist or title attribution) is the strongest
 evidence and weights higher than a mere exact title match. Uploader/channel
 matching is supporting evidence and does **not** need to equal the Spotify
