@@ -143,7 +143,7 @@ def _run_with_timeout(
 
 
 def _prune_partial(output_path: Path) -> None:
-    """Best-effort removal of a partially written download after a timeout."""
+    """Best-effort removal of a download output that failed or was abandoned."""
     try:
         output_path.unlink(missing_ok=True)
     except OSError:
@@ -208,18 +208,26 @@ def _download_to(
         with yt_dlp.YoutubeDL(options) as ydl:
             result = ydl.download([source_url])
     except Exception as exc:
+        _prune_partial(output_path)
         raise DownloadError(f"download failed for {source_url}") from exc
 
     if result not in (None, 0):
+        _prune_partial(output_path)
         raise DownloadError(f"download failed for {source_url} (exit code {result})")
     if not _is_complete_mp3(output_path, destination):
+        _prune_partial(output_path)
         raise DownloadError(f"download did not produce a complete MP3: {output_path.name}")
     validation = validate_downloaded_audio(track, output_path)
     if validation.status == "invalid":
+        _prune_partial(output_path)
         raise DownloadError(
             f"downloaded audio is invalid: {', '.join(validation.reasons)}"
         )
-    embed_metadata(output_path, track)
+    try:
+        embed_metadata(output_path, track)
+    except DownloadError:
+        _prune_partial(output_path)
+        raise
     return output_path
 
 

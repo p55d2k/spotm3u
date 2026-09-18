@@ -8,6 +8,7 @@ from spotm3u.app import create_app
 from spotm3u.config import (
     Config,
     ConfigError,
+    DEFAULT_MAX_JOB_AGE,
     DEFAULT_MAX_UPLOAD_SIZE,
     discover_config_path,
     load_config,
@@ -26,6 +27,7 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.port == 5001
     assert config.resolve_workers == 4
     assert config.max_upload_size == DEFAULT_MAX_UPLOAD_SIZE
+    assert config.max_job_age == DEFAULT_MAX_JOB_AGE
     assert config.max_search_workers == 4
     assert config.search_socket_timeout == 30
     assert config.max_download_workers == 2
@@ -46,6 +48,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
 
         [upload]
         max_upload_size = 10485760
+        max_job_age = 3600
 
         [search]
         max_results = 12
@@ -73,6 +76,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.download_dir == "~/Songs/spotm3u"
     assert config.resolve_workers == 2
     assert config.max_upload_size == 10485760
+    assert config.max_job_age == 3600
     assert config.max_results == 12
     assert config.max_search_workers == 2
     assert config.search_socket_timeout == 15

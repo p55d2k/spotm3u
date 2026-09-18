@@ -30,6 +30,7 @@ def test_store_upload_creates_isolated_job_and_extracts_zip(tmp_path: Path) -> N
 
     assert job.directory.parent == tmp_path
     assert job.archive.name == "export.zip"
+    assert not job.archive.exists()
     assert job.state.read_text() == "{}"
     assert job.output.is_dir()
     assert job.extracted.joinpath("playlist.csv").read_bytes() == b"title"

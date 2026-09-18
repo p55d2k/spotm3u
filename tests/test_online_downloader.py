@@ -111,6 +111,27 @@ def test_missing_output_is_not_success(tmp_path, monkeypatch):
         download_track(TRACK, "https://example.com/source", tmp_path)
 
 
+def test_invalid_download_is_discarded(tmp_path, monkeypatch):
+    class Fake(FakeYoutubeDL):
+        def download(self, urls):
+            output = Path(self.options["outtmpl"].replace("%(ext)s", "mp3"))
+            output.write_bytes(b"not music")
+            return 0
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=Fake))
+    monkeypatch.setattr(
+        "spotm3u.online.downloader.validate_downloaded_audio",
+        lambda track, path: types.SimpleNamespace(
+            status="invalid", reasons=("speech detected",)
+        ),
+    )
+
+    with pytest.raises(DownloadError, match="invalid"):
+        download_track(TRACK, "https://example.com/source", tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_hung_download_is_abandoned_after_wall_clock_timeout(tmp_path, monkeypatch):
     class Hung(FakeYoutubeDL):
         def download(self, urls):

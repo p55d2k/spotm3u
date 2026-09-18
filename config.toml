@@ -41,6 +41,12 @@
 # Maximum number of entries allowed inside one uploaded ZIP (default 10000).
 # max_archive_entries = 10000
 
+# How long (seconds) an upload job directory is kept before cleanup. Stale
+# uploads are swept on each new upload and at server startup; jobs still
+# processing are never removed. Download audio and generated M3Us live outside
+# the job directory and are kept. (default 86400 = 24 hours).
+# max_job_age = 86400
+
 [search]
 # How many results each online search query returns.
 # max_results = 8

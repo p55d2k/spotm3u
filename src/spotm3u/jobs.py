@@ -432,6 +432,15 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def active_job_ids(self) -> set[str]:
+        """Return ids of jobs that are still queued or running."""
+        with self._lock:
+            return {
+                job_id
+                for job_id, job in self._jobs.items()
+                if job.status in {"queued", "running"}
+            }
+
 
 __all__ = [
     "JobManager",

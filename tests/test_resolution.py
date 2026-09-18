@@ -99,6 +99,29 @@ def test_incomplete_metadata_candidate_is_downloaded(tmp_path: Path, monkeypatch
     assert result.successful
 
 
+def test_invalid_download_file_is_discarded(tmp_path: Path, monkeypatch) -> None:
+    downloaded = tmp_path / "output" / "song.mp3"
+    downloaded.parent.mkdir(parents=True)
+    downloaded.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "spotm3u.resolution.validate_downloaded_audio",
+        lambda track, path: type("Validation", (), {
+            "status": "invalid",
+            "reasons": ("speech detected",),
+        })(),
+    )
+
+    result = TrackResolver(
+        LocalAudioResolver(tmp_path / "empty"),
+        tmp_path / "output",
+        searcher=Searcher((candidate(),)),
+        downloader=lambda track, url, output: downloaded,
+    ).resolve(TRACK)
+
+    assert result.status == "failed"
+    assert not downloaded.exists()
+
+
 def test_tries_next_candidate_when_first_download_fails_audio_validation(
     tmp_path: Path, monkeypatch
 ) -> None:

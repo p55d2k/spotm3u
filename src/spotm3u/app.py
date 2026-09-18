@@ -18,7 +18,7 @@ from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, download_track
 from .online.cache import DownloadCache
 from .resolution import TrackResolver
-from .uploads import UploadError, default_upload_root, store_upload
+from .uploads import UploadError, cleanup_jobs, default_upload_root, store_upload
 
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -76,6 +76,8 @@ def create_app(config: dict | None = None) -> Flask:
                 "index.html",
                 error="The upload could not be stored. Please try again.",
             ), 500
+
+        _sweep_old_jobs(app)
 
         try:
             playlists = parse_exportify(job.extracted)
@@ -372,6 +374,20 @@ def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:
     return index
 
 
+def _sweep_old_jobs(app: Flask, *, log: bool = False) -> None:
+    """Remove abandoned upload job directories that are past their age limit."""
+    try:
+        removed = cleanup_jobs(
+            app.config["UPLOAD_ROOT"],
+            max_age_seconds=app.config["MAX_JOB_AGE"],
+            active_job_ids=app.config["JOB_MANAGER"].active_job_ids(),
+        )
+        if log and removed:
+            app.logger.info("Removed %d abandoned upload job(s)", removed)
+    except (OSError, ValueError):
+        app.logger.exception("Unable to sweep abandoned upload jobs")
+
+
 def _download_dir(app: Flask) -> Path:
     """Resolve the persistent directory for downloaded MP3s and the M3U.
 
@@ -441,4 +457,5 @@ def _build_processing_job(
 
 def run() -> None:
     """Run the development web server."""
+    _sweep_old_jobs(app, log=True)
     app.run(port=app.config.get("PORT", 5001), debug=True)

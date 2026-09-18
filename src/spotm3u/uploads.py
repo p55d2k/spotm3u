@@ -5,7 +5,9 @@ from __future__ import annotations
 import secrets
 import shutil
 import tempfile
+import time
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -68,6 +70,7 @@ def store_upload(
             max_decompressed_size=max_decompressed_size,
             max_archive_entries=max_archive_entries,
         )
+        _remove_archive(archive_path)
         output_directory.mkdir()
         state_path.write_text("{}", encoding="utf-8")
     except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
@@ -85,6 +88,14 @@ def store_upload(
         state=state_path,
         output=output_directory,
     )
+
+
+def _remove_archive(archive_path: Path) -> None:
+    """Best-effort removal of the stored archive after successful extraction."""
+    try:
+        archive_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _write_limited(uploaded_file, destination: Path, max_upload_size: int) -> None:
@@ -192,6 +203,46 @@ def _is_regular_entry(entry: zipfile.ZipInfo) -> bool:
 def _is_symlink(entry: zipfile.ZipInfo) -> bool:
     file_type = (entry.external_attr >> 16) & 0o170000
     return file_type == 0o120000
+
+
+def cleanup_jobs(
+    upload_root: str | Path,
+    *,
+    max_age_seconds: float,
+    active_job_ids: Iterable[str] = (),
+    now: float | None = None,
+) -> int:
+    """Remove old, abandoned upload job directories.
+
+    A job directory is removed only when ``max_age_seconds`` have passed since
+    it was created and its ``job_id`` is not in ``active_job_ids``, so cleanup
+    never deletes data while a job is still processing. Returns the number of
+    directories removed.
+    """
+    if max_age_seconds <= 0:
+        raise ValueError("max_age_seconds must be positive")
+    root = Path(upload_root)
+    if not root.is_dir():
+        return 0
+
+    timestamp = time.time() if now is None else now
+    active = set(active_job_ids or ())
+    removed = 0
+    for directory in root.iterdir():
+        if not directory.is_dir() or not directory.name.startswith("job-"):
+            continue
+        job_id = directory.name[len("job-"):]
+        if job_id in active:
+            continue
+        try:
+            age = timestamp - directory.stat().st_mtime
+        except OSError:
+            continue
+        if age < max_age_seconds:
+            continue
+        shutil.rmtree(directory, ignore_errors=True)
+        removed += 1
+    return removed
 
 
 def default_upload_root() -> Path:

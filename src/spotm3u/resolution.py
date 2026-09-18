@@ -249,6 +249,8 @@ class TrackResolver:
             report("validating-audio")
             audio_validation = validate_downloaded_audio(track, downloaded)
             if audio_validation.status == "invalid" or not _is_real_file(downloaded):
+                if not reused_from_cache and downloaded is not None:
+                    _discard_file(downloaded)
                 invalid_downloads.extend(
                     audio_validation.reasons or ("downloaded file is not usable",)
                 )
@@ -355,6 +357,14 @@ def _is_real_file(path: str | Path) -> bool:
         return Path(path).is_file()
     except (OSError, ValueError):
         return False
+
+
+def _discard_file(path: str | Path) -> None:
+    """Best-effort removal of a download that failed validation."""
+    try:
+        Path(path).unlink(missing_ok=True)
+    except (OSError, ValueError):
+        pass
 
 
 __all__ = [

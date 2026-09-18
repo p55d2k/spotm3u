@@ -68,9 +68,21 @@ Do not log authentication tokens or unrelated credentials.
 
 ## Cleanup
 
-Temporary ZIPs, extracted files, and failed job data should eventually be removed.
+Temporary job data has a deterministic cleanup path:
 
-Successful downloaded audio should remain available for as long as the application's retention policy requires.
+- The uploaded ZIP archive is removed immediately after successful extraction
+  into the job directory.
+- Old, abandoned job directories (extracted files, job metadata, and the
+  per-job output slot) are swept from the upload root on each new upload and
+  at server startup once they pass the configured age limit
+  (`upload.max_job_age`). Jobs still queued or running are never removed.
+- Failed downloads are discarded as soon as they fail validation, so invalid
+  or partial audio does not accumulate in the download directory.
+
+The generated M3U and the successfully downloaded audio it references are kept
+for as long as the application's retention policy requires — they are never
+deleted before the playlist stops being useful, and captured downloads are
+reused across runs via the download cache.
 
 ## Principle
 

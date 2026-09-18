@@ -18,6 +18,7 @@ from typing import Any
 DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 DEFAULT_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
 DEFAULT_MAX_ARCHIVE_ENTRIES = 10_000
+DEFAULT_MAX_JOB_AGE = 24 * 60 * 60
 
 
 class ConfigError(ValueError):
@@ -38,6 +39,7 @@ class Config:
     max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE
     max_decompressed_size: int = DEFAULT_MAX_DECOMPRESSED_SIZE
     max_archive_entries: int = DEFAULT_MAX_ARCHIVE_ENTRIES
+    max_job_age: int = DEFAULT_MAX_JOB_AGE
     # [search]
     max_results: int = 8
     max_search_workers: int = 4
@@ -60,6 +62,7 @@ class Config:
             "MAX_CONTENT_LENGTH": self.max_upload_size,
             "MAX_DECOMPRESSED_SIZE": self.max_decompressed_size,
             "MAX_ARCHIVE_ENTRIES": self.max_archive_entries,
+            "MAX_JOB_AGE": self.max_job_age,
             "RESOLVE_WORKERS": self.resolve_workers,
             "SEARCH_MAX_RESULTS": self.max_results,
             "SEARCH_MAX_WORKERS": self.max_search_workers,
@@ -91,6 +94,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "upload.max_upload_size": "max_upload_size",
     "upload.max_decompressed_size": "max_decompressed_size",
     "upload.max_archive_entries": "max_archive_entries",
+    "upload.max_job_age": "max_job_age",
     "search.max_results": "max_results",
     "search.max_search_workers": "max_search_workers",
     "search.socket_timeout": "search_socket_timeout",
@@ -174,6 +178,7 @@ __all__ = [
     "ConfigError",
     "DEFAULT_MAX_ARCHIVE_ENTRIES",
     "DEFAULT_MAX_DECOMPRESSED_SIZE",
+    "DEFAULT_MAX_JOB_AGE",
     "DEFAULT_MAX_UPLOAD_SIZE",
     "discover_config_path",
     "load_config",
