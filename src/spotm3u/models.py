@@ -29,7 +29,10 @@ class Track:
 
 @dataclass(frozen=True)
 class ResolvedTrack:
-    """A track matched to an audio file available on the local machine."""
+    """A track matched to a verified audio file available locally."""
 
     track: Track
     local_path: Path
+    resolution_method: str = "local"
+    source_url: str | None = None
+    status: str = "local"
