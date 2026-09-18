@@ -97,3 +97,7 @@ Read only the documentation relevant to the current task.
 - `docs/matching.md` → local music discovery and track matching
 - `docs/m3u.md` → M3U generation and playlist semantics
 - `docs/security.md` → uploads, temporary files, validation, cleanup
+
+## pytest
+
+Run pytest with `uv run pytest`.
