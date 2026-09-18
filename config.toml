@@ -34,6 +34,13 @@
 # Maximum accepted ZIP size in bytes (default 50 MiB = 52428800).
 # max_upload_size = 52428800
 
+# Maximum total expanded size (bytes) of all extracted files before the upload
+# is rejected as unsafe (default 512 MiB = 536870912). Clamps zip bombs.
+# max_decompressed_size = 536870912
+
+# Maximum number of entries allowed inside one uploaded ZIP (default 10000).
+# max_archive_entries = 10000
+
 [search]
 # How many results each online search query returns.
 # max_results = 8

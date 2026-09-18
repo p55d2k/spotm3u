@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+DEFAULT_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
+DEFAULT_MAX_ARCHIVE_ENTRIES = 10_000
 
 
 class ConfigError(ValueError):
@@ -34,6 +36,8 @@ class Config:
     resolve_workers: int = 4
     # [upload]
     max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE
+    max_decompressed_size: int = DEFAULT_MAX_DECOMPRESSED_SIZE
+    max_archive_entries: int = DEFAULT_MAX_ARCHIVE_ENTRIES
     # [search]
     max_results: int = 8
     max_search_workers: int = 4
@@ -54,6 +58,8 @@ class Config:
         values: dict[str, Any] = {
             "PORT": self.port,
             "MAX_CONTENT_LENGTH": self.max_upload_size,
+            "MAX_DECOMPRESSED_SIZE": self.max_decompressed_size,
+            "MAX_ARCHIVE_ENTRIES": self.max_archive_entries,
             "RESOLVE_WORKERS": self.resolve_workers,
             "SEARCH_MAX_RESULTS": self.max_results,
             "SEARCH_MAX_WORKERS": self.max_search_workers,
@@ -83,6 +89,8 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "web.download_dir": "download_dir",
     "web.resolve_workers": "resolve_workers",
     "upload.max_upload_size": "max_upload_size",
+    "upload.max_decompressed_size": "max_decompressed_size",
+    "upload.max_archive_entries": "max_archive_entries",
     "search.max_results": "max_results",
     "search.max_search_workers": "max_search_workers",
     "search.socket_timeout": "search_socket_timeout",
@@ -164,6 +172,8 @@ def load_user_config() -> Config:
 __all__ = [
     "Config",
     "ConfigError",
+    "DEFAULT_MAX_ARCHIVE_ENTRIES",
+    "DEFAULT_MAX_DECOMPRESSED_SIZE",
     "DEFAULT_MAX_UPLOAD_SIZE",
     "discover_config_path",
     "load_config",

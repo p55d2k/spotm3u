@@ -65,6 +65,8 @@ def create_app(config: dict | None = None) -> Flask:
                 uploaded_file,
                 upload_root=app.config["UPLOAD_ROOT"],
                 max_upload_size=app.config["MAX_CONTENT_LENGTH"],
+                max_decompressed_size=app.config["MAX_DECOMPRESSED_SIZE"],
+                max_archive_entries=app.config["MAX_ARCHIVE_ENTRIES"],
             )
         except UploadError as error:
             return render_template("index.html", error=str(error)), 400

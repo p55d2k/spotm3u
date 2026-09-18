@@ -9,6 +9,11 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from .config import (
+    DEFAULT_MAX_ARCHIVE_ENTRIES,
+    DEFAULT_MAX_DECOMPRESSED_SIZE,
+)
+
 
 class UploadError(ValueError):
     """An upload could not be accepted safely."""
@@ -31,8 +36,16 @@ def store_upload(
     *,
     upload_root: Path,
     max_upload_size: int,
+    max_decompressed_size: int = DEFAULT_MAX_DECOMPRESSED_SIZE,
+    max_archive_entries: int = DEFAULT_MAX_ARCHIVE_ENTRIES,
 ) -> UploadJob:
-    """Validate, store, and safely extract one uploaded ZIP archive."""
+    """Validate, store, and safely extract one uploaded ZIP archive.
+
+    ``max_upload_size`` bounds the compressed archive bytes, while
+    ``max_decompressed_size`` bounds the total expanded bytes and
+    ``max_archive_entries`` bounds the number of extracted entries. These
+    caps protect against zip bombs and path-exhaustion archives.
+    """
     filename = uploaded_file.filename or ""
     if not filename.lower().endswith(".zip"):
         raise UploadError("Please upload the ZIP file downloaded from Exportify.")
@@ -49,7 +62,12 @@ def store_upload(
     try:
         job_directory.mkdir()
         _write_limited(uploaded_file, archive_path, max_upload_size)
-        _extract_zip(archive_path, extracted_directory)
+        _extract_zip(
+            archive_path,
+            extracted_directory,
+            max_decompressed_size=max_decompressed_size,
+            max_archive_entries=max_archive_entries,
+        )
         output_directory.mkdir()
         state_path.write_text("{}", encoding="utf-8")
     except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
@@ -82,33 +100,73 @@ def _write_limited(uploaded_file, destination: Path, max_upload_size: int) -> No
             output.write(chunk)
 
 
-def _extract_zip(archive_path: Path, destination: Path) -> None:
+def _extract_zip(
+    archive_path: Path,
+    destination: Path,
+    *,
+    max_decompressed_size: int,
+    max_archive_entries: int,
+) -> None:
+    if max_archive_entries <= 0 or max_decompressed_size <= 0:
+        raise UploadError("The uploaded ZIP could not be extracted safely.")
     destination.mkdir()
     destination_root = destination.resolve()
 
     with zipfile.ZipFile(archive_path) as archive:
+        entries = archive.infolist()
+        if len(entries) > max_archive_entries:
+            raise UploadError("The uploaded ZIP contains too many files.")
         if archive.testzip() is not None:
             raise UploadError("The uploaded ZIP is damaged and cannot be read.")
 
-        for entry in archive.infolist():
+        extracted_total = 0
+        for entry in entries:
             relative_path = _safe_archive_path(entry.filename)
             target = (destination / relative_path).resolve()
             if destination_root not in target.parents and target != destination_root:
                 raise UploadError("The uploaded ZIP contains an unsafe path.")
-            if _is_symlink(entry):
-                raise UploadError("The uploaded ZIP contains an unsupported link.")
+            if not _is_regular_entry(entry):
+                raise UploadError("The uploaded ZIP contains an unsupported entry.")
 
             if entry.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
 
             target.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(entry) as source, target.open("wb") as output:
-                shutil.copyfileobj(source, output)
+            extracted_total += _extract_file(
+                archive,
+                entry,
+                target,
+                max_decompressed_size,
+                extracted_total,
+            )
+
+
+def _extract_file(
+    archive: zipfile.ZipFile,
+    entry: zipfile.ZipInfo,
+    target: Path,
+    max_decompressed_size: int,
+    extracted_so_far: int,
+) -> int:
+    if entry.file_size > max_decompressed_size:
+        raise UploadError("The uploaded ZIP expands to too much data.")
+    written = 0
+    with archive.open(entry) as source, target.open("wb") as output:
+        while chunk := source.read(64 * 1024):
+            written += len(chunk)
+            if extracted_so_far + written > max_decompressed_size:
+                raise UploadError("The uploaded ZIP expands to too much data.")
+            output.write(chunk)
+    return written
 
 
 def _safe_archive_path(name: str) -> Path:
     if not name or "\\" in name:
+        raise UploadError("The uploaded ZIP contains an unsafe path.")
+    if any(char < " " for char in name):
+        raise UploadError("The uploaded ZIP contains an unsafe path.")
+    if len(name) > 4096:
         raise UploadError("The uploaded ZIP contains an unsafe path.")
 
     path = PurePosixPath(name)
@@ -119,6 +177,16 @@ def _safe_archive_path(name: str) -> Path:
     ):
         raise UploadError("The uploaded ZIP contains an unsafe path.")
     return Path(*path.parts)
+
+
+def _is_regular_entry(entry: zipfile.ZipInfo) -> bool:
+    """True for plain files and directories; false for links and special files."""
+    if _is_symlink(entry):
+        return False
+    if entry.is_dir():
+        return True
+    file_type = (entry.external_attr >> 16) & 0o170000
+    return file_type in (0, 0o100000)
 
 
 def _is_symlink(entry: zipfile.ZipInfo) -> bool:

@@ -71,3 +71,78 @@ def test_store_upload_rejects_invalid_zip_and_oversized_upload(tmp_path: Path) -
             upload_root=tmp_path,
             max_upload_size=10,
         )
+
+
+def test_store_upload_rejects_excessive_decompressed_size(tmp_path: Path) -> None:
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr("playlist.csv", b"x" * 4096)
+    blob = output.getvalue()
+
+    with pytest.raises(UploadError, match="too much data"):
+        store_upload(
+            file_storage(blob),
+            upload_root=tmp_path,
+            max_upload_size=1024 * 1024,
+            max_decompressed_size=1024,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_store_upload_rejects_too_many_entries(tmp_path: Path) -> None:
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        for index in range(4):
+            archive.writestr(f"playlist-{index}.csv", b"title")
+    blob = output.getvalue()
+
+    with pytest.raises(UploadError, match="too many files"):
+        store_upload(
+            file_storage(blob),
+            upload_root=tmp_path,
+            max_upload_size=1024 * 1024,
+            max_archive_entries=3,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_store_upload_rejects_special_file_entries(tmp_path: Path) -> None:
+    from zipfile import ZipInfo
+
+    info = ZipInfo("fifo.dat")
+    info.create_system = 3
+    info.external_attr = 0o010000 << 16
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr(info, b"x")
+    blob = output.getvalue()
+
+    with pytest.raises(UploadError, match="unsupported entry"):
+        store_upload(
+            file_storage(blob),
+            upload_root=tmp_path,
+            max_upload_size=1024,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("entry", ["bad\x00name.csv", "a\nb.csv"])
+def test_safe_archive_path_rejects_control_characters(entry: str) -> None:
+    from spotm3u.uploads import _safe_archive_path
+
+    with pytest.raises(UploadError, match="unsafe path"):
+        _safe_archive_path(entry)
+
+
+def test_store_upload_rejects_newline_in_zip_path(tmp_path: Path) -> None:
+    with pytest.raises(UploadError, match="unsafe path"):
+        store_upload(
+            file_storage(zip_bytes("a\nb.csv")),
+            upload_root=tmp_path,
+            max_upload_size=1024,
+        )
+
+    assert list(tmp_path.iterdir()) == []
