@@ -1,3 +1,12 @@
+"""Tests for the online source discovery layer."""
+
+from __future__ import annotations
+
+import sys
+import threading
+import time
+import types
+
 from spotm3u.models import Track
 from spotm3u.online import SourceCandidate, build_search_queries
 from spotm3u.online.search import OnlineSourceSearcher
@@ -102,3 +111,74 @@ def test_coerce_results_filters_non_music_entries() -> None:
         "https://example.com/song",
         "https://example.com/live",
     ]
+
+
+class FakeYoutubeDL:
+    """Shared-state fake so the test can observe real concurrency."""
+
+    instance = None
+
+    def __init__(self, options: dict) -> None:
+        type(self).instance = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class MeasuringYoutubeDL(FakeYoutubeDL):
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    shared_url = "https://example.com/shared"
+
+    def extract_info(self, spec, download=False):
+        query = spec.split(":", 1)[1]
+        with type(self).lock:
+            type(self).active += 1
+            type(self).max_active = max(type(self).max_active, type(self).active)
+        try:
+            time.sleep(0.05)
+            if "audio" in query:
+                url = type(self).shared_url
+            else:
+                url = "https://example.com/" + "_".join(query.split())
+            return {"entries": [{"title": query, "webpage_url": url}]}
+        finally:
+            with type(self).lock:
+                type(self).active -= 1
+
+
+def install_fake_yt_dlp(monkeypatch, fake=MeasuringYoutubeDL) -> None:
+    fake.active = 0
+    fake.max_active = 0
+    monkeypatch.setitem(
+        sys.modules,
+        "yt_dlp",
+        types.SimpleNamespace(
+            YoutubeDL=fake,
+            utils=types.SimpleNamespace(DownloadError=RuntimeError),
+        ),
+    )
+
+
+def test_search_runs_queries_concurrently_and_deduplicates(monkeypatch) -> None:
+    install_fake_yt_dlp(monkeypatch)
+    track = Track(title="Song", artists=["Artist"])
+    queries = build_search_queries(track)
+    assert len(queries) >= 3
+
+    results = OnlineSourceSearcher().search(track)
+
+    assert MeasuringYoutubeDL.max_active >= 2, "queries did not run in parallel"
+    urls = {candidate.url for candidate in results}
+    assert MeasuringYoutubeDL.shared_url in urls
+    assert len(urls) == len(queries) - 1  # the two 'audio' queries share one URL
+
+
+def test_search_returns_empty_without_yt_dlp(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "yt_dlp", None)
+    results = OnlineSourceSearcher().search(Track(title="Song", artists=["Artist"]))
+    assert results == ()

@@ -10,11 +10,17 @@ layer after all queries have been seen.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..models import Track
 from ..normalization import normalize
+
+# Cap on concurrent network queries for one track. Queries run in parallel
+# because each one is an independent yt-dlp request; keeping the count modest
+# avoids hammering the source site from a playlist of many tracks.
+DEFAULT_SEARCH_WORKERS = 4
 
 # A small, configurable set of focused search queries. The artist is always
 # included because a title-only search tends to return same-title uploads by
@@ -75,17 +81,24 @@ class SourceCandidate:
 class OnlineSourceSearcher:
     """Build search queries and collect candidate metadata for a track."""
 
-    def __init__(self, *, max_results: int = 8) -> None:
+    def __init__(
+        self,
+        *,
+        max_results: int = 8,
+        max_search_workers: int = DEFAULT_SEARCH_WORKERS,
+    ) -> None:
         self.max_results = max_results
+        self.max_search_workers = max_search_workers
 
     def search(self, track: Track) -> tuple[SourceCandidate, ...]:
         """Aggregate candidates from every focused query for ``track``.
 
         All queries in the configured template set are run so that a candidate
-        appearing only in a later query is still discovered. Candidates are
-        deduplicated by URL and returned in discovery order; ranking happens
-        later. If the search backend is unavailable or a search fails, this
-        returns an empty tuple instead of raising.
+        appearing only in a later query is still discovered. Queries run
+        concurrently and candidates are deduplicated by URL while preserving
+        query order; ranking happens later. If the search backend is
+        unavailable or a search fails, this returns an empty tuple instead of
+        raising.
         """
         queries = build_search_queries(track)
         if not queries:
@@ -96,30 +109,49 @@ class OnlineSourceSearcher:
         except ImportError:  # pragma: no cover - optional dependency in tests
             return ()
 
+        workers = min(len(queries), self.max_search_workers)
+        if workers <= 1:
+            results_per_query = [
+                self._run_query(yt_dlp, query) for query in queries
+            ]
+        else:
+            with ThreadPoolExecutor(
+                max_workers=workers,
+                thread_name_prefix="spotm3u-search",
+            ) as pool:
+                results_per_query = list(
+                    pool.map(lambda query: self._run_query(yt_dlp, query), queries)
+                )
+
         results: list[SourceCandidate] = []
         seen_urls: set[str] = set()
-        for query in queries:
-            try:
-                with yt_dlp.YoutubeDL(
-                    {
-                        "quiet": True,
-                        "no_warnings": True,
-                        "skip_download": True,
-                        "extract_flat": True,
-                        "noplaylist": True,
-                        "default_search": "ytsearch",
-                    }
-                ) as ydl:
-                    info = ydl.extract_info(f"ytsearch{self.max_results}:{query}", download=False)
-            except (yt_dlp.utils.DownloadError, OSError):
-                continue
-            candidates = self._coerce_results(info, source_query=query)
+        for candidates in results_per_query:
             for candidate in candidates:
                 if candidate.url in seen_urls:
                     continue
                 seen_urls.add(candidate.url)
                 results.append(candidate)
         return tuple(results)
+
+    def _run_query(self, yt_dlp: Any, query: str) -> list[SourceCandidate]:
+        """Run one focused query and return its coerced candidates."""
+        try:
+            with yt_dlp.YoutubeDL(
+                {
+                    "quiet": True,
+                    "no_warnings": True,
+                    "skip_download": True,
+                    "extract_flat": True,
+                    "noplaylist": True,
+                    "default_search": "ytsearch",
+                }
+            ) as ydl:
+                info = ydl.extract_info(
+                    f"ytsearch{self.max_results}:{query}", download=False
+                )
+        except (yt_dlp.utils.DownloadError, OSError):
+            return []
+        return OnlineSourceSearcher._coerce_results(info, source_query=query)
 
     @staticmethod
     def _coerce_results(info: Any, *, source_query: str | None = None) -> list[SourceCandidate]:
