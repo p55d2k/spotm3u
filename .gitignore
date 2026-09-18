@@ -1,13 +1,65 @@
-out/
-.DS_Store
-.venv/
-data.csv
-options.json
+# Python
 __pycache__/
-data_files/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Build / packaging
+build/
+dist/
+*.spec.bak
+
+# PyInstaller
+*.manifest
+*.toc
+*.pyz
+*.pyd
+
+# IDE / editors
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# mac
+.DS_Store
+
+# ai agents
 tasks.md
 tasks/
-.browser-data/
-.pytest_cache/
-*.py[cod]
-*.egg-info/
+
