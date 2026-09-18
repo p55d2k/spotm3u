@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ state.playlist.name }} - Result - Exportify to M3U</title>
+    <title>{{ state.playlist.name }} - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
     <main class="card">
-      <p class="eyebrow">Processing result</p>
+      <p class="eyebrow">Step 4 · Conversion complete</p>
       <h1>{{ state.playlist.name }}</h1>
       <p class="intro">Total tracks: {{ state.playlist.total_tracks }}</p>
 
@@ -31,7 +31,7 @@
 
       <p class="download">
         {% if state.m3u_path %}
-        <a href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Save playlist (M3U)</a>
+        <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Download M3U playlist</a>
         {% else %}
         No M3U playlist was generated.
         {% endif %}
@@ -75,7 +75,7 @@
       </section>
 
       <p>
-        <a href="{{ url_for('playlists', job_id=job_id) }}">Download another playlist</a>
+        <a href="{{ url_for('playlists', job_id=job_id) }}">Convert another playlist</a>
         ·
         <a href="{{ url_for('index') }}">Upload another ZIP</a>
       </p>

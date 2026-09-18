@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Processing - Exportify to M3U</title>
+    <title>Processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
     <main class="card">
-      <p class="eyebrow">Processing playlist</p>
+      <p class="eyebrow">Step 3 · Processing playlist</p>
       <h1>{{ playlist_name }}</h1>
-      <p class="intro">Total tracks: {{ total_tracks }}</p>
+      <p class="intro">{{ total_tracks }} tracks · You can leave this tab open while spotm3u works.</p>
 
       <form id="start-form" method="post" action="{{ url_for('start_processing', job_id=job_id, playlist_id=playlist_id) }}">
-        <button type="submit">Start processing</button>
+        <button type="submit">Start converting playlist</button>
       </form>
 
       <p id="download-wrap" class="download" hidden>
@@ -113,6 +113,10 @@
         jobError.textContent = state.error || "";
         renderTracks(state.tracks);
         downloadWrap.hidden = state.status !== "completed";
+        if (state.status === "completed") {
+          window.location.href = "{{ url_for('processing_result', job_id=job_id, playlist_id=playlist_id) }}";
+          return;
+        }
         if (state.status === "running") {
           setTimeout(poll, 1000);
         }

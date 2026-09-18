@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Batch processing - Exportify to M3U</title>
+    <title>Batch processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
     <main class="card">
-      <p class="eyebrow">Batch processing</p>
-      <h1>Download selected playlists</h1>
+      <p class="eyebrow">Step 3 · Batch conversion</p>
+      <h1>Converting selected playlists</h1>
+      <p class="intro">Playlists with more than 50 songs can take a while. Leave this tab open while spotm3u completes the work.</p>
       <form id="start-form" method="post" action="{{ url_for('start_batch_processing', job_id=job_id) }}">
         <button type="submit">Start batch processing</button>
       </form>
@@ -109,7 +110,11 @@
           list.appendChild(item);
         }
         resultLink.textContent = "";
-        if (state.status === "completed" || state.status === "failed") {
+        if (state.status === "completed") {
+          window.location.href = "{{ url_for('batch_processing_result', job_id=job_id) }}";
+          return;
+        }
+        if (state.status === "failed") {
           const link = document.createElement("a");
           link.href = "{{ url_for('batch_processing_result', job_id=job_id) }}";
           link.textContent = "View batch results";

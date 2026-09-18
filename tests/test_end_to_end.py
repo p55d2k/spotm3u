@@ -121,7 +121,7 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
     resp = client.get(f"/processing/{job_id}/0")
     assert resp.status_code == 200
     assert b"Mixed" in resp.data
-    assert b"Total tracks: 3" in resp.data
+    assert b"3 tracks" in resp.data
 
     # 4. Start processing
     resp = client.post(f"/processing/{job_id}/0/start")

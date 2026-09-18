@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Select playlist - Exportify to M3U</title>
+    <title>Select playlists - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
     <main class="card">
-      <p class="eyebrow">Imported playlists</p>
+      <p class="eyebrow">Step 2 · Choose playlists</p>
       <h1>Select playlists</h1>
       {% if error %}
       <p role="alert">{{ error }}</p>
@@ -49,7 +49,8 @@
       {% else %}
       <p role="status">The export did not contain any playlists.</p>
       {% endif %}
-      <p><a href="{{ url_for('index') }}">Upload another ZIP</a></p>
+      <p class="page-note">Playlists with more than 50 songs can take a while to finish. You can leave this tab open while spotm3u works.</p>
+      <p><a class="secondary-link" href="{{ url_for('index') }}">Upload another ZIP</a></p>
     </main>
     <script>
       const checks = [...document.querySelectorAll('#batch-form input[type="checkbox"]')];

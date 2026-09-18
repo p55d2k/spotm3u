@@ -3,20 +3,20 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Exportify to M3U</title>
+    <title>Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
     <main class="card">
-      <p class="eyebrow">Local playlist converter</p>
-      <h1>Exportify to M3U</h1>
+      <p class="eyebrow">spotm3u · Spotify playlist converter</p>
+      <h1>Spotify to M3U Converter</h1>
       <p class="intro">
-        Convert an Exportify playlist export into a local M3U playlist without
-        giving this app access to your Spotify account.
+        Turn your Spotify playlists into local M3U playlists without giving
+        spotm3u access to your Spotify account.
       </p>
 
       <section aria-labelledby="instructions-heading">
-        <h2 id="instructions-heading">How it works</h2>
+        <h2 id="instructions-heading">Get started</h2>
         <ol class="steps">
           <li>
             <strong>Open Exportify</strong>
@@ -33,11 +33,11 @@
         </ol>
       </section>
 
-      <form action="/upload" method="post" enctype="multipart/form-data">
+      <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form">
         {% if error %}
-        <p role="alert">{{ error }}</p>
+        <p class="error" role="alert">{{ error }}</p>
         {% endif %}
-        <label for="export-file">Exportify ZIP file</label>
+        <label for="export-file">Spotify playlist export ZIP</label>
         <input
           id="export-file"
           name="file"
@@ -45,8 +45,20 @@
           accept=".zip,application/zip"
           required
         >
-        <button type="submit">Upload Exportify ZIP</button>
+        <p class="field-help">ZIP files from Exportify are supported. Large playlists may take a while; keep this tab open while spotm3u works.</p>
+        <button type="submit" id="upload-button">Upload playlist export</button>
       </form>
     </main>
+    <script>
+      document.getElementById("export-file").addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (file) document.getElementById("upload-button").textContent = "Upload " + file.name;
+      });
+      document.getElementById("upload-form").addEventListener("submit", () => {
+        const button = document.getElementById("upload-button");
+        button.disabled = true;
+        button.textContent = "Uploading…";
+      });
+    </script>
   </body>
 </html>

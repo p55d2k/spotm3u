@@ -26,7 +26,7 @@ def test_homepage_renders() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert b"Exportify to M3U" in response.data
+    assert b"Spotify to M3U Converter" in response.data
     assert b"Exportify" in response.data
     assert b"Export All" in response.data
     assert b"Download the playlist export ZIP" in response.data
@@ -160,7 +160,7 @@ def test_batch_processing_page_renders_full_start_state(tmp_path) -> None:
     response = client.get(f"/processing/{job_id}/batch")
 
     assert response.status_code == 200
-    assert b"Download selected playlists" in response.data
+    assert b"Start batch processing" in response.data
     assert b"undefined / undefined" not in response.data
 
 
@@ -311,9 +311,9 @@ def test_processing_page_shows_playlist_details(tmp_path) -> None:
 
     assert response.status_code == 200
     assert b"two" in response.data
-    assert b"Total tracks: 1" in response.data
+    assert b"1 tracks" in response.data
     assert f"/processing/{job_id}/1/start".encode() in response.data
-    assert b"Start processing" in response.data
+    assert b"Start converting playlist" in response.data
     assert b'action="' + f"/processing/{job_id}/1/start".encode() + b'"' in response.data
 
 
@@ -402,7 +402,7 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
     assert b"Total tracks: 1" in response.data
     assert f"/processing/{job_id}/1/playlist.m3u".encode() in response.data
     assert f"/playlists/{job_id}".encode() in response.data
-    assert b"Download another playlist" in response.data
+    assert b"Convert another playlist" in response.data
 
 
 def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:

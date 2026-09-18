@@ -1,4 +1,4 @@
-# spotm3u
+# Spotify to M3U Converter
 
 > Turn an Exportify playlist export into a local, validated M3U playlist without
 > requiring Spotify access in the application.
@@ -24,7 +24,7 @@
 
 ## Overview
 
-spotm3u is a local Flask application for converting playlist metadata exported
+Spotify to M3U Converter (spotm3u) is a local Flask application for converting playlist metadata exported
 by [Exportify](https://exportify.net/) into an M3U file that points to audio
 files on the user's computer. It checks the local music library first, then
 finds, validates, and downloads missing recordings with `yt-dlp`.
