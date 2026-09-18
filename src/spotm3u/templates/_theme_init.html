@@ -1,0 +1,7 @@
+<script>
+  (() => {
+    const saved = localStorage.getItem("spotm3u-theme");
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = saved || (systemDark ? "dark" : "light");
+  })();
+</script>

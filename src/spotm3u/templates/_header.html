@@ -1,0 +1,31 @@
+<header class="site-header">
+  <a class="brand" href="{{ url_for('index') }}" aria-label="Spotify to M3U Converter home">
+    <span class="brand-mark" aria-hidden="true">♪</span>
+    <span>spotm3u</span>
+  </a>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false">
+    <span aria-hidden="true" data-theme-icon>☾</span>
+    <span data-theme-label>Dark mode</span>
+  </button>
+</header>
+<script>
+  (() => {
+    const root = document.documentElement;
+    const toggle = document.querySelector("[data-theme-toggle]");
+    const icon = document.querySelector("[data-theme-icon]");
+    const label = document.querySelector("[data-theme-label]");
+    if (!toggle) return;
+    const update = () => {
+      const dark = root.dataset.theme === "dark";
+      toggle.setAttribute("aria-pressed", String(dark));
+      icon.textContent = dark ? "☀" : "☾";
+      label.textContent = dark ? "Light mode" : "Dark mode";
+    };
+    toggle.addEventListener("click", () => {
+      root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+      localStorage.setItem("spotm3u-theme", root.dataset.theme);
+      update();
+    });
+    update();
+  })();
+</script>

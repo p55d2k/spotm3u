@@ -3,10 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% include "_theme_init.html" %}
     <title>Batch processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
+    {% include "_header.html" %}
     <main class="card">
       <p class="eyebrow">Step 3 · Batch conversion</p>
       <h1>Converting selected playlists</h1>
