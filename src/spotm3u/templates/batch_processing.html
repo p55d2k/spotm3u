@@ -15,9 +15,18 @@
       </form>
       <section id="progress" class="progress" hidden>
         <p id="status" class="status-line" role="status"></p>
-        <div class="progress-track"><div id="bar" class="progress-bar"></div></div>
-        <p id="summary"></p>
-        <ul id="playlists"></ul>
+        <div class="progress-track" aria-label="Overall progress">
+          <div id="bar" class="progress-bar"></div>
+        </div>
+        <dl class="stats">
+          <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
+          <div><dt>Total tracks</dt><dd id="stat-total">0</dd></div>
+          <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
+          <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
+        </dl>
+        <p id="current-track" class="current-track"></p>
+        <div id="playlists" class="batch-playlists"></div>
+        <p id="result-link"></p>
       </section>
     </main>
     <script>
@@ -25,25 +34,86 @@
       const progress = document.getElementById("progress");
       const status = document.getElementById("status");
       const bar = document.getElementById("bar");
-      const summary = document.getElementById("summary");
+      const statCompleted = document.getElementById("stat-completed");
+      const statTotal = document.getElementById("stat-total");
+      const statSuccessful = document.getElementById("stat-successful");
+      const statFailed = document.getElementById("stat-failed");
+      const currentTrack = document.getElementById("current-track");
       const list = document.getElementById("playlists");
+      const resultLink = document.getElementById("result-link");
       const statusUrl = "{{ url_for('batch_processing_status', job_id=job_id) }}";
+      const stageLabels = {
+        queued: "Waiting to start",
+        "resolving-local": "Finding local audio",
+        searching: "Searching online",
+        searched: "Search complete",
+        "validating-source": "Checking source",
+        downloading: "Downloading",
+        "validating-audio": "Checking downloaded audio",
+        complete: "Complete",
+        failed: "Failed",
+        ambiguous: "Ambiguous",
+      };
+      const stageLabel = (stage) => stageLabels[stage] || stage;
+
       function render(state) {
         progress.hidden = false;
-        status.textContent = state.status === "completed" ? "Batch complete" : "Processing playlists";
+        status.textContent = state.status === "completed"
+          ? "Batch complete"
+          : state.status === "failed" ? "Batch finished with errors" : "Processing playlists";
         bar.style.width = (state.total ? Math.round(state.completed / state.total * 100) : 0) + "%";
-        summary.textContent = state.completed + " / " + state.total + " tracks complete · " + state.successful + " successful · " + state.failed + " failed";
+        statCompleted.textContent = state.completed + " / " + state.total;
+        statTotal.textContent = state.total;
+        statSuccessful.textContent = state.successful;
+        statFailed.textContent = state.failed;
+        const active = state.playlists.find((playlist) => playlist.status === "running");
+        currentTrack.textContent = active && active.current_track
+          ? "Active playlist: " + active.playlist.name + " · Current: " +
+            active.current_track.title + " — " + stageLabel(active.current_track.status)
+          : active ? "Active playlist: " + active.playlist.name : "";
         list.textContent = "";
         for (const playlist of state.playlists) {
-          const item = document.createElement("li");
-          item.textContent = playlist.playlist.name + ": " + playlist.status + " (" + playlist.completed + " / " + playlist.playlist.total_tracks + " tracks)";
+          const item = document.createElement("section");
+          item.className = "batch-playlist" + (playlist.status === "running" ? " active" : "");
+          const heading = document.createElement("h2");
+          heading.textContent = playlist.playlist.name;
+          const detail = document.createElement("p");
+          detail.textContent = stageLabel(playlist.status) + " · " +
+            playlist.completed + " / " + playlist.playlist.total_tracks + " tracks · " +
+            playlist.successful + " successful · " + playlist.failed + " failed";
+          const trackBar = document.createElement("div");
+          trackBar.className = "progress-track";
+          const trackProgress = document.createElement("div");
+          trackProgress.className = "progress-bar";
+          trackProgress.style.width = (playlist.playlist.total_tracks
+            ? Math.round(playlist.completed / playlist.playlist.total_tracks * 100) : 0) + "%";
+          trackBar.appendChild(trackProgress);
+          item.append(heading, detail, trackBar);
+          if (playlist.current_track) {
+            const activeTrack = document.createElement("p");
+            activeTrack.className = "current-track";
+            activeTrack.textContent = "Current: " + playlist.current_track.title +
+              " — " + stageLabel(playlist.current_track.status);
+            item.appendChild(activeTrack);
+          }
+          const tracks = document.createElement("ol");
+          tracks.className = "track-list";
+          for (const track of playlist.tracks) {
+            const trackItem = document.createElement("li");
+            trackItem.className = "track-" + track.status;
+            trackItem.textContent = track.title + " (" + stageLabel(track.status) + ")";
+            if (track.reason) trackItem.textContent += " — " + track.reason;
+            tracks.appendChild(trackItem);
+          }
+          item.appendChild(tracks);
           list.appendChild(item);
         }
+        resultLink.textContent = "";
         if (state.status === "completed" || state.status === "failed") {
           const link = document.createElement("a");
           link.href = "{{ url_for('batch_processing_result', job_id=job_id) }}";
           link.textContent = "View batch results";
-          list.appendChild(link);
+          resultLink.appendChild(link);
         } else {
           setTimeout(poll, 700);
         }

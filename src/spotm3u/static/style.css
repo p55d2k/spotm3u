@@ -213,6 +213,37 @@ button:hover {
   margin: 1rem 0 0;
 }
 
+.batch-playlists {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.batch-playlist {
+  border: 1px solid #d9e2ec;
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+}
+
+.batch-playlist.active {
+  border-color: #1f7a4d;
+  box-shadow: 0 0 0 2px rgb(31 122 77 / 12%);
+}
+
+.batch-playlist h2 {
+  margin: 0;
+}
+
+.batch-playlist p {
+  color: #52606d;
+  margin: 0.5rem 0;
+}
+
+.batch-playlist .track-list {
+  max-height: 12rem;
+  margin-top: 0.8rem;
+}
+
 .error {
   color: #a61b1b;
   font-weight: 700;
