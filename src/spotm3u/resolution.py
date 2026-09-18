@@ -9,6 +9,7 @@ from typing import Callable, Literal
 from .audio.resolver import LocalAudioResolver
 from .models import ResolvedTrack, Track
 from .online.audio_validation import AudioValidation, validate_downloaded_audio
+from .online.cache import DownloadCache
 from .online.downloader import DownloadError, download_track
 from .online.ranking import CandidateRanking, rank_source_candidates
 from .online.search import OnlineSourceSearcher, SourceCandidate
@@ -144,11 +145,13 @@ class TrackResolver:
         *,
         searcher: OnlineSourceSearcher | None = None,
         downloader: DownloadFunction = download_track,
+        cache: DownloadCache | None = None,
     ) -> None:
         self.local_resolver = local_resolver
         self.output_dir = Path(output_dir)
         self.searcher = searcher or OnlineSourceSearcher()
         self.downloader = downloader
+        self.cache = cache
 
     def prepare(
         self,
@@ -227,13 +230,21 @@ class TrackResolver:
                 continue
 
             report("downloading")
-            try:
-                downloaded = self.downloader(
-                    track, ranking.candidate.url, self.output_dir
-                )
-            except (DownloadError, OSError, RuntimeError) as exc:
-                download_failures += 1
-                continue
+            downloaded: Path | None = None
+            reused_from_cache = False
+            if self.cache is not None:
+                cached = self.cache.lookup(track, ranking.candidate.url)
+                if cached is not None:
+                    downloaded = cached
+                    reused_from_cache = True
+            if downloaded is None:
+                try:
+                    downloaded = self.downloader(
+                        track, ranking.candidate.url, self.output_dir
+                    )
+                except (DownloadError, OSError, RuntimeError) as exc:
+                    download_failures += 1
+                    continue
 
             report("validating-audio")
             audio_validation = validate_downloaded_audio(track, downloaded)
@@ -251,6 +262,9 @@ class TrackResolver:
                 )
                 continue
 
+            if self.cache is not None and not reused_from_cache:
+                self.cache.store(track, ranking.candidate.url, downloaded)
+
             resolved = ResolvedTrack(
                 track,
                 downloaded,
@@ -258,6 +272,7 @@ class TrackResolver:
                 source_url=ranking.candidate.url,
                 status="downloaded",
             )
+            reasons = ("reused cached download",) if reused_from_cache else ()
             return TrackResolution(
                 track,
                 "downloaded",
@@ -267,6 +282,7 @@ class TrackResolver:
                 ranking=rankings,
                 validation=source_validation,
                 audio_validation=audio_validation,
+                reasons=reasons,
             )
 
         if uncertain_download is not None:

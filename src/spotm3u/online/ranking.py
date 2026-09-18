@@ -121,8 +121,8 @@ def rank_source_candidates(
 
 def rank_source_candidate(track: Track, candidate: SourceCandidate) -> CandidateRanking:
     """Rank a single candidate: identity first, then source quality."""
-    requested_core, requested_versions = _split_title(track.title)
-    candidate_core, candidate_versions = _split_title(candidate.title)
+    requested_core, requested_versions = split_title(track.title)
+    candidate_core, candidate_versions = split_title(candidate.title)
     candidate_text = _candidate_text(candidate)
     profile = source_profile(candidate)
     requested_artists = _artist_keys(track)
@@ -345,7 +345,7 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     )
 
 
-def _split_title(value: str | None) -> tuple[str, frozenset[str]]:
+def split_title(value: str | None) -> tuple[str, frozenset[str]]:
     """Return (core title, version markers) with labels and versions removed."""
     if not value:
         return "", frozenset()
@@ -481,4 +481,5 @@ __all__ = [
     "ScoreComponents",
     "rank_source_candidate",
     "rank_source_candidates",
+    "split_title",
 ]

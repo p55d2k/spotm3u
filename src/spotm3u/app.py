@@ -16,6 +16,7 @@ from .jobs import JobManager, ProcessingJob
 from .models import Playlist
 from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, download_track
+from .online.cache import DownloadCache
 from .resolution import TrackResolver
 from .uploads import UploadError, default_upload_root, store_upload
 
@@ -410,7 +411,11 @@ def _build_processing_job(
             socket_timeout=socket_timeout,
         )
         return TrackResolver(
-            local_resolver, output_dir, searcher=searcher, downloader=downloader
+            local_resolver,
+            output_dir,
+            searcher=searcher,
+            downloader=downloader,
+            cache=DownloadCache(output_dir),
         )
 
     return ProcessingJob(
