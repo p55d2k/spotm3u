@@ -89,6 +89,21 @@ Display:
 
 For failures, display the actual processing reason.
 
+## M3U Download
+
+When processing completes, offer a `Save playlist (M3U)` link to
+`GET /processing/<job_id>/<playlist_id>/playlist.m3u`, which downloads the
+generated playlist as an attachment.
+
+The M3U and any downloaded MP3s are written to the persistent download
+directory so the playlist continues to reference real local files.
+
+## Download Directory
+
+Downloads are stored persistently under `DOWNLOAD_DIR` config, defaulting to
+`<MUSIC_LIBRARY>/spotm3u-downloads/`. This keeps files so the M3U can load
+them and lets later runs match them locally instead of re-downloading.
+
 ## Important
 
 A track should only be marked successful after the final local audio file has passed the relevant validation.

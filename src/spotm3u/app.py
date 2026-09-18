@@ -5,13 +5,14 @@ import re
 import secrets
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .audio.resolver import LocalAudioResolver
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, ProcessingJob
 from .models import Playlist
+from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher
 from .resolution import TrackResolver
 from .uploads import UploadError, default_upload_root, store_upload
@@ -225,7 +226,7 @@ def create_app(config: dict | None = None) -> Flask:
             job_id=job_id,
             playlist_id=playlist_id,
             playlist=playlist,
-            output_dir=job_directory / "output",
+            output_dir=_download_dir(app),
             music_library=app.config["MUSIC_LIBRARY"],
         )
         manager.submit(job)
@@ -248,6 +249,21 @@ def create_app(config: dict | None = None) -> Flask:
                 {"error": "That processing job could not be found."}
             ), 404
         return jsonify(job.as_dict())
+
+    @app.get("/processing/<job_id>/<playlist_id>/playlist.m3u")
+    def download_m3u(job_id: str, playlist_id: str):
+        job = app.config["JOB_MANAGER"].get(job_id)
+        if job is None or job.playlist_id != playlist_id or job.m3u_path is None:
+            return jsonify(
+                {"error": "That playlist is not ready to download."}
+            ), 404
+        m3u_path = Path(job.m3u_path)
+        if not m3u_path.is_file():
+            return jsonify(
+                {"error": "That playlist is not ready to download."}
+            ), 404
+        name = sanitize_filename_component(job.playlist_name) or job.playlist_id
+        return send_file(m3u_path, as_attachment=True, download_name=f"{name}.m3u")
 
     @app.errorhandler(RequestEntityTooLarge)
     def upload_too_large(_error):
@@ -311,6 +327,18 @@ def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:
     if index < 0 or index >= playlist_count:
         return None
     return index
+
+
+def _download_dir(app: Flask) -> Path:
+    """Resolve the persistent directory for downloaded MP3s and the M3U.
+
+    Defaults to a stable subfolder inside the music library so downloads
+    survive and can be matched by the local resolver on later runs.
+    """
+    configured = app.config.get("DOWNLOAD_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(app.config["MUSIC_LIBRARY"]).expanduser() / "spotm3u-downloads"
 
 
 def _build_processing_job(

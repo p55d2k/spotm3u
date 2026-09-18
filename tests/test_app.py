@@ -147,7 +147,7 @@ def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> N
     assert state["playlist"]["id"] == "1"
     assert state["playlist"]["total_tracks"] == 1
     assert state["status"] in {"running", "completed"}
-    assert state["output_dir"] == str(tmp_path / f"job-{job_id}" / "output")
+    assert state["output_dir"] == str(tmp_path / "music" / "spotm3u-downloads")
 
     client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
     status = client.get(f"/processing/{job_id}/1/status")
@@ -157,7 +157,9 @@ def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> N
     assert final["completed"] == 1
     assert final["failed"] == 1
     assert final["tracks"][0]["status"] == "failed"
-    assert final["m3u_path"] == str(tmp_path / f"job-{job_id}" / "output" / "playlist.m3u")
+    assert final["m3u_path"] == str(
+        tmp_path / "music" / "spotm3u-downloads" / "playlist.m3u"
+    )
 
 
 def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
@@ -177,7 +179,7 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     assert final["status"] == "completed"
     assert final["successful"] == 1
     assert final["failed"] == 0
-    m3u_path = tmp_path / f"job-{job_id}" / "output" / "playlist.m3u"
+    m3u_path = tmp_path / "music" / "spotm3u-downloads" / "playlist.m3u"
     assert str(music / "Artist - First.mp3") in m3u_path.read_text(encoding="utf-8")
 
 
@@ -225,3 +227,58 @@ def test_processing_page_shows_playlist_details(tmp_path) -> None:
     assert f"/processing/{job_id}/1/start".encode() in response.data
     assert b"Start processing" in response.data
     assert b'action="' + f"/processing/{job_id}/1/start".encode() + b'"' in response.data
+
+
+def test_download_dir_override_respected(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    download_dir = tmp_path / "custom-downloads"
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app(
+        {
+            "UPLOAD_ROOT": tmp_path,
+            "MUSIC_LIBRARY": music,
+            "DOWNLOAD_DIR": str(download_dir),
+        }
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.post(f"/processing/{job_id}/1/start")
+
+    assert response.status_code == 202
+    assert response.get_json()["output_dir"] == str(download_dir)
+
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+    final = client.get(f"/processing/{job_id}/1/status").get_json()
+    assert final["m3u_path"] == str(download_dir / "playlist.m3u")
+    assert (download_dir / "playlist.m3u").is_file()
+
+
+def test_download_m3u_route_returns_playlist(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/playlist.m3u")
+
+    assert response.status_code == 200
+    assert b"#EXTM3U" in response.data
+    assert "attachment" in response.headers["Content-Disposition"]
+    assert "two.m3u" in response.headers["Content-Disposition"]
+
+
+def test_download_m3u_route_requires_completed_job(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.get(f"/processing/{job_id}/1/playlist.m3u")
+
+    assert response.status_code == 404

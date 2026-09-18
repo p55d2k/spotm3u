@@ -16,6 +16,10 @@
         <button type="submit">Start processing</button>
       </form>
 
+      <p id="download-wrap" class="download" hidden>
+        <a id="download-link" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Save playlist (M3U)</a>
+      </p>
+
       <section id="progress" class="progress" hidden>
         <p id="job-status-text" class="status-line" role="status"></p>
         <div class="progress-track" aria-hidden="true">
@@ -44,6 +48,7 @@
       const currentTrackText = document.getElementById("current-track");
       const jobError = document.getElementById("job-error");
       const trackList = document.getElementById("track-list");
+      const downloadWrap = document.getElementById("download-wrap");
       const statusUrl = "{{ url_for('processing_status', job_id=job_id, playlist_id=playlist_id) }}";
 
       const stageLabels = {
@@ -94,6 +99,7 @@
         jobError.hidden = !state.error;
         jobError.textContent = state.error || "";
         renderTracks(state.tracks);
+        downloadWrap.hidden = state.status !== "completed";
         if (state.status === "running") {
           setTimeout(poll, 1000);
         }
