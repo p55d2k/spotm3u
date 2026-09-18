@@ -25,6 +25,12 @@ class Track:
     duration_ms: int | None = None
     spotify_id: str | None = None
     spotify_url: str | None = None
+    album_artist: str | None = None
+    track_number: int | None = None
+    disc_number: int | None = None
+    release_year: int | str | None = None
+    genre: str | None = None
+    comments: str | None = None
 
 
 @dataclass(frozen=True)

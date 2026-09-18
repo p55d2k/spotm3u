@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from ..log import track_identifier
 from ..models import Track
+from ..metadata import enrich_metadata, MetadataError
 from .audio_validation import validate_downloaded_audio
 
 logger = logging.getLogger(__name__)
@@ -257,8 +258,14 @@ def _download_to(
             f"downloaded audio is invalid: {', '.join(validation.reasons)}"
         )
     try:
-        embed_metadata(output_path, track)
-    except DownloadError:
+        result = enrich_metadata(output_path, track, destination)
+        if result.errors:
+            logger.warning(
+                "metadata enrichment track=%s errors=%s",
+                track_identifier(track),
+                "; ".join(result.errors),
+            )
+    except MetadataError:
         _prune_partial(output_path)
         raise
     logger.info(
@@ -303,30 +310,6 @@ def _safe_component(value: str) -> str:
     return value[:160].strip(" -.") or "_"
 
 
-def embed_metadata(path: str | Path, track: Track) -> None:
-    """Write Spotify-derived ID3 metadata (title, artist, album) into an MP3."""
-    try:
-        from mutagen.easyid3 import EasyID3  # type: ignore
-        from mutagen.id3 import ID3NoHeaderError  # type: ignore
-    except ImportError as exc:  # pragma: no cover - dependency is project-managed
-        raise DownloadError("mutagen is not installed") from exc
-
-    audio_path = Path(path)
-    try:
-        tags = EasyID3(str(audio_path))
-    except ID3NoHeaderError:
-        tags = EasyID3()
-    if track.title:
-        tags["title"] = track.title
-    tags["artist"] = track.artists
-    if track.album:
-        tags["album"] = track.album
-    try:
-        tags.save(str(audio_path))
-    except (OSError, ValueError, TypeError) as exc:
-        raise DownloadError(f"cannot write metadata to {audio_path.name}") from exc
-
-
 def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
     try:
         resolved = output_path.resolve()
@@ -336,4 +319,4 @@ def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
         return False
 
 
-__all__ = ["DownloadError", "download_source", "download_track", "embed_metadata"]
+__all__ = ["DownloadError", "download_source", "download_track"]

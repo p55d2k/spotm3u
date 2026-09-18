@@ -10,6 +10,7 @@ from typing import Callable, Literal
 from .audio.resolver import LocalAudioResolver
 from .log import TrackLogger
 from .models import ResolvedTrack, Track
+from .metadata import enrich_metadata
 from .online.audio_validation import AudioValidation, validate_downloaded_audio
 from .online.cache import DownloadCache
 from .online.downloader import DownloadError, download_track
@@ -31,6 +32,7 @@ TrackStage = Literal[
     "validating-source",
     "downloading",
     "validating-audio",
+    "enriching-metadata",
     "complete",
     "failed",
     "ambiguous",
@@ -194,6 +196,10 @@ class TrackResolver:
                 status="local",
             )
             log.info("local match found path=%s", local.resolved.local_path)
+            report("enriching-metadata")
+            metadata_result = enrich_metadata(local.resolved.local_path, track, self.output_dir)
+            if metadata_result.errors:
+                log.info("metadata enrichment status=local path=%s errors=%s", local.resolved.local_path, "; ".join(metadata_result.errors))
             return TrackResolution(
                 track, "local", resolved=resolved, candidates=(), reasons=("local match",)
             )
@@ -321,6 +327,15 @@ class TrackResolver:
 
             if self.cache is not None and not reused_from_cache:
                 self.cache.store(track, ranking.candidate.url, downloaded)
+
+            report("enriching-metadata")
+            metadata_result = enrich_metadata(downloaded, track, self.output_dir)
+            if metadata_result.errors:
+                log.info(
+                    "metadata enrichment status=downloaded path=%s errors=%s",
+                    downloaded,
+                    "; ".join(metadata_result.errors),
+                )
 
             resolved = ResolvedTrack(
                 track,

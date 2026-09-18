@@ -25,9 +25,10 @@ from .validation import (
     validate_source_candidate,
     validate_source_candidates,
 )
-from .downloader import DownloadError, download_source, download_track, embed_metadata
+from .downloader import DownloadError, download_source, download_track
 from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
 from .cache import DownloadCache, cache_metadata_key, source_identity
+from ..metadata import enrich_metadata, MetadataResult
 
 __all__ = [
     "OnlineSourceSearcher",
@@ -50,11 +51,12 @@ __all__ = [
     "DownloadError",
     "download_source",
     "download_track",
-    "embed_metadata",
     "DownloadCache",
     "cache_metadata_key",
     "source_identity",
     "AudioValidation",
     "AudioValidationStatus",
     "validate_downloaded_audio",
+    "enrich_metadata",
+    "MetadataResult",
 ]

@@ -11,6 +11,7 @@ requires-python = ">=3.13"
 dependencies = [
     "flask>=3.1",
     "mutagen>=1.47",
+    "requests>=2.32",
     "rich>=14.0",
     "typer>=0.16",
     "yt-dlp>=2025.1.15",

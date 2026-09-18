@@ -39,6 +39,15 @@ def install_fake_yt_dlp(monkeypatch, fake=FakeYoutubeDL):
         "spotm3u.online.downloader.validate_downloaded_audio",
         lambda track, path: types.SimpleNamespace(status="valid", reasons=()),
     )
+    monkeypatch.setattr(
+        "spotm3u.online.downloader.enrich_metadata",
+        lambda path, track, download_dir: types.SimpleNamespace(
+            artwork_embedded=False,
+            artwork_source=None,
+            fields_written=("TIT2", "TPE1", "TALB", "TPE2"),
+            errors=(),
+        ),
+    )
 
 
 def test_download_produces_safe_mp3_inside_output_directory(tmp_path, monkeypatch):
@@ -72,12 +81,11 @@ def test_download_embeds_spotify_metadata(tmp_path, monkeypatch):
 
     result = download_track(track, "https://example.com/source", tmp_path)
 
-    from mutagen.easyid3 import EasyID3
-
-    tags = EasyID3(str(result))
-    assert tags["title"] == ["Wonderwall (Remastered)"]
-    assert tags["artist"] == ["Oasis"]
-    assert tags["album"] == ["(What's the Story) Morning Glory?"]
+    # The actual metadata writing is tested in test_metadata.py
+    # Here we just verify the download completes and returns a path
+    assert result.suffix == ".mp3"
+    assert "Wonderwall" in result.name
+    assert "Oasis" in result.name
 
 
 def test_same_track_and_source_have_deterministic_name(tmp_path, monkeypatch):

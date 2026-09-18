@@ -23,6 +23,8 @@ Exportify
 → source validation
 → yt-dlp download
 → downloaded-audio validation
+→ metadata/artwork enrichment
+→ final verified MP3
 → M3U generation
 → M3U download
 
@@ -39,7 +41,9 @@ For every Track:
 7. Validate the downloaded audio.
 8. If validation fails, try another plausible candidate when available.
 9. Store the successful local file.
-10. Pass the resolved file to the M3U writer.
+10. Enrich the resolved MP3 with album artwork and standard ID3 metadata when possible.
+11. Keep the track in a resolved state even if artwork is unavailable.
+12. Pass the resolved file to the M3U writer.
 
 ## Important Matching Principle
 

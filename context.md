@@ -52,14 +52,14 @@ Local Audio Resolver ──── online source search (new path when no local m
       ↓                           ↓
 ResolvedTrack               Source Candidate Ranking
       ↓                       (identity first, then source quality)
-M3U Writer                       ↓
-      ↓                       source validation
-M3U Download                   ↓
-                           yt-dlp download
-                               ↓
-                           downloaded-audio validation
-                               ↓
-                           ResolvedTrack ──→ M3U Writer
+Metadata / Artwork            ↓
+Enrichment                    source validation
+      ↓                       ↓
+Final verified MP3 ──── yt-dlp download
+      ↓                       ↓
+M3U Writer             downloaded-audio validation
+      ↓                       ↓
+M3U Download          ResolvedTrack ──→ Metadata / Artwork Enrichment ──→ M3U Writer
 ```
 
 ## Technology
