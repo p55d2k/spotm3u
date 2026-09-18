@@ -66,6 +66,21 @@ Exportify; spotm3u receives only the resulting ZIP.
 Local matching works without network access. No Spotify Premium account, API
 key, or application credentials are required.
 
+### Windows
+
+Windows 10 or newer is supported. Install Python and `uv`, then install
+`ffmpeg` from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) or
+[winget](https://learn.microsoft.com/windows/package-manager/winget/):
+
+```powershell
+winget install Gyan.FFmpeg
+```
+
+Open a new terminal so `ffmpeg.exe` is on `PATH`, then use the same `uv sync`
+and `uv run spotm3u-web` commands below. Configure Windows paths with TOML
+forward slashes (for example `C:/Users/you/Music`) or `~`; no Unix shell,
+`/tmp`, or POSIX-only dependency is required.
+
 ## Quick start
 
 ```bash

@@ -53,11 +53,11 @@ def m3u_text(
         path = resolved.local_path
         if base is not None:
             try:
-                entry = os.path.relpath(path, base)
+                entry = Path(os.path.relpath(path, base)).as_posix()
             except ValueError:
-                entry = str(path)
+                entry = Path(path).as_posix()
         else:
-            entry = str(path)
+            entry = Path(path).as_posix()
         if extended:
             track = resolved.track
             duration = (track.duration_ms or 0) // 1000 if track and track.duration_ms is not None else 0

@@ -17,14 +17,17 @@
 
 # Where uploaded Exportify ZIP jobs are stored temporarily.
 # Defaults to the system temp directory + "spotm3u".
+# Windows example: "C:/Users/you/AppData/Local/spotm3u"
 # upload_root = "/tmp/spotm3u"
 
 # Root folder searched for local audio files when matching tracks.
 # Defaults to ~/Music.
+# Windows example: "~/Music" or "C:/Users/you/Music"
 # music_library = "~/Music"
 
 # Where downloaded MP3s and the generated playlist.m3u are written.
 # Defaults to <music_library>/spotm3u-downloads.
+# Windows example: "~/Music/spotm3u-downloads"
 # download_dir = "~/Music/spotm3u-downloads"
 
 # How many tracks are resolved in parallel (search phase only).

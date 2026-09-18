@@ -177,6 +177,8 @@ def _safe_archive_path(name: str) -> Path:
         raise UploadError("The uploaded ZIP contains an unsafe path.")
     if any(char < " " for char in name):
         raise UploadError("The uploaded ZIP contains an unsafe path.")
+    if any(char in name for char in '<>:"|?*'):
+        raise UploadError("The uploaded ZIP contains an unsafe path.")
     if len(name) > 4096:
         raise UploadError("The uploaded ZIP contains an unsafe path.")
 
@@ -187,7 +189,23 @@ def _safe_archive_path(name: str) -> Path:
         or (path.parts and path.parts[0].endswith(":"))
     ):
         raise UploadError("The uploaded ZIP contains an unsafe path.")
+    if any(_is_windows_reserved_component(part) for part in path.parts):
+        raise UploadError("The uploaded ZIP contains an unsafe path.")
     return Path(*path.parts)
+
+
+def _is_windows_reserved_component(component: str) -> bool:
+    """Reject names that cannot be created on Windows."""
+    stripped = component.rstrip(" .")
+    stem = stripped.split(".", 1)[0].casefold()
+    return component != stripped or not stripped or stem in {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{index}" for index in range(1, 10)),
+        *(f"lpt{index}" for index in range(1, 10)),
+    }
 
 
 def _is_regular_entry(entry: zipfile.ZipInfo) -> bool:

@@ -103,6 +103,17 @@ def test_relative_to_uses_relative_paths(tmp_path: Path) -> None:
     assert "a.mp3" in text
 
 
+def test_relative_paths_use_forward_slashes(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    file_a = library / "albums" / "a.mp3"
+    file_a.parent.mkdir(parents=True)
+
+    text = m3u_text([_resolved(file_a)], relative_to=library)
+
+    assert "albums/a.mp3" in text
+    assert "\\" not in text
+
+
 def test_no_source_urls_embedded(tmp_path: Path) -> None:
     file_a = tmp_path / "a.mp3"
     resolved = ResolvedTrack(

@@ -14,6 +14,8 @@ Protect against:
 - malformed CSV/JSON
 
 All extraction must remain inside the job's controlled directory.
+Archive names are also checked against Windows-invalid characters and reserved
+device names so the same upload cannot fail or escape path handling on Windows.
 
 ## Track Metadata
 

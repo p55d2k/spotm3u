@@ -19,6 +19,9 @@ The output is a `.m3u` file.
 
 The M3U references local audio files.
 
+Relative entries use forward slashes, including when the application runs on
+Windows, so playlists remain portable across players and platforms.
+
 It does not reference remote source URLs.
 
 It does not perform downloading.

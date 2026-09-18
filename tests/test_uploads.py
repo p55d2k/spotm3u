@@ -138,6 +138,17 @@ def test_safe_archive_path_rejects_control_characters(entry: str) -> None:
         _safe_archive_path(entry)
 
 
+@pytest.mark.parametrize(
+    "entry",
+    ["CON.csv", "folder/NUL", "name.csv ", "bad:name.csv"],
+)
+def test_safe_archive_path_rejects_windows_invalid_names(entry: str) -> None:
+    from spotm3u.uploads import _safe_archive_path
+
+    with pytest.raises(UploadError, match="unsafe path"):
+        _safe_archive_path(entry)
+
+
 def test_store_upload_rejects_newline_in_zip_path(tmp_path: Path) -> None:
     with pytest.raises(UploadError, match="unsafe path"):
         store_upload(

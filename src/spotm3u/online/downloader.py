@@ -307,7 +307,17 @@ def _output_name(track: Track, source_url: str) -> str:
 def _safe_component(value: str) -> str:
     value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", value, flags=re.UNICODE)
     value = re.sub(r"\s+", " ", value).strip(" -.")
-    return value[:160].strip(" -.") or "_"
+    value = value[:160].strip(" -.")
+    if value.casefold().split(".", 1)[0] in {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{index}" for index in range(1, 10)),
+        *(f"lpt{index}" for index in range(1, 10)),
+    }:
+        value = f"_{value}"
+    return value or "_"
 
 
 def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
