@@ -97,6 +97,7 @@ Read only the documentation relevant to the current task.
 - `docs/web.md` → Flask routes, templates, sessions, UI flow
 - `docs/matching.md` → local music discovery and track matching
 - `docs/m3u.md` → M3U generation and playlist semantics
+- `docs/release.md` → packaging/distribution plan, runtime file inventory, FFmpeg lookup
 - `docs/security.md` → uploads, temporary files, validation, cleanup
 
 ## pytest
