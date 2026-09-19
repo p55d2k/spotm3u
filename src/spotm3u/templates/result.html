@@ -32,13 +32,16 @@
       {% endif %}
 
       {% set unresolved = state.tracks | rejectattr('status', 'equalto', 'complete') | list %}
+      {# The filter mirrors the summary's Failed and Ambiguous counts exactly,
+         which is narrower than the retry action. #}
+      {% set failed_tracks = state.tracks | selectattr('resolution', 'in', ('failed', 'ambiguous')) | list %}
       <div class="result-actions">
         {% if state.m3u_path %}
         <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Download M3U playlist</a>
         {% endif %}
         {% if unresolved %}
         <form method="post" action="{{ url_for('retry_processing', job_id=job_id, playlist_id=playlist_id) }}">
-          <button class="button-secondary" type="submit">Retry {{ unresolved | length }} failed track{{ '' if unresolved | length == 1 else 's' }}</button>
+          <button class="button-secondary" type="submit">Retry {{ unresolved | length }} unresolved track{{ '' if unresolved | length == 1 else 's' }}</button>
         </form>
         {% endif %}
         {% if state.m3u_path and apple_music_available %}
@@ -67,7 +70,17 @@
 
       <section aria-labelledby="tracks-heading">
         <h2 id="tracks-heading">Track results</h2>
-        <ol class="track-list">
+        {% if failed_tracks %}
+        <div class="track-filters" role="group" aria-label="Filter track results">
+          <button class="button-secondary button-small track-filter" type="button" data-track-filter="all" aria-pressed="true">
+            All tracks <span class="filter-count">{{ state.tracks | length }}</span>
+          </button>
+          <button class="button-secondary button-small track-filter" type="button" data-track-filter="failed" aria-pressed="false">
+            Failed or ambiguous <span class="filter-count">{{ failed_tracks | length }}</span>
+          </button>
+        </div>
+        {% endif %}
+        <ol class="track-list" id="track-list">
           {% for track in state.tracks %}
           {% set status = track.resolution or track.status or 'unknown' %}
           <li class="track-{{ 'complete' if status in ('local', 'downloaded') else status }}">
@@ -84,6 +97,7 @@
           </li>
           {% endfor %}
         </ol>
+        <p id="no-tracks-match" class="page-note" role="status" hidden>No tracks match this filter.</p>
       </section>
 
       <section class="result-next" aria-labelledby="next-heading">
@@ -95,5 +109,41 @@
         </div>
       </section>
     </main>
+    <script>
+      (() => {
+        const list = document.getElementById("track-list");
+        const filters = [...document.querySelectorAll("[data-track-filter]")];
+        const empty = document.getElementById("no-tracks-match");
+        if (!list || filters.length === 0) return;
+        const rows = [...list.querySelectorAll("li")];
+
+        // Rows carry the resolution as their status class, so these two are
+        // exactly the tracks the summary counts as Failed and Ambiguous.
+        const FAILED_CLASSES = ["track-failed", "track-ambiguous"];
+
+        function apply(mode) {
+          let visible = 0;
+          for (const row of rows) {
+            const failed = FAILED_CLASSES.some((name) =>
+              row.classList.contains(name)
+            );
+            row.hidden = mode === "failed" && !failed;
+            if (!row.hidden) visible += 1;
+          }
+          for (const button of filters) {
+            button.setAttribute(
+              "aria-pressed",
+              String(button.dataset.trackFilter === mode)
+            );
+          }
+          if (empty) empty.hidden = visible !== 0;
+        }
+
+        for (const button of filters) {
+          button.addEventListener("click", () => apply(button.dataset.trackFilter));
+        }
+        apply("all");
+      })();
+    </script>
   </body>
 </html>

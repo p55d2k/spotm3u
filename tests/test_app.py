@@ -421,7 +421,7 @@ def test_result_page_offers_retry_for_unresolved_tracks(tmp_path, monkeypatch) -
 
     result = client.get(f"/processing/{job_id}/1/result")
 
-    assert b"Retry 1 failed track" in result.data
+    assert b"Retry 1 unresolved track" in result.data
     assert f"/processing/{job_id}/1/retry".encode() in result.data
 
     retry = client.post(f"/processing/{job_id}/1/retry")
@@ -434,7 +434,68 @@ def test_result_page_offers_retry_for_unresolved_tracks(tmp_path, monkeypatch) -
     assert (music / "spotm3u-downloads" / "playlist.m3u").is_file()
 
 
-def test_result_page_hides_retry_when_every_track_resolved(
+class AmbiguousResolver:
+    """Resolver that reports every track as ambiguous, without any network work."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def resolve(self, track, *, stage_callback=None):
+        from spotm3u.resolution import TrackResolution
+
+        if stage_callback is not None:
+            stage_callback("searching")
+        return TrackResolution(track, "ambiguous", reasons=("multiple candidates",))
+
+
+def test_result_page_filters_failed_and_ambiguous_tracks(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.TrackResolver", AmbiguousResolver)
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+    client = app.test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    app.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    assert b'data-track-filter="all"' in response.data
+    assert b'data-track-filter="failed"' in response.data
+    assert b"Failed or ambiguous" in response.data
+    assert b'id="track-list"' in response.data
+    assert b'id="no-tracks-match"' in response.data
+    # One ambiguous track is listed, and its count matches the summary stat.
+    assert b"<span class=\"filter-count\">1</span>" in response.data
+    assert b'class="track-ambiguous"' in response.data
+    assert b"<dt>Ambiguous</dt><dd>1</dd>" in response.data
+
+
+def test_result_page_filter_ignores_tracks_that_only_failed_to_match(
+    tmp_path, monkeypatch
+) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+    client = app.test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    app.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    # A missing track is retryable, but it is not a failed or ambiguous result.
+    assert b"Retry 1 unresolved track" in response.data
+    assert b'class="track-filters"' not in response.data
+    assert b"<dt>Missing</dt><dd>1</dd>" in response.data
+
+
+def test_result_page_hides_filter_and_retry_when_every_track_resolved(
     tmp_path, monkeypatch
 ) -> None:
     music = tmp_path / "music"
@@ -456,6 +517,8 @@ def test_result_page_hides_retry_when_every_track_resolved(
 
     assert job.status == "completed"
     assert b"Retry" not in response.data
+    assert b'class="track-filters"' not in response.data
+    assert b'class="track-complete"' in response.data
 
 
 def test_retry_route_rejects_unknown_job(tmp_path) -> None:

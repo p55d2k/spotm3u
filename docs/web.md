@@ -104,8 +104,15 @@ which renders per-track outcomes (status and reason) alongside the summary
 counts. While the job is still queued or running, that route redirects to the
 live processing page.
 
+The track list can be filtered between **All tracks** and **Failed or
+ambiguous**, which shows exactly the tracks the summary counts under *Failed*
+and *Ambiguous*. Tracks that are only missing, rejected, or uncertain stay in
+the **All tracks** view. The filter is client-side and is offered only when at
+least one track is failed or ambiguous. The retry action below is deliberately
+wider: it re-runs every track that did not resolve locally or by download.
+
 When a finished result still has unresolved tracks, the page offers
-**Retry N failed tracks**, which posts to
+**Retry N unresolved tracks**, which posts to
 `POST /processing/<job_id>/<playlist_id>/retry`. A retry re-runs the full
 resolution pipeline for those tracks only: tracks that already matched locally
 or downloaded keep their result, so no audio is downloaded twice and already

@@ -510,6 +510,20 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .result-next .field-help { margin: 0.35rem 0 0; }
 .result-next .result-actions { margin-top: 0.85rem; }
 
+.track-filters {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.65rem 0 0;
+}
+
+.filter-count { color: var(--faint); font-weight: 750; margin-left: 0.3rem; }
+
+.track-filter[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+.track-filter[aria-pressed="true"]:hover { background: var(--blue-dark); }
+.track-filter[aria-pressed="true"] .filter-count { color: rgb(255 255 255 / 78%); }
+
 .track-list {
   counter-reset: track;
   list-style: none;
