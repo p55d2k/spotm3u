@@ -83,6 +83,31 @@ def test_bundle_root_finds_app_in_extraction_directory(tmp_path) -> None:
     assert smoke_test._bundle_root(container) == container / "spotm3u.app"
 
 
+def test_bundle_root_finds_onedir_in_extraction_directory(tmp_path) -> None:
+    # Mirrors the Linux verify flow: a release ZIP already extracted into a
+    # container directory, with the bundle root one level down.
+    container = tmp_path / "spotm3u-test-extracted"
+    bundle = container / "spotm3u"
+    internal = bundle / "_internal"
+    internal.mkdir(parents=True)
+    (bundle / "spotm3u").write_bytes(b"exe")
+    # PyInstaller ships its own zip; it must not be mistaken for the archive.
+    (internal / "base_library.zip").write_bytes(b"not the release archive")
+
+    assert smoke_test._bundle_root(container) == bundle
+
+
+def test_bundle_root_rejects_multiple_nested_bundles(tmp_path) -> None:
+    container = tmp_path / "extracted"
+    for name in ("one", "two"):
+        bundle = container / name
+        bundle.mkdir(parents=True)
+        (bundle / "spotm3u").write_bytes(b"exe")
+
+    with pytest.raises(SystemExit, match="multiple bundles"):
+        smoke_test._bundle_root(container)
+
+
 def test_bundle_root_unpacks_single_zip(tmp_path) -> None:
     bundle = tmp_path / "spotm3u"
     bundle.mkdir(parents=True)

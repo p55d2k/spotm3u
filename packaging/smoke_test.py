@@ -171,6 +171,15 @@ def _bundle_root(target: Path) -> Path:
             return apps[0]
         if len(apps) > 1:
             raise SystemExit(f"multiple .app bundles found in {target}")
+        # Onedir layout whose bundle root is nested one level down, e.g. an
+        # already-extracted release ZIP (``<dir>/spotm3u/spotm3u``). Detect it
+        # before the single-ZIP fallback, which would otherwise mistake
+        # PyInstaller's own ``_internal/base_library.zip`` for the archive.
+        bundles = sorted(p for p in target.iterdir() if p.is_dir() and _has_executable(p))
+        if len(bundles) == 1:
+            return bundles[0]
+        if len(bundles) > 1:
+            raise SystemExit(f"multiple bundles found in {target}")
         archives = sorted(target.rglob("*.zip"))
         if len(archives) == 1:
             return _unpack(archives[0], target.parent)
