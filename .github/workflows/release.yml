@@ -151,8 +151,27 @@ jobs:
             exit 1
           }
 
+      - name: Extract release archive (Linux, macOS)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          archive=$(find dist-artifacts -type f -name "spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip" -print -quit)
+          test -n "$archive"
+          extract_dir="${archive%.zip}-extracted"
+          mkdir -p "$extract_dir"
+          unzip -q "$archive" -d "$extract_dir"
+
       - name: Extract and smoke test packaged application
+        if: matrix.platform == 'windows'
         run: uv run -q python packaging/smoke_test.py dist-artifacts
+
+      - name: Smoke test extracted application (Linux, macOS)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          bundle=$(find dist-artifacts -type d -name spotm3u -print -quit)
+          test -n "$bundle"
+          uv run -q python packaging/smoke_test.py "$bundle"
 
   release:
     name: Publish GitHub Release
