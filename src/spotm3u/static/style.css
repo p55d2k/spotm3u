@@ -271,7 +271,8 @@ h2 {
   justify-content: center;
 }
 
-.steps a { color: var(--blue); display: block; margin-left: auto; }
+.steps a:not(.button) { color: var(--blue); display: block; margin-left: auto; }
+.steps .button-secondary { margin-left: auto; }
 
 form {
   border-top: 1px solid var(--line);
@@ -369,6 +370,16 @@ button:hover,
 button:disabled { cursor: wait; opacity: 0.55; transform: none; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid rgb(37 99 235 / 30%); outline-offset: 3px; }
 
+.button-secondary {
+  background: var(--control);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.button-secondary:hover { background: var(--hover); box-shadow: none; }
+
+.button-small { font-size: 0.85rem; min-height: 2.2rem; padding: 0.45rem 0.8rem; }
+
 .visually-hidden {
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
@@ -442,9 +453,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .playlist-card span, .playlist-card small { color: var(--muted); font-size: 0.82rem; grid-column: 2; }
 .playlist-card small { grid-column: 3; grid-row: 1 / span 2; }
 
-.selection-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.65rem 0; }
-.selection-actions button:not(:last-child) { background: var(--control); color: var(--ink); }
-.selection-actions button:not(:last-child):hover { background: var(--hover); box-shadow: none; }
+.selection-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.65rem; margin: 0.65rem 0; }
 
 .progress { margin-top: 1rem; }
 .status-line { font-weight: 750; margin: 0 0 0.65rem; }
@@ -469,9 +478,37 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .batch-playlist.active { border-color: var(--blue); box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }
 .batch-playlist h2 { margin: 0; }
 .batch-playlist p { color: var(--muted); margin: 0.5rem 0; }
+.batch-playlist .result-actions { margin-top: 0.65rem; }
 
 .download { margin: 0.75rem 0; }
-.download a { color: var(--blue); font-weight: 750; }
+.download a:not(.button) { color: var(--blue); font-weight: 750; }
+
+.result-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1.1rem 0 0;
+}
+
+.result-actions form {
+  border-top: 0;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.result-next {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin-top: 2rem;
+  padding: 1.05rem 1.15rem;
+}
+
+.result-next h2 { margin: 0; }
+.result-next .field-help { margin: 0.35rem 0 0; }
+.result-next .result-actions { margin-top: 0.85rem; }
 
 .track-list {
   counter-reset: track;
@@ -482,9 +519,28 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   padding-left: 0;
 }
 
-.track-list li { counter-increment: track; font-size: 0.9rem; margin: 0.35rem 0; }
-.track-list li::before { color: var(--faint); content: counter(track) "."; display: inline-block; min-width: 1.6rem; padding-right: 0.55rem; text-align: right; }
-.track-reason { color: var(--muted); font-size: 0.82rem; margin: 0.2rem 0 0.45rem; }
+/* The counter sits outside the text flow so wrapped titles, artists, and
+   reasons stay aligned with the track title instead of the list edge. */
+.track-list li { border-bottom: 1px solid var(--stat-line); counter-increment: track; font-size: 0.9rem; padding: 0.5rem 0 0.5rem 2.15rem; position: relative; }
+.track-list li:last-child { border-bottom: 0; }
+.track-list li::before { color: var(--faint); content: counter(track) "."; left: 0; position: absolute; text-align: right; width: 1.6rem; }
+
+.track-head { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.track-title { color: var(--ink); }
+.track-artists { color: var(--muted); font-size: 0.85rem; }
+
+.track-badge {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 0.12rem 0.5rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.track-reason { color: var(--muted); font-size: 0.82rem; margin: 0.2rem 0 0; }
 .track-complete, .track-local, .track-downloaded { color: var(--green); }
 .track-searched { color: var(--muted); }
 .track-failed, .track-rejected, .track-missing, .track-uncertain { color: var(--red); }

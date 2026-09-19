@@ -104,6 +104,16 @@ which renders per-track outcomes (status and reason) alongside the summary
 counts. While the job is still queued or running, that route redirects to the
 live processing page.
 
+When a finished result still has unresolved tracks, the page offers
+**Retry N failed tracks**, which posts to
+`POST /processing/<job_id>/<playlist_id>/retry`. A retry re-runs the full
+resolution pipeline for those tracks only: tracks that already matched locally
+or downloaded keep their result, so no audio is downloaded twice and already
+resolved entries stay in the playlist. The M3U is rewritten from the merged
+results, and the browser returns to the live processing page, which comes back
+to the refreshed result page when the retry settles. A retry is rejected while
+the job is still running and is a no-op when nothing is unresolved.
+
 ## M3U Download
 
 When processing completes, offer a `Save playlist (M3U)` link to

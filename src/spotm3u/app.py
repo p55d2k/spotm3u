@@ -13,7 +13,7 @@ from .audio.resolver import LocalAudioResolver
 from .apple_music import AppleMusicError, add_to_apple_music, apple_music_available
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
-from .jobs import JobManager, ProcessingJob
+from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import configure_logging
 from .models import Playlist
 from .normalization import sanitize_filename_component
@@ -347,6 +347,45 @@ def create_app(config: dict | None = None) -> Flask:
                 {"error": "That processing job could not be found."}
             ), 404
         return jsonify(job.as_dict())
+
+    @app.post("/processing/<job_id>/<playlist_id>/retry")
+    def retry_processing(job_id: str, playlist_id: str):
+        """Re-resolve the tracks that did not produce a usable local file."""
+        job_directory = _current_job_directory(app, job_id)
+        if job_directory is None or not _selection_matches(
+            job_directory, playlist_id
+        ):
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 404
+
+        job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
+        if job is None or job.playlist_id != playlist_id:
+            return render_template(
+                "index.html", error="That processing job could not be found."
+            ), 404
+        if job.status in {"queued", "running"}:
+            return redirect(
+                url_for("processing", job_id=job_id, playlist_id=playlist_id)
+            )
+        try:
+            retried = job.retry()
+        except JobStartError:
+            return redirect(
+                url_for("processing", job_id=job_id, playlist_id=playlist_id)
+            )
+        if not retried:
+            return redirect(
+                url_for("processing_result", job_id=job_id, playlist_id=playlist_id)
+            )
+        app.logger.info(
+            "Retrying %d unresolved track(s) job=%s playlist=%s",
+            len(retried),
+            job_id,
+            playlist_id,
+        )
+        return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
 
     @app.get("/processing/<job_id>/<playlist_id>/result")
     def processing_result(job_id: str, playlist_id: str):

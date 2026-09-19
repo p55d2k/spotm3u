@@ -90,7 +90,7 @@
 
       function render(state) {
         progressSection.hidden = false;
-        const total = state.playlist.total_tracks || 1;
+        const total = state.progress_total || state.playlist.total_tracks || 1;
         const searched = state.searched || 0;
         const percent =
           total > 0
@@ -99,7 +99,7 @@
         progressBar.style.width = percent + "%";
         statusText.textContent = statusLabel(state.status);
         statCompleted.textContent = state.completed + " / " + total;
-        statSearched.textContent = searched + " / " + state.playlist.total_tracks;
+        statSearched.textContent = searched + " / " + total;
         statSuccessful.textContent = state.successful;
         statFailed.textContent = state.failed;
         currentTrackText.textContent = state.current_track
@@ -118,16 +118,40 @@
         }
       }
 
+      // Mirrors the result page row: title plus a status badge, then artists
+      // and the processing reason underneath.
+      function createTrackRow(track) {
+        const item = document.createElement("li");
+        item.classList.add("track-" + track.status);
+        const head = document.createElement("div");
+        head.className = "track-head";
+        const title = document.createElement("strong");
+        title.className = "track-title";
+        title.textContent = track.title;
+        const badge = document.createElement("span");
+        badge.className = "track-badge";
+        badge.textContent = (track.resolution || track.status || "").replace(/-/g, " ");
+        head.append(title, badge);
+        item.appendChild(head);
+        if (track.artists && track.artists.length) {
+          const artists = document.createElement("div");
+          artists.className = "track-artists";
+          artists.textContent = track.artists.join(", ");
+          item.appendChild(artists);
+        }
+        if (track.reason) {
+          const reason = document.createElement("div");
+          reason.className = "track-reason";
+          reason.textContent = track.reason;
+          item.appendChild(reason);
+        }
+        return item;
+      }
+
       function renderTracks(tracks) {
         trackList.textContent = "";
         for (const track of tracks) {
-          const item = document.createElement("li");
-          item.classList.add("track-" + track.status);
-          item.textContent = track.title + " (" + stageLabel(track.status) + ")";
-          if (track.reason) {
-            item.textContent += " — " + track.reason;
-          }
-          trackList.appendChild(item);
+          trackList.appendChild(createTrackRow(track));
         }
       }
 

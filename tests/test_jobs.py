@@ -558,3 +558,142 @@ def test_job_respects_overall_timeout(tmp_path: Path) -> None:
     snapshot = job.as_dict()
     assert snapshot["status"] == "failed"
     assert "timed out" in snapshot["error"]
+
+
+def test_retry_resolves_only_unresolved_tracks(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B")]
+    local_file = tmp_path / "Artist - A.mp3"
+    local_file.write_bytes(b"audio")
+    retried_file = tmp_path / "Artist - B.mp3"
+    retried_file.write_bytes(b"audio")
+    outcomes = [
+        _resolution(tracks[0], "local", path=local_file),
+        _resolution(tracks[1], "failed"),
+        _resolution(tracks[1], "downloaded", path=retried_file),
+    ]
+
+    job = _job(tracks, outcomes, tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    assert job.as_dict()["failed"] == 1
+    fake = job._fake
+
+    retried = job.retry()
+
+    assert retried == (1,)
+    job.wait(timeout=5)
+    snapshot = job.as_dict()
+    assert snapshot["status"] == "completed"
+    assert snapshot["successful"] == 2
+    assert snapshot["failed"] == 0
+    assert snapshot["progress_total"] == 2
+    assert [state["resolution"] for state in snapshot["tracks"]] == [
+        "local",
+        "downloaded",
+    ]
+    # The already-resolved track was never handed to the resolver again.
+    assert len(fake.stage_sequences) == 3
+
+    m3u = (tmp_path / "output" / "playlist.m3u").read_text(encoding="utf-8")
+    assert str(local_file) in m3u
+    assert str(retried_file) in m3u
+
+
+def test_retry_reports_progress_across_the_retried_tracks(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B"), _track("C")]
+    local_file = tmp_path / "Artist - A.mp3"
+    local_file.write_bytes(b"audio")
+    release = threading.Event()
+    started = threading.Event()
+
+    class FirstPassResolver:
+        def resolve(self, track, *, stage_callback=None):
+            if track.title == "A":
+                return _resolution(track, "local", path=local_file)
+            return _resolution(track, "failed")
+
+    class GatedRetryResolver:
+        def resolve(self, track, *, stage_callback=None):
+            started.set()
+            release.wait(timeout=5)
+            return _resolution(track, "missing")
+
+    class Factory:
+        calls = 0
+
+        def __call__(self):
+            type(self).calls += 1
+            return FirstPassResolver() if type(self).calls == 1 else GatedRetryResolver()
+
+    job = ProcessingJob(
+        job_id="retry-progress",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=tmp_path / "output",
+        resolver_factory=Factory(),
+    )
+    job.start()
+    job.wait(timeout=5)
+    assert job.as_dict()["failed"] == 2
+
+    assert job.retry() == (1, 2)
+    assert started.wait(timeout=5)
+
+    snapshot = job.as_dict()
+    assert snapshot["status"] == "running"
+    assert snapshot["progress_total"] == 2
+    assert snapshot["completed"] == 0
+    assert snapshot["searched"] == 0
+    # The retry never discards the track that already resolved.
+    assert snapshot["successful"] == 1
+
+    release.set()
+    job.wait(timeout=5)
+    assert job.as_dict()["status"] == "completed"
+
+
+def test_retry_is_a_no_op_without_unresolved_tracks(tmp_path: Path) -> None:
+    tracks = [_track("A")]
+    local_file = tmp_path / "Artist - A.mp3"
+    local_file.write_bytes(b"audio")
+
+    job = _job(
+        tracks,
+        [_resolution(tracks[0], "local", path=local_file)],
+        tmp_path / "output",
+    )
+    job.start()
+    job.wait(timeout=5)
+
+    assert job.retry() == ()
+    assert job.as_dict()["status"] == "completed"
+
+
+def test_retry_is_rejected_while_the_job_is_running(tmp_path: Path) -> None:
+    release = threading.Event()
+
+    class SlowResolver:
+        def resolve(self, track, *, stage_callback=None):
+            release.wait(timeout=5)
+            return _resolution(track, "missing")
+
+    job = ProcessingJob(
+        job_id="retry-running",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=[_track("A")],
+        output_dir=tmp_path / "output",
+        resolver_factory=SlowResolver,
+    )
+    job.start()
+
+    try:
+        job.retry()
+        assert False, "expected JobStartError"
+    except JobStartError:
+        pass
+
+    release.set()
+    job.wait(timeout=5)

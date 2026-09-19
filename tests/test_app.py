@@ -406,6 +406,69 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
     assert b"Convert another playlist" in response.data
 
 
+def test_result_page_offers_retry_for_unresolved_tracks(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+    client = app.test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    app.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    result = client.get(f"/processing/{job_id}/1/result")
+
+    assert b"Retry 1 failed track" in result.data
+    assert f"/processing/{job_id}/1/retry".encode() in result.data
+
+    retry = client.post(f"/processing/{job_id}/1/retry")
+
+    assert retry.status_code == 302
+    assert retry.headers["Location"] == f"/processing/{job_id}/1"
+    job = app.config["JOB_MANAGER"].get(job_id)
+    job.wait(timeout=10)
+    assert job.status == "completed"
+    assert (music / "spotm3u-downloads" / "playlist.m3u").is_file()
+
+
+def test_result_page_hides_retry_when_every_track_resolved(
+    tmp_path, monkeypatch
+) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    # Playlist 1 is "two", whose only track is "Second" by "Artist".
+    (music / "Artist - Second.mp3").write_bytes(b"audio")
+    monkeypatch.setattr(
+        "spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates()
+    )
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+    client = app.test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    job = app.config["JOB_MANAGER"].get(job_id)
+    job.wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    assert job.status == "completed"
+    assert b"Retry" not in response.data
+
+
+def test_retry_route_rejects_unknown_job(tmp_path) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.post(f"/processing/{job_id}/1/retry")
+
+    assert response.status_code == 404
+
+
 def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()

@@ -22,6 +22,7 @@
           <div id="bar" class="progress-bar"></div>
         </div>
         <dl class="stats">
+          <div><dt>Total tracks</dt><dd id="stat-total">0</dd></div>
           <div><dt>Finding files</dt><dd id="stat-searched">0</dd></div>
           <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
           <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
@@ -37,6 +38,7 @@
       const progress = document.getElementById("progress");
       const status = document.getElementById("status");
       const bar = document.getElementById("bar");
+      const statTotal = document.getElementById("stat-total");
       const statCompleted = document.getElementById("stat-completed");
       const statSearched = document.getElementById("stat-searched");
       const statSuccessful = document.getElementById("stat-successful");
@@ -58,6 +60,36 @@
         ambiguous: "Ambiguous",
       };
       const stageLabel = (stage) => stageLabels[stage] || stage;
+
+      // Mirrors the result page row: title plus a status badge, then artists
+      // and the processing reason underneath.
+      function createTrackRow(track) {
+        const item = document.createElement("li");
+        item.classList.add("track-" + track.status);
+        const head = document.createElement("div");
+        head.className = "track-head";
+        const title = document.createElement("strong");
+        title.className = "track-title";
+        title.textContent = track.title;
+        const badge = document.createElement("span");
+        badge.className = "track-badge";
+        badge.textContent = (track.resolution || track.status || "").replace(/-/g, " ");
+        head.append(title, badge);
+        item.appendChild(head);
+        if (track.artists && track.artists.length) {
+          const artists = document.createElement("div");
+          artists.className = "track-artists";
+          artists.textContent = track.artists.join(", ");
+          item.appendChild(artists);
+        }
+        if (track.reason) {
+          const reason = document.createElement("div");
+          reason.className = "track-reason";
+          reason.textContent = track.reason;
+          item.appendChild(reason);
+        }
+        return item;
+      }
 
       function render(state) {
         progress.hidden = false;
@@ -106,11 +138,7 @@
           const tracks = document.createElement("ol");
           tracks.className = "track-list";
           for (const track of playlist.tracks) {
-            const trackItem = document.createElement("li");
-            trackItem.className = "track-" + track.status;
-            trackItem.textContent = track.title + " (" + stageLabel(track.status) + ")";
-            if (track.reason) trackItem.textContent += " — " + track.reason;
-            tracks.appendChild(trackItem);
+            tracks.appendChild(createTrackRow(track));
           }
           item.appendChild(tracks);
           list.appendChild(item);

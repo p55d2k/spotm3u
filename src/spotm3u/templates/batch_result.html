@@ -16,13 +16,22 @@
       <section class="batch-playlist">
         <h2>{{ state.playlist.name }}</h2>
         <p>{{ state.successful }} successful, {{ state.failed }} failed of {{ state.playlist.total_tracks }} tracks.</p>
-        {% if state.m3u_path %}
-        <a href="{{ url_for('download_m3u', job_id=job_id, playlist_id=state.playlist.id) }}">Save playlist (M3U)</a>
-        {% endif %}
-        <a href="{{ url_for('processing_result', job_id=job_id, playlist_id=state.playlist.id) }}">View track details</a>
+        <div class="result-actions">
+          {% if state.m3u_path %}
+          <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=state.playlist.id) }}">Save playlist (M3U)</a>
+          {% endif %}
+          <a class="button button-secondary" href="{{ url_for('processing_result', job_id=job_id, playlist_id=state.playlist.id) }}">View track details</a>
+        </div>
       </section>
       {% endfor %}
-      <p><a href="{{ url_for('playlists', job_id=job_id) }}">Download more playlists</a></p>
+      <section class="result-next" aria-labelledby="next-heading">
+        <h2 id="next-heading">Convert another playlist</h2>
+        <p class="field-help">Pick more playlists from this ZIP, or start over with a different one.</p>
+        <div class="result-actions">
+          <a class="button" href="{{ url_for('playlists', job_id=job_id) }}">Convert another playlist</a>
+          <a class="button button-secondary" href="{{ url_for('index') }}">Upload another ZIP</a>
+        </div>
+      </section>
     </main>
   </body>
 </html>

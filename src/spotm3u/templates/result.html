@@ -31,18 +31,25 @@
       </p>
       {% endif %}
 
-      <p class="download">
+      {% set unresolved = state.tracks | rejectattr('status', 'equalto', 'complete') | list %}
+      <div class="result-actions">
         {% if state.m3u_path %}
         <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Download M3U playlist</a>
-        {% else %}
-        No M3U playlist was generated.
         {% endif %}
-      </p>
-      {% if apple_music_available and state.m3u_path %}
-      <form method="post" action="{{ url_for('add_playlist_to_apple_music', job_id=job_id, playlist_id=playlist_id) }}">
-        <button type="submit">Add to Apple Music</button>
-      </form>
-      {% endif %}
+        {% if unresolved %}
+        <form method="post" action="{{ url_for('retry_processing', job_id=job_id, playlist_id=playlist_id) }}">
+          <button class="button-secondary" type="submit">Retry {{ unresolved | length }} failed track{{ '' if unresolved | length == 1 else 's' }}</button>
+        </form>
+        {% endif %}
+        {% if state.m3u_path and apple_music_available %}
+        <form method="post" action="{{ url_for('add_playlist_to_apple_music', job_id=job_id, playlist_id=playlist_id) }}">
+          <button class="button-secondary" type="submit">Add to Apple Music</button>
+        </form>
+        {% endif %}
+        {% if not state.m3u_path %}
+        <p class="field-help">No M3U playlist was generated.</p>
+        {% endif %}
+      </div>
 
       <section aria-labelledby="result-heading">
         <h2 id="result-heading">Summary</h2>
@@ -62,12 +69,15 @@
         <h2 id="tracks-heading">Track results</h2>
         <ol class="track-list">
           {% for track in state.tracks %}
-          <li class="track-{{ 'complete' if track.resolution in ('local', 'downloaded') else track.resolution }}">
-            <strong>{{ track.title }}</strong>
+          {% set status = track.resolution or track.status or 'unknown' %}
+          <li class="track-{{ 'complete' if status in ('local', 'downloaded') else status }}">
+            <div class="track-head">
+              <strong class="track-title">{{ track.title }}</strong>
+              <span class="track-badge">{{ status | replace('-', ' ') }}</span>
+            </div>
             {% if track.artists %}
-            - {{ track.artists | join(', ') }}
+            <div class="track-artists">{{ track.artists | join(', ') }}</div>
             {% endif %}
-            <span>({{ track.resolution or track.status }})</span>
             {% if track.reason %}
             <div class="track-reason">{{ track.reason }}</div>
             {% endif %}
@@ -76,11 +86,14 @@
         </ol>
       </section>
 
-      <p>
-        <a href="{{ url_for('playlists', job_id=job_id) }}">Convert another playlist</a>
-        ·
-        <a href="{{ url_for('index') }}">Upload another ZIP</a>
-      </p>
+      <section class="result-next" aria-labelledby="next-heading">
+        <h2 id="next-heading">Convert another playlist</h2>
+        <p class="field-help">Choose another playlist from this ZIP, or start over with a different one.</p>
+        <div class="result-actions">
+          <a class="button" href="{{ url_for('playlists', job_id=job_id) }}">Convert another playlist</a>
+          <a class="button button-secondary" href="{{ url_for('index') }}">Upload another ZIP</a>
+        </div>
+      </section>
     </main>
   </body>
 </html>
