@@ -46,14 +46,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group build
 
-      - name: Install FFmpeg (Windows, static)
-        if: matrix.platform == 'windows'
-        shell: pwsh
+      - name: Install FFmpeg (Windows)
         run: |
-          curl.exe -fsSL --retry 5 --retry-all-errors -o "$env:RUNNER_TEMP\ffmpeg.zip" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP" -Force
-          $bin = Get-ChildItem "$env:RUNNER_TEMP" -Recurse -Directory -Filter bin | Where-Object { $_.FullName -match 'win64-gpl' } | Select-Object -First 1
-          Add-Content -Path $env:GITHUB_PATH -Value $bin.FullName
+          winget install --id Gyan.FFmpeg -e --silent
+          # Add ffmpeg to GITHUB_PATH for subsequent steps
+          $ffmpegPath = "$env:ProgramFiles\FFmpeg\bin"
+          if (!(Test-Path $ffmpegPath)) {
+              # Fallback location if installed via alternative scope
+              $ffmpegPath = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-*\bin"
+          }
+          echo $ffmpegPath >> $env:GITHUB_PATH
 
       - name: Install FFmpeg (Linux, static)
         if: matrix.platform == 'linux'
