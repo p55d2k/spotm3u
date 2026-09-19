@@ -25,6 +25,9 @@ htmlcov/
 # Build / packaging
 build/
 dist/
+dist-artifacts/
+ffmpeg-stage/
+*.egg-info/
 *.spec.bak
 
 # PyInstaller
@@ -62,4 +65,3 @@ Desktop.ini
 # ai agents
 tasks.md
 tasks/
-

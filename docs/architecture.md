@@ -1,5 +1,10 @@
 # Architecture
 
+For visual references to the user-facing workflow, see the
+[screenshot plan](screenshots.md). The planned result-page capture should
+illustrate the final resolved/unresolved boundary described below; it must not
+be treated as an architecture diagram or as evidence for unsupported behavior.
+
 ## Overview
 
 This project converts Spotify playlists exported through Exportify into local M3U playlists.

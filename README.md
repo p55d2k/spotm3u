@@ -1,97 +1,65 @@
-# Spotify to M3U Converter
+# spotm3u
 
-> Turn an Exportify playlist export into a local, validated M3U playlist without
-> requiring Spotify access in the application.
-
-[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/p55d2k/spotm3u/actions/workflows/ci.yml/badge.svg)](https://github.com/p55d2k/spotm3u/actions/workflows/ci.yml)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-D7FF64?logo=ruff&logoColor=black)](https://github.com/astral-sh/ruff)
 
-## Contents
+spotm3u is a local Flask application that turns playlists exported from
+[Exportify](https://exportify.net/) into M3U playlists for audio already on
+your computer. When a track is not found locally, it can search for and
+download a candidate recording, validate it, and keep the resulting MP3 for
+later use.
 
-- [Overview](#overview)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Distribution](#distribution)
-- [Architecture](#architecture)
-- [Security](#security)
-- [Development](#development)
-- [License and acknowledgments](#license-and-acknowledgments)
-- [Media assets](#media-assets)
+The application does not log in to Spotify, request Spotify credentials, use
+the Spotify Web API, scrape Spotify, or require Spotify Premium. Spotify
+authentication and export happen in Exportify; spotm3u receives the downloaded
+ZIP only.
 
-## Overview
+## How it works
 
-Spotify to M3U Converter (spotm3u) is a local Flask application for converting playlist metadata exported
-by [Exportify](https://exportify.net/) into an M3U file that points to audio
-files on the user's computer. It checks the local music library first, then
-finds, validates, and downloads missing recordings with `yt-dlp`.
+1. **Export** your playlists with Exportify and download its ZIP.
+2. **Upload** the ZIP to spotm3u. The playlists are parsed locally.
+3. **Choose** one or more playlists to process.
+4. **Resolve** tracks from your local library first. Unmatched tracks can be
+   searched, validated, and downloaded.
+5. **Review** matched, unresolved, rejected, failed, and ambiguous tracks.
+6. **Download** the generated M3U playlist.
 
-The app never logs into Spotify, asks for Spotify credentials, uses the Spotify
-Web API, or scrapes Spotify. Spotify authentication and export happen in
-Exportify; spotm3u receives only the resulting ZIP.
+Playlist order and intentional duplicate entries are preserved. Missing,
+rejected, failed, and ambiguous tracks are reported instead of silently being
+written as successful entries. On macOS, a completed playlist can also be sent
+to the Music app.
 
-## Features
+![spotm3u result page](docs/images/result-page.png)
 
-- 📦 **Exportify ZIP ingestion** — safely parses playlists, Unicode metadata,
-  order, and intentional duplicate entries.
-- 💾 **Local matching** — reuses existing audio before any network
-  search or download.
-- 🎯 **Artist-aware identity matching** — a title match cannot make a
-  wrong-artist cover win.
-- 🔎 **Source discovery and ranking** — aggregates candidates, separates
-  recording identity from source quality, and prefers audio/lyrics sources over
-  music videos for the same recording.
-- 🔁 **Validation and fallback** — validates both the source and downloaded
-  audio, retrying another plausible source when appropriate.
-- 📝 **Lossless M3U export** — preserves playlist order and duplicates; failed
-  or ambiguous tracks are reported rather than silently omitted.
-- 🔄 **Retry unresolved tracks** — a finished result can re-run just the tracks
-  that failed, missing, or stayed ambiguous while keeping every resolved track.
-- 🍎 **Apple Music export on macOS** — sends resolved local files to a Music
-  playlist through the system automation interface and reports partial imports.
-- 🛡️ **Resource and security controls** — bounded work, safe ZIP extraction,
-  controlled paths, cleanup, and structured diagnostics.
+## Installation
 
-> [!IMPORTANT]
-> Exportify is the input boundary. Open Exportify, complete its export flow,
-> download the ZIP, and upload that ZIP to spotm3u. This app does not handle
-> Spotify authentication.
+### Standalone release
 
-## Requirements
+Download the archive for your platform from
+[GitHub Releases](https://github.com/p55d2k/spotm3u/releases), extract it, and
+run the `spotm3u` executable (`spotm3u.exe` on Windows). Then open
+<http://127.0.0.1:5001/>.
 
-Standalone releases (see [Distribution](#distribution)) do **not** require
-Python, `uv`, or a manually installed FFmpeg — the executable ships with a
-bundled Python runtime, all dependencies, and FFmpeg/ffprobe. Running from
-source does:
+The release archives built by CI include a Python runtime, application
+dependencies, and FFmpeg/ffprobe. They do not require Python, `uv`, or a
+system FFmpeg installation. CI currently builds:
 
-- Python 3.13 or newer
-- [`uv`](https://docs.astral.sh/uv/)
-- `ffmpeg` available on `PATH` for audio extraction and conversion
-- Network access for online search and downloads
+| Platform | Architecture | Archive suffix |
+| --- | --- | --- |
+| Windows | x86_64 | `windows-x86_64` |
+| macOS | arm64 | `macos-arm64` |
+| Linux | x86_64 | `linux-x86_64` |
 
-Local matching works without network access. No Spotify Premium account, API
-key, or application credentials are required.
+The executables are not signed or notarized. macOS Gatekeeper or Windows
+SmartScreen may display a warning on first launch. Apple Music integration is
+macOS-only. A YouTube PO-token provider is an optional external service and is
+not bundled; see [YouTube downloads](docs/troubleshooting.md#youtube-downloads).
 
-### Windows
+### Run from source
 
-Windows 10 or newer is supported. Install Python and `uv`, then install
-`ffmpeg` from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) or
-[winget](https://learn.microsoft.com/windows/package-manager/winget/):
-
-```powershell
-winget install Gyan.FFmpeg
-```
-
-Open a new terminal so `ffmpeg.exe` is on `PATH`, then use the same `uv sync`
-and `uv run spotm3u` commands below. Configure Windows paths with TOML
-forward slashes (for example `C:/Users/you/Music`) or `~`; no Unix shell,
-`/tmp`, or POSIX-only dependency is required.
-
-## Quick start
+Source usage requires Python 3.13+, [`uv`](https://docs.astral.sh/uv/), and
+FFmpeg on `PATH` when online downloads need audio conversion:
 
 ```bash
 git clone https://github.com/p55d2k/spotm3u.git
@@ -100,354 +68,55 @@ uv sync
 uv run spotm3u
 ```
 
-Open <http://127.0.0.1:5001/>. Optional configuration can be copied from
-`config.toml`; no `.env` file is required.
+Open <http://127.0.0.1:5001/>. No Spotify account credentials or API key are
+needed by spotm3u.
 
 ## Usage
 
-1. Open [Exportify](https://exportify.net/) and complete its export flow.
-2. Download the resulting ZIP.
-3. Start spotm3u and upload the ZIP.
-4. Select a playlist.
-5. Let spotm3u try the local library before searching online.
-6. Review resolved, missing, rejected, ambiguous, and uncertain tracks.
-7. Download the generated M3U.
-
-The M3U references existing local files and successfully downloaded MP3s. Its
-entries remain in the original order, including duplicates. Tracks that cannot
-be resolved are shown in the result and are never reported as successful.
-
-### YouTube authentication
-
-YouTube downloads are governed by two independent mechanisms that are often
-confused with each other:
-
-1. **Browser authentication** — cookies read locally from a browser where you
-   are signed in to YouTube. This is what satisfies a signed-in session
-   requirement such as YouTube's `LOGIN_REQUIRED` / "Sign in to confirm you're
-   not a bot" response.
-2. **PO Tokens** — proof-of-origin tokens that yt-dlp attaches to some YouTube
-   requests. They can make traffic look more legitimate for some IPs, but they
-   **do not** authenticate a session and **do not** guarantee bypassing bot
-   checks or HTTP 403 errors.
-
-spotm3u integrates the yt-dlp PO Token plugin
-[`bgutil-ytdlp-pot-provider`](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).
-The tested combination is **yt-dlp 2026.8.19** with **bgutil plugin 2.0.0**.
-YouTube's behavior and yt-dlp's error messages change frequently, so keep both
-tools current; spotm3u's YouTube error handling is verified against the pinned
-yt-dlp release and version-sensitive string messages.
-
-#### Plugin and provider are separate components
-
-- The **plugin** is the Python package `bgutil-ytdlp-pot-provider` that spotm3u
-  installs via `uv sync`. It teaches yt-dlp how to ask for tokens.
-- The **provider** is the software that actually generates tokens: either the
-  bgutil HTTP server (Docker or a local checkout) or the bgutil script invoked
-  by yt-dlp with Node.js/Deno.
-
-Installing the plugin does **not** start a provider server. You must choose and
-prepare one provider before PO tokens can be used. spotm3u never generates,
-caches, logs, stores, or exposes PO tokens — they stay entirely inside
-yt-dlp/bgutil.
-
-There are three supported providers. Installing the plugin does **not** start
-any of them; choose and prepare exactly one first. The provider does **not** need
-Docker; the HTTP server runs natively on Node.js 22+ or Deno 2.0.0+.
-
-- **HTTP server** — an always-running process that answers `GET /ping`.
-- **Script** — a command yt-dlp spawns per download; simpler but slower under
-  concurrency and not recommended for it.
-- **Docker image** — the prebuilt HTTP server, which is convenient but
-  **optional**.
-
-Loopback-only binding is recommended for all three because the provider is an
-unauthenticated token service.
-
-#### Docker HTTP server (optional)
-
-```bash
-docker run --name bgutil-provider -d --init \
-  -p 127.0.0.1:4416:4416 \
-  brainicism/bgutil-ytdlp-pot-provider:2.0.0
-```
-
-If it runs on another URL, configure it in your private `config.toml`:
-
-```toml
-[download]
-pot_provider_url = "http://127.0.0.1:8080"
-```
-
-#### Native HTTP server (no Docker)
-
-```bash
-git clone --single-branch --branch 2.0.0 \
-  https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
-cd bgutil-ytdlp-pot-provider/server
-npm ci
-npx tsc
-node build/main.js
-```
-
-This listens on `127.0.0.1:4416` by default, so no configuration is required
-unless you change the port.
-
-#### Script provider
-
-```bash
-git clone --single-branch --branch 2.0.0 \
-  https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
-cd bgutil-ytdlp-pot-provider/server
-# Node: `npm ci` then skip `npx tsc`; Deno: `deno install --allow-scripts=npm:canvas --frozen`
-```
-
-Point `config.toml` at the checkout:
-
-```toml
-[download]
-pot_provider_home = "~/bgutil-ytdlp-pot-provider/server"
-```
-
-When a provider is configured, spotm3u validates it before yt-dlp starts:
-HTTP providers are checked with `GET /ping` and compared by major version with
-the installed plugin, and script providers must contain the expected built
-artifact (`build/generate_once.js` or `src/generate_once.ts`) with a matching
-runtime on `PATH`. Validation never executes arbitrary paths, and provider URLs
-with embedded credentials are never written to logs or error messages.
-
-#### When YouTube requires authentication
-
-Some videos require a signed-in session. spotm3u supports yt-dlp's local
-browser-cookie extraction. Sign in to YouTube in a supported browser, then set
-the browser name in your private `config.toml`:
-
-```toml
-[download]
-cookies_from_browser = "chrome"
-```
-
-Supported values are `chrome`, `chromium`, `firefox`, `safari`, `edge`,
-`brave`, `opera`, `vivaldi`, and `whale`. You can also set
-`SPOTM3U_YTDLP_BROWSER=firefox` for a local environment override. Cookies are
-read locally by yt-dlp, are never copied into the project, logs, or API
-responses, and should not be committed to Git.
-
-When YouTube needs a session and no browser is configured, spotm3u raises a
-clear error telling you to configure `download.cookies_from_browser`; it does
-not pretend a PO Token replaces authentication, and it does not retry a
-sequence of player clients hoping one works. The same messages explain:
-
-- **PO-token/provider failure** — the configured provider is missing, down, or
-  version-mismatched; start or rebuild the provider.
-- **Browser-cookie failure** — the configured browser's cookies could not be
-  read (for example a locked or undecryptable database); sign in, close the
-  browser, or choose another one.
-- **Rate limiting / captcha** — YouTube throttled the request or asked for a
-  captcha; wait, lower `download.workers`, or use a signed-in session.
-- **Private, members-only, or age-restricted content** — the video needs an
-  account with access; configure browser cookies if you have it.
-
-For a quick diagnostic of what yt-dlp sees, call the helper
-`spotm3u.online.describe_youtube_setup(...)`. It reports the yt-dlp version,
-whether the bgutil plugin is importable, whether a configured provider answers
-`/ping`, the configured script runtime, and the configured browser — without
-ever exposing cookies or PO tokens.
-
-## Configuration
-
-Configuration is optional TOML, loaded from `./config.toml` or the path in
-`SPOTM3U_CONFIG`. Paths support `~`.
-
-| Section/key                             | Default                             | Purpose                        |
-| --------------------------------------- | ----------------------------------- | ------------------------------ |
-| `web.port`                              | `5001`                              | Web server port                |
-| `web.upload_root`                       | system temp/`spotm3u`               | Temporary upload/job root      |
-| `web.music_library`                     | `~/Music`                           | Local audio search root        |
-| `web.download_dir`                      | `<music_library>/spotm3u-downloads` | Persistent MP3 and M3U output  |
-| `web.resolve_workers`                   | `3`                                 | Track resolution workers       |
-| `web.log_level`                         | `INFO`                              | `DEBUG`, `INFO`, etc.          |
-| `upload.max_upload_size`                | `50 MiB`                            | Compressed upload limit        |
-| `upload.max_decompressed_size`          | `512 MiB`                           | Expanded archive limit         |
-| `upload.max_archive_entries`            | `10000`                             | ZIP entry limit                |
-| `upload.max_job_age`                    | `86400`                             | Stale job retention in seconds |
-| `search.max_results`                    | `8`                                 | Results per search query       |
-| `search.max_search_workers`             | `4`                                 | Search concurrency per track   |
-| `search.socket_timeout`                 | `30`                                | Search socket timeout          |
-| `download.audio_quality`                | `192`                               | MP3 bitrate                    |
-| `download.workers`                      | `2`                                 | Download concurrency           |
-| `download.timeout`                      | `600`                               | Per-download wall-clock limit  |
-| `download.retries` / `fragment_retries` | `5` / `5`                           | yt-dlp retry limits            |
-| `download.socket_timeout`               | `30`                                | Download socket timeout        |
-| `download.cookies_from_browser`        | unset                              | YouTube authentication: local browser cookies |
-| `download.pot_provider_url`            | unset (plugin default `127.0.0.1:4416`) | bgutil HTTP provider URL, `/ping`-validated before use |
-| `download.pot_provider_home`          | unset (plugin default home)        | bgutil script checkout; Node 22+ / Deno 2.4.3+ |
-| `m3u.extended` / `relative`             | `true` / `false`                    | M3U formatting                 |
-
-`SPOTM3U_LOG_LEVEL` overrides the configured log level. See `config.toml` for
-the complete commented example.
-
-## Distribution
-
-Tagged releases (e.g. `v1.0.0`) are built automatically by GitHub Actions into
-standalone platform archives and published as GitHub Release assets. Each
-archive contains the executable, the bundled Python runtime and dependencies,
-templates/static assets, and the FFmpeg/ffprobe binaries — no Python, `uv`, or
-system FFmpeg is needed.
-
-### Supported platforms
-
-Only the combinations below are CI-tested (the smoke test boots each archived
-build, verifies the web server, a rendered template, static assets, and the
-bundled FFmpeg). Other combinations are not claimed as supported:
-
-| Platform    | Architecture | CI runner              | Archive suffix   |
-| ----------- | ------------ | ---------------------- | ---------------- |
-| Windows     | x86_64       | `windows-latest`       | `windows-x86_64` |
-| macOS       | arm64        | `macos-14`             | `macos-arm64`    |
-| Linux       | x86_64       | `ubuntu-latest`        | `linux-x86_64`   |
-
-### Installation
-
-1. Download the archive for your platform from the
-   [Releases](https://github.com/p55d2k/spotm3u/releases) page.
-2. Extract it anywhere.
-3. Run the `spotm3u` (`spotm3u.exe` on Windows) executable inside the `spotm3u`
-   folder.
-4. Open <http://127.0.0.1:5001/>.
-
-Optional configuration: place a `config.toml` next to the executable (or set
-`SPOTM3U_CONFIG`); see [Configuration](#configuration). A console window shows
-logs while the app runs; closing it stops the server.
-
-### Platform limitations
-
-- The executables are **not signed or notarized**. macOS shows a Gatekeeper
-  prompt (right-click → Open, or `xattr -d com.apple.quarantine`) and Windows
-  may show a SmartScreen warning on first run.
-- FFmpeg is bundled per-architecture; installing one manually is optional but
-  an `ffmpeg/` directory placed next to the executable takes precedence if you
-  want to override the bundled copy.
-- Apple Music import is macOS-only and needs the macOS Music app.
-- The PO token provider (`download.pot_provider_url` /
-  `download.pot_provider_home`) is *not* bundled; see
-  [YouTube authentication](#youtube-authentication).
-
-### Creating a release (maintainers)
-
-`docs/release.md` covers the packaging architecture and build process in
-detail. To ship a release:
-
-1. Update the version in `pyproject.toml` and `uv lock` if needed.
-2. Tag and push the tag:
-
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-3. The `Release` workflow builds, packages, and smoke-tests the application on
-   every supported platform. If all builds and checks pass, it creates the
-   GitHub Release for the tag (auto-generated release notes) and uploads an
-   archive per platform with the name
-   `spotm3u-<version>-<platform>-<arch>.zip`.
-4. Normal commits and PRs never create releases; only `v*` tag pushes do. The
-   release is published only after every platform build and smoke test
-   succeeds.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    A[Exportify] --> B[Upload playlist ZIP]
-    B --> C[ZIP parser]
-    C --> D[Playlist selection]
-    D --> E[Local audio resolver]
-    E -->|unresolved| F[Artist-aware online search]
-    F --> G[Candidate aggregation and deduplication]
-    G --> H[Recording identity matching]
-    H --> I[Source-quality ranking]
-    I --> J[Source validation]
-    J --> K[yt-dlp download]
-    K --> L[Downloaded-audio validation]
-    L -->|invalid| I
-    E --> M[Resolved local track]
-    L --> M
-    M --> N[M3U generation]
-    N --> O[M3U download]
-```
-
-Identity and source quality are separate decisions. Explicit artist conflicts
-reject a candidate even when its title is exact; missing metadata is not proof
-of mismatch. Official audio and lyric sources can outrank an official music
-video for the same recording, while an official music video remains a valid
-fallback. Every downloaded file is validated before it reaches the M3U writer.
-
-## Security
-
-Uploaded ZIPs and all metadata are untrusted. spotm3u limits compressed and
-expanded sizes, rejects unsafe archive paths, keeps temporary files in
-controlled directories, bounds concurrent work and retries, and never executes
-uploaded files. Download endpoints resolve server-owned job IDs rather than
-accepting arbitrary filesystem paths. Credentials, tokens, and private
-authentication data are not collected or logged.
-
-> [!WARNING]
-> Online source matching and audio-content detection are heuristic. Review
-> reported uncertain or unresolved tracks before relying on a generated
-> playlist.
-
-## Development
-
-```bash
-uv sync --dev
-uv run pre-commit install
-uv run pytest
-```
-
-Ruff is the code quality tool for this project. It handles both linting and
-formatting. Configuration lives in `pyproject.toml` under `[tool.ruff]` and
-`[tool.ruff.lint]`; the hook definitions live in `.pre-commit-config.yaml`.
-
-### Quick commands
-
-```bash
-# Lint only
-uv run ruff check src tests
-
-# Auto-fix lint issues
-uv run ruff check --fix src tests
-
-# Check formatting
-uv run ruff format --check src tests
-
-# Apply formatting
-uv run ruff format src tests
-
-# Run the pre-commit hooks against the whole tree
-uv run pre-commit run --all-files
-```
-
-### Pre-commit
-
-`uv run pre-commit install` is a one-time step per clone. It wires the Git
-`pre-commit` hook so every commit runs Ruff (lint with `--fix` + format) and the
-full `pytest` suite. This catches style and correctness issues before they land
-in the commit history.
-
-### CI
-
-The same checks run in GitHub Actions on every push and pull request. The CI
-workflow runs Ruff lint and format checks, then the test suite. See
-`.github/workflows/ci.yml` for the exact steps. Tag pushes additionally trigger
-the release pipeline in `.github/workflows/release.yml` (build → package →
-smoke test → publish).
-
-The reusable services live under `src/spotm3u/`; tests are under `tests/`;
-architecture details are in `docs/`.
-
-## License and acknowledgments
-
-Released under the [MIT License](LICENSE). spotm3u uses and integrates with
-the Exportify export format, [`yt-dlp`](https://github.com/yt-dlp/yt-dlp),
-Flask, Mutagen, and ffmpeg.
+1. Export playlists with Exportify and download its ZIP.
+2. Start spotm3u and upload the ZIP.
+3. Select one or more playlists.
+4. Review local matches and any online resolution results.
+5. Download the generated M3U.
+
+![spotm3u playlist selection](docs/images/playlist-selection.png)
+
+The M3U references existing files and successfully downloaded MP3s. The
+download directory defaults to `~/Music/spotm3u-downloads/` and can be changed
+in `config.toml`. Configuration is optional; see the commented
+[config.toml](config.toml) example.
+
+YouTube downloads can require a signed-in browser session. Configure
+`download.cookies_from_browser` only when needed; browser cookies are read
+locally by yt-dlp and are not stored or logged by spotm3u. PO tokens do not
+replace browser authentication. Provider setup and common failures are
+documented in [troubleshooting](docs/troubleshooting.md).
+
+![spotm3u processing progress](docs/images/processing-progress.png)
+
+## Documentation
+
+- [Development](docs/development.md) — local setup, checks, and project layout
+- [Architecture](docs/architecture.md) — application boundaries and data flow
+- [Packaging](docs/packaging.md) — PyInstaller bundles and FFmpeg staging
+- [Releases](docs/releases.md) — tags, CI builds, verification, and publishing
+- [Troubleshooting](docs/troubleshooting.md) — configuration and download issues
+- [Exportify format](docs/exportify.md) — parser boundary and playlist semantics
+- [Matching and source validation](docs/matching.md)
+- [M3U output](docs/m3u.md)
+- [Security design](docs/security.md)
+- [Screenshot plan](docs/screenshots.md)
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development and pull request
+workflow. Report vulnerabilities privately according to
+[SECURITY.md](SECURITY.md); do not open a public issue for an undisclosed
+security problem.
+
+## License
+
+spotm3u is released under the [MIT License](LICENSE). The project uses
+third-party software including Flask, Mutagen, yt-dlp, bgutil-ytdlp-pot-provider,
+and FFmpeg. Release bundles must retain the applicable notices and source
+information for distributed FFmpeg builds.

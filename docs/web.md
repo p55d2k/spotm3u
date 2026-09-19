@@ -1,5 +1,10 @@
 # Web Application
 
+Screenshot references and capture requirements are maintained in the
+[screenshot plan](screenshots.md). The playlist selection and processing
+screenshots are embedded beside their corresponding sections below; keep
+personal paths, credentials, cookies, and library names out of every capture.
+
 ## Technology
 
 Use Flask with:
@@ -25,6 +30,8 @@ download and completion status. After a result is available, **Download another 
 returns to that same selection state for the upload job; the ZIP is not
 uploaded or parsed again. The existing M3U download remains available from
 each result.
+
+![Playlist selection and batch controls](images/playlist-selection.png)
 
 ## Processing
 
@@ -83,6 +90,8 @@ Examples:
 - Downloading
 - Checking downloaded audio
 - Trying another source
+
+![Live processing progress](images/processing-progress.png)
 
 ## Result
 
@@ -165,3 +174,5 @@ them and lets later runs match them locally instead of re-downloading.
 A track should only be marked successful after the final local audio file has passed the relevant validation.
 
 A track should not be marked failed merely because its metadata was imperfect.
+
+![Completed result page](images/result-page.png)
