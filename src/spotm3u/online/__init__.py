@@ -25,7 +25,12 @@ from .validation import (
     validate_source_candidate,
     validate_source_candidates,
 )
-from .downloader import DownloadError, download_source, download_track
+from .downloader import (
+    DownloadError,
+    describe_youtube_setup,
+    download_source,
+    download_track,
+)
 from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
 from .cache import DownloadCache, cache_metadata_key, source_identity
 from ..metadata import enrich_metadata, MetadataResult
@@ -49,6 +54,7 @@ __all__ = [
     "validate_source_candidate",
     "validate_source_candidates",
     "DownloadError",
+    "describe_youtube_setup",
     "download_source",
     "download_track",
     "DownloadCache",

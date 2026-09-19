@@ -109,6 +109,110 @@ The M3U references existing local files and successfully downloaded MP3s. Its
 entries remain in the original order, including duplicates. Tracks that cannot
 be resolved are shown in the result and are never reported as successful.
 
+### YouTube authentication
+
+YouTube downloads are governed by two independent mechanisms that are often
+confused with each other:
+
+1. **Browser authentication** — cookies read locally from a browser where you
+   are signed in to YouTube. This is what satisfies a signed-in session
+   requirement such as YouTube's `LOGIN_REQUIRED` / "Sign in to confirm you're
+   not a bot" response.
+2. **PO Tokens** — proof-of-origin tokens that yt-dlp attaches to some YouTube
+   requests. They can make traffic look more legitimate for some IPs, but they
+   **do not** authenticate a session and **do not** guarantee bypassing bot
+   checks or HTTP 403 errors.
+
+spotm3u integrates the yt-dlp PO Token plugin
+[`bgutil-ytdlp-pot-provider`](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).
+The tested combination is **yt-dlp 2026.8.19** with **bgutil plugin 2.0.0**.
+YouTube's behavior and yt-dlp's error messages change frequently, so keep both
+tools current; spotm3u's YouTube error handling is verified against the pinned
+yt-dlp release and version-sensitive string messages.
+
+#### Plugin and provider are separate components
+
+- The **plugin** is the Python package `bgutil-ytdlp-pot-provider` that spotm3u
+  installs via `uv sync`. It teaches yt-dlp how to ask for tokens.
+- The **provider** is the software that actually generates tokens: either the
+  bgutil HTTP server (Docker or a local checkout) or the bgutil script invoked
+  by yt-dlp with Node.js/Deno.
+
+Installing the plugin does **not** start a provider server. You must choose and
+prepare one provider before PO tokens can be used. spotm3u never generates,
+caches, logs, stores, or exposes PO tokens — they stay entirely inside
+yt-dlp/bgutil.
+
+The simplest cross-platform provider is Docker:
+
+```bash
+docker run --name bgutil-provider -d --init \
+  -p 127.0.0.1:4416:4416 \
+  brainicism/bgutil-ytdlp-pot-provider:2.0.0
+```
+
+The loopback-only binding is intentional: the provider is an unauthenticated
+token service, so do not publish it to the network. If it runs on another URL,
+set it in your private `config.toml`:
+
+```toml
+[download]
+pot_provider_url = "http://127.0.0.1:8080"
+```
+
+Alternatively, point to a native provider checkout built with Node.js 22+ or
+Deno 2.4.3+ (`npm ci && npx tsc` for Node):
+
+```toml
+[download]
+pot_provider_home = "~/bgutil-ytdlp-pot-provider/server"
+```
+
+When a provider is configured, spotm3u validates it before yt-dlp starts:
+HTTP providers are checked with `GET /ping` and compared by major version with
+the installed plugin, and script providers must contain the expected built
+artifact (`build/generate_once.js` or `src/generate_once.ts`) with a matching
+runtime on `PATH`. Validation never executes arbitrary paths, and provider URLs
+with embedded credentials are never written to logs or error messages.
+
+#### When YouTube requires authentication
+
+Some videos require a signed-in session. spotm3u supports yt-dlp's local
+browser-cookie extraction. Sign in to YouTube in a supported browser, then set
+the browser name in your private `config.toml`:
+
+```toml
+[download]
+cookies_from_browser = "chrome"
+```
+
+Supported values are `chrome`, `chromium`, `firefox`, `safari`, `edge`,
+`brave`, `opera`, `vivaldi`, and `whale`. You can also set
+`SPOTM3U_YTDLP_BROWSER=firefox` for a local environment override. Cookies are
+read locally by yt-dlp, are never copied into the project, logs, or API
+responses, and should not be committed to Git.
+
+When YouTube needs a session and no browser is configured, spotm3u raises a
+clear error telling you to configure `download.cookies_from_browser`; it does
+not pretend a PO Token replaces authentication, and it does not retry a
+sequence of player clients hoping one works. The same messages explain:
+
+- **PO-token/provider failure** — the configured provider is missing, down, or
+  version-mismatched; start or rebuild the provider.
+- **Browser-cookie failure** — the configured browser's cookies could not be
+  read (for example a locked or undecryptable database); sign in, close the
+  browser, or choose another one.
+- **Rate limiting / captcha** — YouTube throttled the request or asked for a
+  captcha; wait, lower `download.workers`, or use a signed-in session.
+- **Private, members-only, or age-restricted content** — the video needs an
+  account with access; configure browser cookies if you have it.
+
+For a quick diagnostic of what yt-dlp sees, call the helper
+`spotm3u.online.describe_youtube_setup(...)`. It reports the yt-dlp version,
+whether the bgutil plugin is importable, whether a configured provider answers
+`/ping`, the configured script runtime, and the configured browser — without
+ever exposing cookies or PO tokens.
+
 ## Configuration
 
 Configuration is optional TOML, loaded from `./config.toml` or the path in
@@ -134,6 +238,9 @@ Configuration is optional TOML, loaded from `./config.toml` or the path in
 | `download.timeout`                      | `600`                               | Per-download wall-clock limit  |
 | `download.retries` / `fragment_retries` | `5` / `5`                           | yt-dlp retry limits            |
 | `download.socket_timeout`               | `30`                                | Download socket timeout        |
+| `download.cookies_from_browser`        | unset                              | YouTube authentication: local browser cookies |
+| `download.pot_provider_url`            | unset (plugin default `127.0.0.1:4416`) | bgutil HTTP provider URL, `/ping`-validated before use |
+| `download.pot_provider_home`          | unset (plugin default home)        | bgutil script checkout; Node 22+ / Deno 2.4.3+ |
 | `m3u.extended` / `relative`             | `true` / `false`                    | M3U formatting                 |
 
 `SPOTM3U_LOG_LEVEL` overrides the configured log level. See `config.toml` for

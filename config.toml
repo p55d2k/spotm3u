@@ -85,6 +85,30 @@
 # fragment_retries = 5
 # socket_timeout = 30
 
+# Optional browser used by yt-dlp to import your local YouTube cookies.
+# Supported values include chrome, chromium, firefox, safari, edge, brave,
+# opera, vivaldi, and whale. This is the explicit authentication mechanism:
+# when YouTube asks for a signed-in session, set this rather than expecting a
+# PO token to authenticate. Keep the browser signed in to YouTube; cookies are
+# read locally and never written to logs or returned by the web app.
+# cookies_from_browser = "chrome"
+
+# Optional bgutil provider overrides. The bgutil yt-dlp plugin and the
+# provider server/script are separate components: installing the plugin does
+# not start a provider. Install and prepare exactly one provider first. HTTP
+# uses the current bgutil 2.0.0 server and is checked with GET /ping before
+# each configured YouTube download; URL credentials are never logged. spotm3u
+# makes a single yt-dlp attempt per source and lets yt-dlp select its own
+# player clients, so PO tokens and cookies are the only YouTube knobs here.
+# PO tokens do not replace browser authentication and do not guarantee
+# bypassing bot checks. Bind Docker to loopback only:
+# docker run --name bgutil-provider -d --init -p 127.0.0.1:4416:4416
+#   brainicism/bgutil-ytdlp-pot-provider:2.0.0
+# pot_provider_url = "http://127.0.0.1:4416"
+# Script mode requires a matching checkout, Node.js 22+ or Deno 2.4.3+, and a
+# built provider script (`npm ci && npx tsc` for Node).
+# pot_provider_home = "~/bgutil-ytdlp-pot-provider/server"
+
 [m3u]
 # Write an extended M3U (the #EXTM3U header plus #EXTINF metadata lines).
 # extended = true

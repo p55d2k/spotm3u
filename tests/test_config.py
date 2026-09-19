@@ -32,6 +32,9 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.search_socket_timeout == 30
     assert config.max_download_workers == 2
     assert config.download_timeout == 600
+    assert config.cookies_from_browser is None
+    assert config.pot_provider_url is None
+    assert config.pot_provider_home is None
     assert config.m3u_extended is True
     assert config.m3u_relative is False
 
@@ -62,6 +65,8 @@ def test_load_config_parses_known_values(tmp_path) -> None:
         retries = 3
         fragment_retries = 2
         socket_timeout = 60
+        cookies_from_browser = "Firefox"
+        pot_provider_url = "http://127.0.0.1:8080"
 
         [m3u]
         extended = true
@@ -86,6 +91,8 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.retries == 3
     assert config.fragment_retries == 2
     assert config.socket_timeout == 60
+    assert config.cookies_from_browser == "Firefox"
+    assert config.pot_provider_url == "http://127.0.0.1:8080"
     assert config.m3u_extended is True
     assert config.m3u_relative is True
 
@@ -94,6 +101,15 @@ def test_unknown_keys_are_ignored(tmp_path) -> None:
     path = write_config(tmp_path, '[web]\nmade_up_option = "x"\n')
     config = load_config(path)
     assert config == Config()
+
+
+def test_invalid_cookie_browser_is_rejected(tmp_path) -> None:
+    path = write_config(
+        tmp_path,
+        '[download]\ncookies_from_browser = "my-browser"\n',
+    )
+    with pytest.raises(ConfigError, match="cookies_from_browser"):
+        load_config(path)
 
 
 def test_unexposed_sections_are_ignored(tmp_path) -> None:

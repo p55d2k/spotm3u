@@ -9,10 +9,16 @@ description = "Spotify to M3U Converter: create validated local M3U playlists fr
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # bgutil 2.x supplies the yt-dlp PO Token providers spotm3u validates
+    # (youtubepot-bgutilhttp / youtubepot-bgutilscript).
+    "bgutil-ytdlp-pot-provider>=2.0",
     "flask>=3.1",
     "mutagen>=1.47",
     "requests>=2.32",
-    "yt-dlp>=2025.1.15",
+    # YouTube error messages and PO-token handling are version-sensitive;
+    # spotm3u's YouTube classification and diagnostics are verified against
+    # this release line rather than an older PO-token-era minimum.
+    "yt-dlp>=2026.8.19",
     "zhconv>=1.4",
 ]
 

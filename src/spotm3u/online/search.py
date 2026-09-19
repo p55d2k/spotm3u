@@ -18,6 +18,7 @@ from typing import Any
 from ..log import track_identifier
 from ..models import Track
 from ..normalization import normalize
+from ._ytdlp import ensure_ytdlp_plugins_loaded
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,10 @@ class OnlineSourceSearcher:
                 "search track=%s status=failed reason=yt_dlp unavailable", track_identifier(track)
             )
             return ()
+
+        # Load plugins once before the worker pool builds YoutubeDL instances;
+        # concurrent lazy loading re-registers providers ("already registered").
+        ensure_ytdlp_plugins_loaded()
 
         workers = min(len(queries), self.max_search_workers)
         if workers <= 1:

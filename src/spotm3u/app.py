@@ -217,6 +217,7 @@ def create_app(config: dict | None = None) -> Flask:
                 continue
             playlist = playlist_data[int(playlist_id)]
             job = _build_processing_job(
+                app=app,
                 job_id=job_id,
                 playlist_id=playlist_id,
                 playlist=playlist,
@@ -319,6 +320,7 @@ def create_app(config: dict | None = None) -> Flask:
 
         playlist = playlist_data[playlist_index]
         job = _build_processing_job(
+            app=app,
             job_id=job_id,
             playlist_id=playlist_id,
             playlist=playlist,
@@ -554,6 +556,7 @@ def _download_dir(app: Flask) -> Path:
 
 def _build_processing_job(
     *,
+    app: Flask,
     job_id: str,
     playlist_id: str,
     playlist: Playlist,
@@ -570,6 +573,9 @@ def _build_processing_job(
     retries = int(app.config.get("DOWNLOAD_RETRIES", 5))
     fragment_retries = int(app.config.get("DOWNLOAD_FRAGMENT_RETRIES", 5))
     socket_timeout = int(app.config.get("DOWNLOAD_SOCKET_TIMEOUT", 30))
+    cookies_from_browser = app.config.get("YTDLP_COOKIES_FROM_BROWSER")
+    pot_provider_url = app.config.get("YTDLP_POT_PROVIDER_URL")
+    pot_provider_home = app.config.get("YTDLP_POT_PROVIDER_HOME")
 
     def resolver_factory() -> TrackResolver:
         local_resolver = LocalAudioResolver(music_library)
@@ -585,6 +591,9 @@ def _build_processing_job(
             fragment_retries=fragment_retries,
             socket_timeout=socket_timeout,
             timeout=download_timeout,
+            cookies_from_browser=cookies_from_browser,
+            pot_provider_url=pot_provider_url,
+            pot_provider_home=pot_provider_home,
         )
         return TrackResolver(
             local_resolver,

@@ -19,6 +19,9 @@ DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 DEFAULT_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
 DEFAULT_MAX_ARCHIVE_ENTRIES = 10_000
 DEFAULT_MAX_JOB_AGE = 24 * 60 * 60
+SUPPORTED_COOKIE_BROWSERS = frozenset(
+    {"brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"}
+)
 
 
 class ConfigError(ValueError):
@@ -52,6 +55,9 @@ class Config:
     retries: int = 5
     fragment_retries: int = 5
     socket_timeout: int = 30
+    cookies_from_browser: str | None = None
+    pot_provider_url: str | None = None
+    pot_provider_home: str | None = None
     # [m3u]
     m3u_extended: bool = True
     m3u_relative: bool = False
@@ -74,6 +80,9 @@ class Config:
             "DOWNLOAD_RETRIES": self.retries,
             "DOWNLOAD_FRAGMENT_RETRIES": self.fragment_retries,
             "DOWNLOAD_SOCKET_TIMEOUT": self.socket_timeout,
+            "YTDLP_COOKIES_FROM_BROWSER": self.cookies_from_browser,
+            "YTDLP_POT_PROVIDER_URL": self.pot_provider_url,
+            "YTDLP_POT_PROVIDER_HOME": self.pot_provider_home,
             "M3U_EXTENDED": self.m3u_extended,
             "M3U_RELATIVE": self.m3u_relative,
         }
@@ -108,6 +117,9 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "download.retries": "retries",
     "download.fragment_retries": "fragment_retries",
     "download.socket_timeout": "socket_timeout",
+    "download.cookies_from_browser": "cookies_from_browser",
+    "download.pot_provider_url": "pot_provider_url",
+    "download.pot_provider_home": "pot_provider_home",
     "m3u.extended": "m3u_extended",
     "m3u.relative": "m3u_relative",
 }
@@ -155,6 +167,11 @@ def _coerce(expected: type, key: str, value: Any) -> Any:
         return value
     if not isinstance(value, expected):
         raise ConfigError(f"{key} must be a {expected.__name__}")
+    if key == "download.cookies_from_browser":
+        browser = value.casefold()
+        if browser not in SUPPORTED_COOKIE_BROWSERS:
+            supported = ", ".join(sorted(SUPPORTED_COOKIE_BROWSERS))
+            raise ConfigError(f"{key} must be one of: {supported}")
     return value
 
 
@@ -174,7 +191,14 @@ def discover_config_path() -> Path | None:
 
 def load_user_config() -> Config:
     """Load the discovered optional config file, or return defaults."""
-    return load_config(discover_config_path())
+    config = load_config(discover_config_path())
+    browser = os.environ.get("SPOTM3U_YTDLP_BROWSER")
+    if browser is None:
+        return config
+    if browser == "":
+        return Config(**{**config.__dict__, "cookies_from_browser": None})
+    value = _coerce(str, "download.cookies_from_browser", browser)
+    return Config(**{**config.__dict__, "cookies_from_browser": value.casefold()})
 
 
 __all__ = [
