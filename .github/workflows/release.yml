@@ -145,7 +145,7 @@ jobs:
           test -f "$expected" || { echo "expected release archive missing: $expected"; ls -la; exit 1; }
 
       - name: Extract and smoke test packaged application
-        run: uv run -q python packaging/smoke_test.py "$GITHUB_WORKSPACE/spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+        run: uv run -q python packaging/smoke_test.py "spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
 
   release:
     name: Publish GitHub Release
