@@ -38,9 +38,12 @@ def _get(url: str) -> tuple[int, str]:
 
 
 def find_executable(bundle: Path) -> Path:
+    candidates = {
+        candidate.name.lower(): candidate for candidate in bundle.iterdir() if candidate.is_file()
+    }
     for name in ("spotm3u.exe", "spotm3u"):
-        candidate = bundle / name
-        if candidate.is_file():
+        candidate = candidates.get(name)
+        if candidate is not None:
             return candidate
     raise SystemExit(f"no spotm3u executable found in {bundle}")
 
@@ -49,8 +52,8 @@ def check_bundled_ffmpeg(bundle: Path) -> None:
     ffmpeg_dir = bundle / "_internal" / "ffmpeg"
     if not ffmpeg_dir.is_dir():
         raise SystemExit(f"bundled ffmpeg directory missing: expected {ffmpeg_dir}")
-    present = {p.name for p in ffmpeg_dir.iterdir() if p.is_file()}
-    required = {"ffmpeg", "ffmpeg.exe", "ffprobe", "ffprobe.exe"}
+    present = {p.stem.lower() for p in ffmpeg_dir.iterdir() if p.is_file()}
+    required = {"ffmpeg", "ffprobe"}
     if not (present & required):
         raise SystemExit(f"ffmpeg/ffprobe not found in {ffmpeg_dir}: got {sorted(present)}")
 
@@ -112,7 +115,9 @@ def smoke_test(bundle: Path) -> None:
 
 def _bundle_root(target: Path) -> Path:
     if target.is_dir():
-        if (target / "spotm3u").is_file() or (target / "spotm3u.exe").is_file():
+        if any(
+            p.is_file() and p.name.lower() in {"spotm3u", "spotm3u.exe"} for p in target.iterdir()
+        ):
             return target
         archives = sorted(target.glob("*.zip"))
         if len(archives) == 1:
@@ -125,12 +130,14 @@ def _unpack(archive: Path, into: Path) -> Path:
     extract_dir = into / f"{archive.stem}-extracted"
     with zipfile.ZipFile(archive) as zf:
         zf.extractall(extract_dir)
-    bundle = extract_dir / "spotm3u"
-    _make_executable(bundle / "spotm3u.exe")
-    _make_executable(bundle / "spotm3u")
-    for name in ("ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"):
-        _make_executable(bundle / "_internal" / "ffmpeg" / name)
-    return bundle
+    for candidate in extract_dir.rglob("*"):
+        if candidate.is_file() and candidate.name.lower() in {"spotm3u", "spotm3u.exe"}:
+            bundle = candidate.parent
+            _make_executable(candidate)
+            for name in ("ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"):
+                _make_executable(bundle / "_internal" / "ffmpeg" / name)
+            return bundle
+    raise SystemExit(f"no spotm3u executable found in extracted archive {archive}")
 
 
 def _make_executable(path: Path) -> None:
