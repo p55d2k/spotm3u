@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import tempfile
 import threading
 import unicodedata
 from collections import OrderedDict
@@ -209,7 +211,8 @@ def _load_cached_artwork(download_dir: Path, cache_key: str) -> bytes | None:
     path = _cached_artwork_path(cache_dir, cache_key)
     if path.is_file():
         try:
-            return path.read_bytes()
+            data = path.read_bytes()
+            return data or None
         except OSError:
             return None
     return None
@@ -218,10 +221,22 @@ def _load_cached_artwork(download_dir: Path, cache_key: str) -> bytes | None:
 def _save_cached_artwork(download_dir: Path, cache_key: str, data: bytes) -> None:
     cache_dir = _cache_dir(download_dir)
     path = _cached_artwork_path(cache_dir, cache_key)
+    if not data:
+        return
+    temporary_path: str | None = None
     try:
-        path.write_bytes(data)
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=cache_dir, prefix=f".{path.name}.", delete=False
+        ) as temporary:
+            temporary.write(data)
+            temporary_path = temporary.name
+        os.replace(temporary_path, path)
     except OSError:
-        pass
+        if temporary_path is not None:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
 
 
 def _normalize_album_for_search(album: str) -> str:
