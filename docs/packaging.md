@@ -39,11 +39,13 @@ PyInstaller bootloader uses the `.app/Contents/MacOS` location to find
 ## FFmpeg and external providers
 
 CI stages architecture-specific FFmpeg binaries before building and includes
-them in every release archive. The release workflow currently uses the
-platform-specific GitHub runners listed in the README. FFmpeg is a separate
-process and is not linked into spotm3u, but distributed binaries retain their
-own license and source obligations. Keep the exact FFmpeg license/source
-notice with release artifacts.
+them in every release archive. On Windows the workflow downloads the build from
+gyan.dev and falls back to the GitHub-hosted BtbN build when that host is
+unavailable, so an upstream outage does not block a release. The release
+workflow currently uses the platform-specific GitHub runners listed in the
+README. FFmpeg is a separate process and is not linked into spotm3u, but
+distributed binaries retain their own license and source obligations. Keep the
+exact FFmpeg license/source notice with release artifacts.
 
 The optional bgutil PO-token provider is not bundled. Users who configure an
 HTTP provider must run it separately; script providers require their supported

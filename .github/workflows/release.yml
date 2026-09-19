@@ -50,11 +50,48 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          curl.exe -fsSL --retry 5 --retry-all-errors -o "$env:RUNNER_TEMP\ffmpeg.zip" "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP" -Force
-          $bin = Get-ChildItem "$env:RUNNER_TEMP" -Recurse -Directory -Filter bin | Select-Object -First 1
-          if (-not $bin) { throw "FFmpeg bin directory not found" }
+          # Download and extract inside a dedicated directory so only the
+          # archive's own FFmpeg binaries can ever be added to PATH.
+          $ErrorActionPreference = 'Stop'
+          # Inspect curl failures through $LASTEXITCODE so an unreachable source
+          # falls through to the next one instead of aborting the step.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $stage = Join-Path $env:RUNNER_TEMP 'ffmpeg-download'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $archive = Join-Path $stage 'ffmpeg.zip'
+
+          # Prefer the usual host, then fall back to a GitHub-hosted build so a
+          # 503 or rate limit upstream does not block a release. Retries are
+          # deliberately bounded (curl honors a long Retry-After header) so a
+          # misbehaving host fails fast instead of stalling the job.
+          $sources = @(
+            'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+            'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
+          )
+          $downloaded = $false
+          foreach ($url in $sources) {
+            Remove-Item -Force -ErrorAction SilentlyContinue $archive
+            Write-Host "Downloading FFmpeg from $url"
+            curl.exe -fsSL --retry 3 --retry-delay 5 --retry-max-time 120 --max-time 300 -o "$archive" "$url"
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $archive) -and (Get-Item $archive).Length -gt 0) {
+              $downloaded = $true
+              break
+            }
+            Write-Warning "FFmpeg download failed with exit code $LASTEXITCODE"
+          }
+          if (-not $downloaded) { throw 'could not download FFmpeg from any known source' }
+
+          $extract = Join-Path $stage 'extracted'
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $bin = Get-ChildItem $extract -Recurse -Directory -Filter 'bin' | Select-Object -First 1
+          if (-not $bin) { throw "FFmpeg bin directory not found in $(Split-Path -Leaf $archive)" }
+          foreach ($exe in @('ffmpeg.exe', 'ffprobe.exe')) {
+            if (-not (Test-Path (Join-Path $bin.FullName $exe))) {
+              throw "missing $exe in $($bin.FullName)"
+            }
+          }
           Add-Content -Path $env:GITHUB_PATH -Value $bin.FullName
+          Write-Host "Using FFmpeg from $($bin.FullName)"
 
       - name: Install FFmpeg (Linux)
         if: matrix.os == 'ubuntu-latest'
