@@ -18,8 +18,11 @@
       </form>
       <section id="progress" class="progress" hidden>
         <p id="status" class="status-line" role="status"></p>
-        <div class="progress-track" aria-label="Overall progress">
-          <div id="bar" class="progress-bar"></div>
+        <div class="progress-row">
+          <div class="progress-track" aria-label="Overall progress">
+            <div id="bar" class="progress-bar"></div>
+          </div>
+          <span id="eta-chip" class="eta-chip" hidden aria-live="polite"></span>
         </div>
         <dl class="stats">
           <div><dt>Total tracks</dt><dd id="stat-total">0</dd></div>
@@ -29,7 +32,6 @@
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
         </dl>
         <p id="current-track" class="current-track"></p>
-        <p id="eta" class="eta" hidden aria-live="politely"></p>
         <div id="playlists" class="batch-playlists"></div>
         <p id="result-link"></p>
       </section>
@@ -47,24 +49,22 @@
       const currentTrack = document.getElementById("current-track");
       const list = document.getElementById("playlists");
       const resultLink = document.getElementById("result-link");
-      const etaEl = document.getElementById("eta");
+      const etaChip = document.getElementById("eta-chip");
       const statusUrl = "{{ url_for('batch_processing_status', job_id=job_id) }}";
 
-      let lastRenderAt = 0;
+      function progressFraction(state) {
+        const total = state.total || 1;
+        if (total <= 0) return 0;
+        return Math.min(1, ((state.searched || 0) / total) * 0.5 + ((state.completed || 0) / total) * 0.5);
+      }
 
-      const ETA_MAX_FUTURE_SECONDS = 5 * 60;
-      const ETA_STALE_MS = 30_000;
-
-      function fmtRemaining(elapsedMs, completed, total) {
-        if (total <= 0 || completed <= 0) return "";
-        const fraction = Math.max(0, Math.min(1, completed / total));
-        if (fraction <= 0) return "";
-        const seconds = elapsedMs / 1000;
+      function fmtRemaining(elapsedMs, fraction) {
+        if (!Number.isFinite(elapsedMs) || !Number.isFinite(fraction) || fraction <= 0) return "";
+        const seconds = Math.max(0, elapsedMs / 1000);
         if (seconds < 1) return "";
         const projectedTotalSeconds = seconds / fraction;
         const remainingSeconds = projectedTotalSeconds - seconds;
         if (remainingSeconds <= 0) return "";
-        if (remainingSeconds > ETA_MAX_FUTURE_SECONDS) return "";
         const remaining = Math.max(1, Math.round(remainingSeconds));
         if (remaining < 60) return "About " + remaining + " seconds remaining";
         const minutes = Math.max(1, Math.round(remainingSeconds / 60));
@@ -116,19 +116,21 @@
 
       function renderEta(state) {
         if (state.status !== "running") {
-          etaEl.hidden = true;
+          etaChip.hidden = true;
           return;
         }
-        const now = performance.now();
-        const elapsedMs = now - state.started_at;
-        const remaining = fmtRemaining(elapsedMs, state.completed, state.total);
-        if (!remaining || now - lastRenderAt > ETA_STALE_MS) {
-          etaEl.hidden = true;
+        const startedAt = Number(state.started_at);
+        if (!Number.isFinite(startedAt) || startedAt <= 0) {
+          etaChip.hidden = true;
           return;
         }
-        lastRenderAt = now;
-        etaEl.hidden = false;
-        etaEl.textContent = remaining;
+        const remaining = fmtRemaining(Date.now() - startedAt, progressFraction(state));
+        if (!remaining) {
+          etaChip.hidden = true;
+          return;
+        }
+        etaChip.hidden = false;
+        etaChip.textContent = remaining;
       }
 
       function render(state) {
@@ -136,9 +138,7 @@
         status.textContent = state.status === "completed"
           ? "Batch complete"
           : state.status === "failed" ? "Batch finished with errors" : "Processing playlists";
-        const searchProgress = state.total ? state.searched / state.total : 0;
-        const completionProgress = state.total ? state.completed / state.total : 0;
-        bar.style.width = Math.round((searchProgress * 50 + completionProgress * 50)) + "%";
+        bar.style.width = Math.round(progressFraction(state) * 100) + "%";
         statCompleted.textContent = state.completed + " / " + state.total;
         statSearched.textContent = state.searched + " / " + state.total;
         statTotal.textContent = state.total;
@@ -202,7 +202,6 @@
         const response = await fetch(statusUrl);
         if (response.ok) {
           render(await response.json());
-          lastRenderAt = performance.now();
         }
       }
       form.addEventListener("submit", async (event) => {

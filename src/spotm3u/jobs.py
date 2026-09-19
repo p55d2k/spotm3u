@@ -134,8 +134,6 @@ class ProcessingJob:
         self._results: list[TrackResolution | None] = [None] * len(self.tracks)
         # Set while a retry is running: the tracks the progress belongs to.
         self._pending: tuple[int, ...] | None = None
-        self._started_at: float | None = None
-        self._completed_at: float | None = None
 
     @property
     def status(self) -> JobStatus:
@@ -188,7 +186,7 @@ class ProcessingJob:
             if self._status != "queued":
                 raise JobStartError("job has already started")
             self._status = "running"
-            self._started_at = time.monotonic()
+            self._started_at = time.time()
             if self._thread is not None:
                 return
             self._thread = threading.Thread(
@@ -215,7 +213,7 @@ class ProcessingJob:
         with self._lock:
             if self._status in {"queued", "running"}:
                 raise JobStartError("job is still running")
-            self._started_at = self._started_at or time.monotonic()
+            self._started_at = self._started_at or time.time()
             indices = tuple(
                 index
                 for index, result in enumerate(self._results)
@@ -277,7 +275,7 @@ class ProcessingJob:
                 self._current_index = None
                 self._pending = None
                 self._status = "completed"
-                self._completed_at = time.monotonic()
+                self._completed_at = time.time()
             track_log.info(
                 "job completed m3u_path=%s successful=%d failed=%d",
                 m3u_path,
@@ -290,7 +288,7 @@ class ProcessingJob:
                 self._pending = None
                 self._error = str(exc)
                 self._status = "failed"
-                self._completed_at = time.monotonic()
+                self._completed_at = time.time()
             track_log.exception("job failed: %s", exc)
 
     def _resolve_all(

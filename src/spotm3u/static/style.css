@@ -457,7 +457,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 
 .progress { margin-top: 1rem; }
 .status-line { font-weight: 750; margin: 0 0 0.65rem; }
-.progress-track { background: var(--track); border-radius: 999px; height: 0.7rem; overflow: hidden; }
+.progress-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
+.progress-track { background: var(--track); border-radius: 999px; flex: 1; height: 0.7rem; overflow: hidden; }
 .progress-bar { background: linear-gradient(90deg, var(--blue), #60a5fa); height: 100%; transition: width 0.4s ease; width: 0; }
 
 .stats {
@@ -473,23 +474,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .stats dd { font-size: 1.2rem; font-weight: 750; margin: 0.25rem 0 0; }
 .current-track { color: var(--muted); margin: 0.65rem 0 0; }
 
-.eta {
-  color: var(--blue);
-  font-size: 0.85rem;
-  font-weight: 700;
-  margin: 0.65rem 0 0;
-  min-height: 1.15rem;
-}
-
-.eta[hidden] { visibility: hidden; }
-
-.progress-track { display: flex; align-items: center; gap: 0.65rem; }
-
 .eta-chip {
   background: var(--blue-soft);
   border: 1px solid rgb(37 99 235 / 35%);
   border-radius: 999px;
   color: var(--blue-dark);
+  flex-shrink: 0;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.04em;

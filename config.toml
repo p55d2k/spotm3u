@@ -73,7 +73,10 @@
 # How many tracks are downloaded at once. A separate, smaller cap than
 # resolve_workers so the per-track yt-dlp/ffmpeg work never spawns an
 # uncontrolled number of processes.
-# workers = 2
+# If YouTube starts asking "sign in to confirm you're not a bot" or rate
+# limits you, lower this number or set cookies_from_browser to a signed-in
+# session instead of raising it further.
+workers = 4
 
 # Maximum wall-clock time (seconds) for a single download before it is
 # abandoned. Set to 0 to disable.
