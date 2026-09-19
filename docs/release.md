@@ -141,8 +141,12 @@ group (`pyproject.toml`). A one-folder build is produced with:
 uv sync --group build
 # Optional: bundle FFmpeg into _internal/ffmpeg. The spec copies the CONTENTS
 # of $SPOTM3U_FFMPEG_DIR there, so it must hold ffmpeg + ffprobe directly.
-# Stage real (un-symlinked) binaries from e.g. a Homebrew install:
+# Windows/Linux: stage real (un-symlinked) static binaries, e.g.
 #   packaging/stage_ffmpeg.py ffmpeg-stage
+# macOS arm64: Homebrew FFmpeg is dynamic, so bundle its dylib closure and
+# rewrite load commands to @loader_path (requires ffmpeg/ffprobe on PATH):
+#   brew install ffmpeg
+#   packaging/bundle_darwin_ffmpeg.py ffmpeg-stage
 SPOTM3U_FFMPEG_DIR=/abs/path/ffmpeg-stage uv run --group build pyinstaller \
   --noconfirm --clean packaging/spotm3u.spec
 ```

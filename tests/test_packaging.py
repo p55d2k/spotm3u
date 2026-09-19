@@ -58,6 +58,7 @@ def test_stage_ffmpeg_copies_real_binaries(tmp_path, monkeypatch) -> None:
 
     assert sorted(p.name for p in staged) == ["ffmpeg.exe", "ffprobe.exe"]
     assert all(p.read_bytes() == (fake_bin / p.name).read_bytes() for p in staged)
+    assert all(p.stat().st_mode & 0o100 for p in staged)
 
 
 def test_stage_ffmpeg_errors_when_binary_missing(tmp_path, monkeypatch) -> None:

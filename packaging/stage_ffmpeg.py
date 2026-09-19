@@ -31,6 +31,7 @@ def stage_ffmpeg(out_dir: str | Path) -> list[Path]:
             raise SystemExit(f"{name}: not found on PATH; install FFmpeg first")
         target = out / Path(source).name
         shutil.copyfile(source, target)
+        target.chmod(0o755)
         staged.append(target)
     return staged
 
