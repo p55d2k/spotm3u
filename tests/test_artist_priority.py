@@ -6,14 +6,20 @@ for common titles, while keeping the Task 21A permissive philosophy.
 """
 
 from spotm3u.models import Track
-from spotm3u.online import SourceCandidate, build_search_queries
-from spotm3u.online import rank_source_candidates, rank_source_candidate
+from spotm3u.online import (
+    SourceCandidate,
+    build_search_queries,
+    rank_source_candidate,
+    rank_source_candidates,
+)
 from spotm3u.online.search import OnlineSourceSearcher
 
 ACTOR = Track(title="演员", artists=["薛之谦"], duration_ms=250_000)
 
 
-def joker(*, title: str = "演员 Official MV", artist: str = "", channel: str = "薛之谦") -> SourceCandidate:
+def joker(
+    *, title: str = "演员 Official MV", artist: str = "", channel: str = "薛之谦"
+) -> SourceCandidate:
     return SourceCandidate(
         url="https://example.com/joker",
         title=title,
@@ -24,7 +30,9 @@ def joker(*, title: str = "演员 Official MV", artist: str = "", channel: str =
     )
 
 
-def hebe(*, title: str = "演员", artist: str = "", channel: str = "田馥甄 HebeTien") -> SourceCandidate:
+def hebe(
+    *, title: str = "演员", artist: str = "", channel: str = "田馥甄 HebeTien"
+) -> SourceCandidate:
     return SourceCandidate(
         url="https://example.com/hebe",
         title=title,
@@ -45,9 +53,7 @@ def test_actor_official_upload_preferred_over_cover() -> None:
 
 
 def test_same_title_wrong_explicit_artist_is_rejected() -> None:
-    result = rank_source_candidate(
-        ACTOR, hebe(artist="Hebe Tien", channel="Hebe Tien")
-    )
+    result = rank_source_candidate(ACTOR, hebe(artist="Hebe Tien", channel="Hebe Tien"))
     assert result.confidence == "rejected"
     assert not result.accepted
     assert any("conflicts" in reason for reason in result.reasons)

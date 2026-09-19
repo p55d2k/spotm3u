@@ -5,7 +5,6 @@ from spotm3u.models import Track
 from spotm3u.online import SourceCandidate
 from spotm3u.resolution import ResolutionReport, TrackResolver
 
-
 TRACK = Track("Song", ["Artist"], duration_ms=200_000)
 
 
@@ -40,16 +39,16 @@ def test_local_match_is_final_and_does_not_search(tmp_path: Path) -> None:
         def search(self, track):
             raise AssertionError("online search should not run")
 
-    result = TrackResolver(LocalAudioResolver(music), tmp_path / "output", searcher=NoSearch()).resolve(TRACK)
+    result = TrackResolver(
+        LocalAudioResolver(music), tmp_path / "output", searcher=NoSearch()
+    ).resolve(TRACK)
 
     assert result.status == "local"
     assert result.successful
     assert result.local_path == local_file
 
 
-def test_online_resolution_requires_accepted_and_valid_audio(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_online_resolution_requires_accepted_and_valid_audio(tmp_path: Path, monkeypatch) -> None:
     downloaded = tmp_path / "output" / "song.mp3"
     downloaded.parent.mkdir()
     downloaded.write_bytes(b"audio")
@@ -105,10 +104,14 @@ def test_invalid_download_file_is_discarded(tmp_path: Path, monkeypatch) -> None
     downloaded.write_bytes(b"audio")
     monkeypatch.setattr(
         "spotm3u.resolution.validate_downloaded_audio",
-        lambda track, path: type("Validation", (), {
-            "status": "invalid",
-            "reasons": ("speech detected",),
-        })(),
+        lambda track, path: type(
+            "Validation",
+            (),
+            {
+                "status": "invalid",
+                "reasons": ("speech detected",),
+            },
+        )(),
     )
 
     result = TrackResolver(
@@ -222,7 +225,9 @@ def test_all_rejected_candidates_report_rejected(tmp_path: Path) -> None:
         LocalAudioResolver(tmp_path / "empty"),
         tmp_path / "output",
         searcher=Searcher((wrong,)),
-        downloader=lambda track, url, output: (_ for _ in ()).throw(AssertionError("must not download")),
+        downloader=lambda track, url, output: (_ for _ in ()).throw(
+            AssertionError("must not download")
+        ),
     ).resolve(TRACK)
 
     assert result.status == "rejected"
@@ -235,10 +240,14 @@ def test_downloaded_audio_uncertainty_is_not_success(tmp_path: Path, monkeypatch
     downloaded.write_bytes(b"audio")
     monkeypatch.setattr(
         "spotm3u.resolution.validate_downloaded_audio",
-        lambda track, path: type("Validation", (), {
-            "status": "uncertain",
-            "reasons": ("speech detected",),
-        })(),
+        lambda track, path: type(
+            "Validation",
+            (),
+            {
+                "status": "uncertain",
+                "reasons": ("speech detected",),
+            },
+        )(),
     )
 
     result = TrackResolver(

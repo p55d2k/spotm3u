@@ -48,9 +48,7 @@ def test_parse_exportify_zip_converts_underscores_to_spaces_in_playlist_name() -
 
 
 def test_parse_exportify_zip_preserves_collaborating_artists() -> None:
-    archive = export_zip(
-        ("collab.csv", "Track Name,Artist Name(s)\nSong,Jay Chou;Gary Yang\n")
-    )
+    archive = export_zip(("collab.csv", "Track Name,Artist Name(s)\nSong,Jay Chou;Gary Yang\n"))
 
     playlists = parse_exportify_zip(archive)
 

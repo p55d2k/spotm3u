@@ -11,12 +11,13 @@ identity rule and never overrides an artist mismatch.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import IntEnum
-import re
 
 from ..normalization import normalize_cjk
 from .search import SourceCandidate
+
 
 # Ordered from worst to best as audio-oriented sources for the same recording.
 class SourceQuality(IntEnum):
@@ -90,11 +91,7 @@ def source_profile(candidate: SourceCandidate) -> SourceProfile:
     alternate = _match(_ALTERNATE_RE, text)
     performance = _match(_PERFORMANCE_RE, text)
     markers = tuple(
-        dict.fromkeys(
-            marker
-            for marker in (*non_music, *alternate, *performance)
-            if marker
-        )
+        dict.fromkeys(marker for marker in (*non_music, *alternate, *performance) if marker)
     )
 
     if non_music:

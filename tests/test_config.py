@@ -6,10 +6,10 @@ import pytest
 
 from spotm3u.app import create_app
 from spotm3u.config import (
-    Config,
-    ConfigError,
     DEFAULT_MAX_JOB_AGE,
     DEFAULT_MAX_UPLOAD_SIZE,
+    Config,
+    ConfigError,
     discover_config_path,
     load_config,
 )
@@ -113,7 +113,7 @@ def test_invalid_cookie_browser_is_rejected(tmp_path) -> None:
 
 
 def test_unexposed_sections_are_ignored(tmp_path) -> None:
-    path = write_config(tmp_path, '[nonsense]\nvalue = 1\n')
+    path = write_config(tmp_path, "[nonsense]\nvalue = 1\n")
     assert load_config(path) == Config()
 
 
@@ -128,9 +128,9 @@ def test_partial_file_keeps_other_defaults(tmp_path) -> None:
 @pytest.mark.parametrize(
     ("content", "message"),
     [
-        ("[web]\nport = \"many\"\n", "web.port must be an integer"),
+        ('[web]\nport = "many"\n', "web.port must be an integer"),
         ("[web]\nport = true\n", "web.port must be an integer"),
-        ("[m3u]\nextended = \"yes\"\n", "m3u.extended must be a boolean"),
+        ('[m3u]\nextended = "yes"\n', "m3u.extended must be a boolean"),
         ("[search]\nmax_results = []\n", "search.max_results must be an integer"),
     ],
 )
@@ -192,7 +192,7 @@ def test_create_app_loads_config_toml(tmp_path, monkeypatch) -> None:
         [web]
         music_library = "{music}"
         port = 8080
-        download_dir = "{tmp_path / 'downloads'}"
+        download_dir = "{tmp_path / "downloads"}"
 
         [m3u]
         relative = true

@@ -6,9 +6,9 @@ import logging
 import re
 import shutil
 import threading
-from importlib.util import find_spec
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
+from importlib.util import find_spec
 from json import JSONDecodeError, loads
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -16,8 +16,8 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from ..log import track_identifier
+from ..metadata import MetadataError, enrich_metadata
 from ..models import Track
-from ..metadata import enrich_metadata, MetadataError
 from ._ytdlp import ensure_ytdlp_plugins_loaded
 from .audio_validation import validate_downloaded_audio
 
@@ -401,9 +401,7 @@ def _download_to(
             log_url,
             ", ".join(validation.reasons),
         )
-        raise DownloadError(
-            f"downloaded audio is invalid: {', '.join(validation.reasons)}"
-        )
+        raise DownloadError(f"downloaded audio is invalid: {', '.join(validation.reasons)}")
     try:
         result = enrich_metadata(output_path, track, destination)
         if result.errors:
@@ -605,8 +603,7 @@ def _validate_http_provider(provider_url: str) -> None:
     except (HTTPError, URLError, TimeoutError, OSError, JSONDecodeError, ValueError) as exc:
         # The message intentionally omits the URL so embedded credentials cannot leak.
         raise DownloadError(
-            "the configured bgutil HTTP provider is not running or reachable; "
-            "start it and retry"
+            "the configured bgutil HTTP provider is not running or reachable; start it and retry"
         ) from exc
     provider_version = payload.get("version")
     expected = _installed_bgutil_version()
@@ -758,9 +755,7 @@ def describe_youtube_setup(
         "yt_dlp_version": _installed_ytdlp_version(),
         "bgutil_plugin_installed": plugin_installed,
         "bgutil_plugin_version": _installed_bgutil_version(),
-        "cookies_from_browser": (
-            cookies_from_browser.casefold() if cookies_from_browser else None
-        ),
+        "cookies_from_browser": (cookies_from_browser.casefold() if cookies_from_browser else None),
         "pot_provider_url": _redact_url(pot_provider_url),
         "pot_provider_home": pot_provider_home,
         "http_provider": None,
@@ -768,9 +763,7 @@ def describe_youtube_setup(
         "notes": notes,
     }
     if not plugin_installed:
-        notes.append(
-            "The bgutil yt-dlp plugin is missing, so PO tokens cannot be generated."
-        )
+        notes.append("The bgutil yt-dlp plugin is missing, so PO tokens cannot be generated.")
     if pot_provider_url:
         report["http_provider"] = _probe_http_provider(pot_provider_url)
     if pot_provider_home:

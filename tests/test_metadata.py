@@ -1,20 +1,18 @@
 """Tests for metadata enrichment module."""
 
 from pathlib import Path
-import sys
-import types
 
 import pytest
 
 from spotm3u.metadata import (
     MetadataResult,
-    enrich_metadata,
+    _artist_album_match,
     _cache_key,
-    _normalize_album_for_search,
-    _write_all_metadata,
     _embed_artwork,
     _find_album_artwork,
-    _artist_album_match,
+    _normalize_album_for_search,
+    _write_all_metadata,
+    enrich_metadata,
 )
 from spotm3u.models import Track
 
@@ -46,7 +44,17 @@ def _install_fake_requests(monkeypatch, response_data=None, status_code=200):
             return FakeResponse(response_data)
         if "coverartarchive.org" in url:
             return FakeResponse(
-                {"images": [{"front": True, "image": "http://example.com/art.jpg", "types": ["image/jpeg"], "width": 500, "height": 500}]}
+                {
+                    "images": [
+                        {
+                            "front": True,
+                            "image": "http://example.com/art.jpg",
+                            "types": ["image/jpeg"],
+                            "width": 500,
+                            "height": 500,
+                        }
+                    ]
+                }
             )
         return FakeResponse({"content": b"fake-image-data"}, 200)
 
@@ -91,6 +99,7 @@ def _mock_id3_operations(monkeypatch):
 
     # Patch at mutagen.id3 level since imports happen inside functions at runtime
     import mutagen.id3 as mutagen_id3
+
     monkeypatch.setattr(mutagen_id3, "ID3", mock_id3_init)
     monkeypatch.setattr(mutagen_id3, "ID3NoHeaderError", mock_id3_no_header_error)
     monkeypatch.setattr(mutagen_id3, "TIT2", lambda **kw: MockFrame(**kw))
@@ -171,9 +180,7 @@ def test_itunes_fallback_is_used_when_musicbrainz_has_no_cover(tmp_path, monkeyp
         return image
 
     monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
-    data, source = _find_album_artwork(
-        tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating"
-    )
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
 
     assert data == b"itunes-image"
     assert source == "itunes"
@@ -187,9 +194,7 @@ def test_stale_negative_cache_does_not_block_retry(tmp_path, monkeypatch):
     marker.write_text("")
     _install_fake_requests(monkeypatch)
 
-    data, source = _find_album_artwork(
-        tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating"
-    )
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
 
     assert data == b"fake-image-data"
     assert source == "coverartarchive"
@@ -253,7 +258,7 @@ def test_find_album_artwork_not_found(tmp_path, monkeypatch):
 
 def test_enrich_metadata_basic_id3(tmp_path, monkeypatch):
     """Test basic ID3 metadata writing via enrich_metadata."""
-    saved_tags = _mock_id3_operations(monkeypatch)
+    _mock_id3_operations(monkeypatch)
     _install_fake_requests(monkeypatch)
 
     track = Track(
@@ -278,7 +283,7 @@ def test_enrich_metadata_basic_id3(tmp_path, monkeypatch):
 
 def test_enrich_metadata_preserves_featured_artists(tmp_path, monkeypatch):
     """Test that featured artists are preserved in track artist."""
-    saved_tags = _mock_id3_operations(monkeypatch)
+    _mock_id3_operations(monkeypatch)
     _install_fake_requests(monkeypatch)
 
     track = Track(
@@ -306,7 +311,7 @@ def test_metadata_writes_collaborating_artists_as_multiple_id3_values(monkeypatc
 
 def test_enrich_metadata_missing_album_artist(tmp_path, monkeypatch):
     """Test handling of missing album/artist for artwork."""
-    saved_tags = _mock_id3_operations(monkeypatch)
+    _mock_id3_operations(monkeypatch)
 
     track = Track(title="Track", artists=[], album=None)
 
@@ -321,7 +326,7 @@ def test_enrich_metadata_missing_album_artist(tmp_path, monkeypatch):
 
 def test_enrich_metadata_artwork_not_found_handled_gracefully(tmp_path, monkeypatch):
     """Test that missing artwork doesn't fail the track."""
-    saved_tags = _mock_id3_operations(monkeypatch)
+    _mock_id3_operations(monkeypatch)
     _install_fake_requests(monkeypatch, response_data={"release-groups": []})
 
     track = Track(
@@ -343,13 +348,10 @@ def test_enrich_metadata_artwork_not_found_handled_gracefully(tmp_path, monkeypa
 
 def test_enrich_metadata_batch(tmp_path, monkeypatch):
     """Test batch enrichment reuses artwork cache."""
-    saved_tags = _mock_id3_operations(monkeypatch)
+    _mock_id3_operations(monkeypatch)
     _install_fake_requests(monkeypatch)
 
-    tracks = [
-        Track(title=f"Track {i}", artists=["Artist"], album="Album")
-        for i in range(3)
-    ]
+    tracks = [Track(title=f"Track {i}", artists=["Artist"], album="Album") for i in range(3)]
     paths = [tmp_path / f"track{i}.mp3" for i in range(3)]
 
     for p in paths:
@@ -375,10 +377,12 @@ def test_enrich_metadata_failure_returns_result_not_raise(tmp_path):
 
 def test_enrich_metadata_error_handling(tmp_path, monkeypatch):
     """Test that exceptions during metadata write are caught and returned as errors."""
+
     def failing_id3(*args, **kwargs):
         raise RuntimeError("Simulated failure")
 
     import spotm3u.metadata as metadata_module
+
     monkeypatch.setattr(metadata_module, "ID3", failing_id3)
 
     track = Track(title="Track", artists=["Artist"], album="Album")

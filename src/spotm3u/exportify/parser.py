@@ -9,7 +9,6 @@ import re
 import zipfile
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TextIO
 
 from spotm3u.models import Playlist, Track
 
@@ -56,7 +55,9 @@ def parse_exportify_zip(source: Path | str) -> list[Playlist]:
                 (entry.filename, archive.read(entry).decode("utf-8-sig")) for entry in files
             )
     except (OSError, zipfile.BadZipFile, UnicodeDecodeError) as error:
-        raise ExportifyParseError("The uploaded file is not a readable Exportify export.") from error
+        raise ExportifyParseError(
+            "The uploaded file is not a readable Exportify export."
+        ) from error
 
 
 def _parse_files(files: Iterable[tuple[str, str]]) -> list[Playlist]:
@@ -135,7 +136,9 @@ def _parse_json(filename: str, content: str) -> list[Playlist]:
         ]
         if len(tracks) != len(raw_tracks):
             raise ExportifyParseError(f"{filename} playlist {index} contains a malformed track.")
-        name = _clean_playlist_name(_text(item.get("name") or item.get("playlist_name")) or Path(filename).stem)
+        name = _clean_playlist_name(
+            _text(item.get("name") or item.get("playlist_name")) or Path(filename).stem
+        )
         playlist_id = _text(item.get("id") or item.get("playlist_id"))
         playlists.append(
             Playlist(id=playlist_id, name=name, track_count=len(tracks), tracks=tracks)
@@ -207,11 +210,7 @@ def _artists(value: object) -> list[str]:
     text = _text(value)
     if not text:
         return []
-    return [
-        artist.strip()
-        for artist in re.split(r";|\r?\n", text)
-        if artist.strip()
-    ]
+    return [artist.strip() for artist in re.split(r";|\r?\n", text) if artist.strip()]
 
 
 def _integer(value: object) -> int | None:

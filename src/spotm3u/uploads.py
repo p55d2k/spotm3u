@@ -198,14 +198,19 @@ def _is_windows_reserved_component(component: str) -> bool:
     """Reject names that cannot be created on Windows."""
     stripped = component.rstrip(" .")
     stem = stripped.split(".", 1)[0].casefold()
-    return component != stripped or not stripped or stem in {
-        "con",
-        "prn",
-        "aux",
-        "nul",
-        *(f"com{index}" for index in range(1, 10)),
-        *(f"lpt{index}" for index in range(1, 10)),
-    }
+    return (
+        component != stripped
+        or not stripped
+        or stem
+        in {
+            "con",
+            "prn",
+            "aux",
+            "nul",
+            *(f"com{index}" for index in range(1, 10)),
+            *(f"lpt{index}" for index in range(1, 10)),
+        }
+    )
 
 
 def _is_regular_entry(entry: zipfile.ZipInfo) -> bool:
@@ -249,7 +254,7 @@ def cleanup_jobs(
     for directory in root.iterdir():
         if not directory.is_dir() or not directory.name.startswith("job-"):
             continue
-        job_id = directory.name[len("job-"):]
+        job_id = directory.name[len("job-") :]
         if job_id in active:
             continue
         try:

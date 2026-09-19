@@ -26,9 +26,7 @@ def test_build_search_queries_include_title_artist_and_audio_hints() -> None:
 
 
 def test_build_search_queries_keep_collaborating_artists_separate() -> None:
-    queries = build_search_queries(
-        Track(title="Song", artists=["Jay Chou", "Gary Yang"])
-    )
+    queries = build_search_queries(Track(title="Song", artists=["Jay Chou", "Gary Yang"]))
 
     assert "jay chou gary yang song" in queries[0].lower()
     assert "jay chougary yang" not in " ".join(queries).lower()

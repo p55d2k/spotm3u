@@ -6,12 +6,11 @@ on :class:`~spotm3u.models.Track` (or their local file metadata) unchanged.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from pathlib import Path
-import re
 
 from zhconv import convert as _zh_convert
-
 
 _FEATURING_RE = re.compile(r"\b(?:featuring|feat\.?|ft\.?)\b", re.IGNORECASE)
 _TRACK_NUMBER_RE = re.compile(r"^\s*(?:\d{1,3}\s*[-_.]\s*|\d{1,3}\s+)")
@@ -53,11 +52,7 @@ def normalize_artists(artists: list[str] | str | None) -> str:
     """Normalize one or more artist names into a comparison string."""
     if isinstance(artists, str):
         artists = re.split(r"\s*(?:,|;|/|\||&|\band\b)\s*", artists, flags=re.IGNORECASE)
-    text = " ".join(
-        _FEATURING_RE.sub(" ", artist)
-        for artist in (artists or [])
-        if artist
-    )
+    text = " ".join(_FEATURING_RE.sub(" ", artist) for artist in (artists or []) if artist)
     return normalize(text)
 
 
@@ -101,4 +96,6 @@ def build_output_basename(title: str, artists: list[str] | str | None) -> str:
     artist_text = ", ".join(artists) if isinstance(artists, list) else (artists or "")
     title_part = sanitize_filename_component(title)
     artist_part = sanitize_filename_component(artist_text.replace(";", ", "))
-    return f"{title_part} - {artist_part}" if artist_part and artist_part != title_part else title_part
+    return (
+        f"{title_part} - {artist_part}" if artist_part and artist_part != title_part else title_part
+    )

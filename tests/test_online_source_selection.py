@@ -17,7 +17,6 @@ import pytest
 from spotm3u.models import Track
 from spotm3u.online import (
     SourceCandidate,
-    build_search_queries,
     rank_source_candidates,
 )
 from spotm3u.online.search import OnlineSourceSearcher
@@ -207,7 +206,6 @@ def test_live_beats_studio_only_when_requested_live() -> None:
     live = Track(title="Wonderwall (Live)", artists=["Oasis"], duration_ms=258_000)
 
     live_candidate = candidate(title="Wonderwall (Live from Knebworth)")
-    studio_candidate = candidate(title="Wonderwall (Remastered)")
 
     assert rank_source_candidates(studio, [live_candidate])[0].confidence == "rejected"
     assert rank_source_candidates(live, [live_candidate])[0].accepted
@@ -241,17 +239,15 @@ def test_rejected_reason_is_recorded() -> None:
 
 
 def test_rejected_candidate_for_wrong_duration() -> None:
-    result = rank_source_candidates(
-        TRACK, [candidate(duration_s=400.0)]
-    )[0]
+    result = rank_source_candidates(TRACK, [candidate(duration_s=400.0)])[0]
     assert result.confidence == "rejected"
     assert any("duration differs" in reason for reason in result.reasons)
 
 
 def test_lyric_video_variant_is_treated_as_lyric_source() -> None:
-    result = rank_source_candidates(
-        TRACK, [candidate(title="Wonderwall (Official Lyric Video)")]
-    )[0]
+    result = rank_source_candidates(TRACK, [candidate(title="Wonderwall (Official Lyric Video)")])[
+        0
+    ]
     assert result.accepted
     assert result.components.source_quality >= 10.0
 

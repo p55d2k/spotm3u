@@ -9,8 +9,8 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from .audio.resolver import LocalAudioResolver
 from .apple_music import AppleMusicError, add_to_apple_music, apple_music_available
+from .audio.resolver import LocalAudioResolver
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, JobStartError, ProcessingJob
@@ -21,7 +21,6 @@ from .online import OnlineSourceSearcher, download_track
 from .online.cache import DownloadCache
 from .resolution import TrackResolver
 from .uploads import UploadError, cleanup_jobs, default_upload_root, store_upload
-
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -171,22 +170,32 @@ def create_app(config: dict | None = None) -> Flask:
             job_directory,
             {"selected_playlist_id": playlist_id},
         )
-        return redirect(
-            url_for("processing", job_id=job_id, playlist_id=playlist_id)
-        )
+        return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
 
     @app.post("/playlists/<job_id>/batch-select")
     def select_playlists_batch(job_id: str):
         job_directory = _current_job_directory(app, job_id)
         if job_directory is None:
-            return render_template("index.html", error="That upload has expired. Please upload the ZIP again."), 404
+            return render_template(
+                "index.html", error="That upload has expired. Please upload the ZIP again."
+            ), 404
         try:
             playlist_data = parse_exportify(job_directory / "extracted")
         except (ExportifyParseError, OSError, UnicodeError):
-            return render_template("index.html", error="The playlist selection has expired. Please upload the ZIP again."), 400
+            return render_template(
+                "index.html",
+                error="The playlist selection has expired. Please upload the ZIP again.",
+            ), 400
         selected = request.form.getlist("playlist_id")
-        if not selected or any(_valid_playlist_index(value, len(playlist_data)) is None for value in selected):
-            return render_template("playlists.html", job_id=job_id, playlists=playlist_data, error="Choose at least one playlist before continuing."), 400
+        if not selected or any(
+            _valid_playlist_index(value, len(playlist_data)) is None for value in selected
+        ):
+            return render_template(
+                "playlists.html",
+                job_id=job_id,
+                playlists=playlist_data,
+                error="Choose at least one playlist before continuing.",
+            ), 400
         selected = list(dict.fromkeys(selected))
         _save_job_state(job_directory, {"selected_playlist_ids": selected})
         return redirect(url_for("batch_processing", job_id=job_id))
@@ -196,10 +205,17 @@ def create_app(config: dict | None = None) -> Flask:
         job_directory = _current_job_directory(app, job_id)
         selected = _selected_playlist_ids(job_directory) if job_directory else None
         if not selected:
-            return render_template("index.html", error="That playlist selection has expired. Please upload the ZIP again."), 404
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 404
         playlists_data = parse_exportify(job_directory / "extracted")
         playlists = [playlists_data[int(index)] for index in selected]
-        return render_template("batch_processing.html", job_id=job_id, playlists=list(zip(selected, playlists)))
+        return render_template(
+            "batch_processing.html",
+            job_id=job_id,
+            playlists=list(zip(selected, playlists, strict=True)),
+        )
 
     @app.post("/processing/<job_id>/batch/start")
     def start_batch_processing(job_id: str):
@@ -237,25 +253,30 @@ def create_app(config: dict | None = None) -> Flask:
         if not selected:
             return jsonify({"error": "That playlist selection has expired."}), 404
         jobs = [app.config["JOB_MANAGER"].get(job_id, playlist_id) for playlist_id in selected]
-        return jsonify({"job_id": job_id, **_batch_status([job for job in jobs if job is not None])})
+        return jsonify(
+            {"job_id": job_id, **_batch_status([job for job in jobs if job is not None])}
+        )
 
     @app.get("/processing/<job_id>/batch/result")
     def batch_processing_result(job_id: str):
         job_directory = _current_job_directory(app, job_id)
         selected = _selected_playlist_ids(job_directory) if job_directory else None
         if not selected:
-            return render_template("index.html", error="That playlist selection has expired. Please upload the ZIP again."), 404
+            return render_template(
+                "index.html",
+                error="That playlist selection has expired. Please upload the ZIP again.",
+            ), 404
         jobs = [app.config["JOB_MANAGER"].get(job_id, playlist_id) for playlist_id in selected]
         if not jobs or any(job is None or job.status in {"queued", "running"} for job in jobs):
             return redirect(url_for("batch_processing", job_id=job_id))
-        return render_template("batch_result.html", job_id=job_id, states=[job.as_dict() for job in jobs])
+        return render_template(
+            "batch_result.html", job_id=job_id, states=[job.as_dict() for job in jobs]
+        )
 
     @app.get("/processing/<job_id>/<playlist_id>")
     def processing(job_id: str, playlist_id: str):
         job_directory = _current_job_directory(app, job_id)
-        if job_directory is None or not _selection_matches(
-            job_directory, playlist_id
-        ):
+        if job_directory is None or not _selection_matches(job_directory, playlist_id):
             return render_template(
                 "index.html",
                 error="That playlist selection has expired. Please upload the ZIP again.",
@@ -289,9 +310,7 @@ def create_app(config: dict | None = None) -> Flask:
     @app.post("/processing/<job_id>/<playlist_id>/start")
     def start_processing(job_id: str, playlist_id: str):
         job_directory = _current_job_directory(app, job_id)
-        if job_directory is None or not _selection_matches(
-            job_directory, playlist_id
-        ):
+        if job_directory is None or not _selection_matches(job_directory, playlist_id):
             return render_template(
                 "index.html",
                 error="That playlist selection has expired. Please upload the ZIP again.",
@@ -334,27 +353,21 @@ def create_app(config: dict | None = None) -> Flask:
     @app.get("/processing/<job_id>/<playlist_id>/status")
     def processing_status(job_id: str, playlist_id: str):
         job_directory = _current_job_directory(app, job_id)
-        if job_directory is None or not _selection_matches(
-            job_directory, playlist_id
-        ):
+        if job_directory is None or not _selection_matches(job_directory, playlist_id):
             return jsonify(
                 {"error": "That playlist selection has expired. Please upload the ZIP again."}
             ), 404
 
         job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id:
-            return jsonify(
-                {"error": "That processing job could not be found."}
-            ), 404
+            return jsonify({"error": "That processing job could not be found."}), 404
         return jsonify(job.as_dict())
 
     @app.post("/processing/<job_id>/<playlist_id>/retry")
     def retry_processing(job_id: str, playlist_id: str):
         """Re-resolve the tracks that did not produce a usable local file."""
         job_directory = _current_job_directory(app, job_id)
-        if job_directory is None or not _selection_matches(
-            job_directory, playlist_id
-        ):
+        if job_directory is None or not _selection_matches(job_directory, playlist_id):
             return render_template(
                 "index.html",
                 error="That playlist selection has expired. Please upload the ZIP again.",
@@ -366,19 +379,13 @@ def create_app(config: dict | None = None) -> Flask:
                 "index.html", error="That processing job could not be found."
             ), 404
         if job.status in {"queued", "running"}:
-            return redirect(
-                url_for("processing", job_id=job_id, playlist_id=playlist_id)
-            )
+            return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
         try:
             retried = job.retry()
         except JobStartError:
-            return redirect(
-                url_for("processing", job_id=job_id, playlist_id=playlist_id)
-            )
+            return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
         if not retried:
-            return redirect(
-                url_for("processing_result", job_id=job_id, playlist_id=playlist_id)
-            )
+            return redirect(url_for("processing_result", job_id=job_id, playlist_id=playlist_id))
         app.logger.info(
             "Retrying %d unresolved track(s) job=%s playlist=%s",
             len(retried),
@@ -390,9 +397,7 @@ def create_app(config: dict | None = None) -> Flask:
     @app.get("/processing/<job_id>/<playlist_id>/result")
     def processing_result(job_id: str, playlist_id: str):
         job_directory = _current_job_directory(app, job_id)
-        if job_directory is None or not _selection_matches(
-            job_directory, playlist_id
-        ):
+        if job_directory is None or not _selection_matches(job_directory, playlist_id):
             return render_template(
                 "index.html",
                 error="That playlist selection has expired. Please upload the ZIP again.",
@@ -405,9 +410,7 @@ def create_app(config: dict | None = None) -> Flask:
                 error="That processing job could not be found.",
             ), 404
         if job.status == "running" or job.status == "queued":
-            return redirect(
-                url_for("processing", job_id=job_id, playlist_id=playlist_id)
-            )
+            return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
         state = job.as_dict()
         return render_template(
             "result.html",
@@ -421,14 +424,10 @@ def create_app(config: dict | None = None) -> Flask:
     def download_m3u(job_id: str, playlist_id: str):
         job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id or job.m3u_path is None:
-            return jsonify(
-                {"error": "That playlist is not ready to download."}
-            ), 404
+            return jsonify({"error": "That playlist is not ready to download."}), 404
         m3u_path = Path(job.m3u_path)
         if not m3u_path.is_file():
-            return jsonify(
-                {"error": "That playlist is not ready to download."}
-            ), 404
+            return jsonify({"error": "That playlist is not ready to download."}), 404
         name = sanitize_filename_component(job.playlist_name) or job.playlist_id
         return send_file(m3u_path, as_attachment=True, download_name=f"{name}.m3u")
 
@@ -545,8 +544,10 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
     searched = sum(int(state["searched"]) for state in states)
     return {
         "status": (
-            "completed" if states and all(state["status"] == "completed" for state in states)
-            else "failed" if any(state["status"] == "failed" for state in states)
+            "completed"
+            if states and all(state["status"] == "completed" for state in states)
+            else "failed"
+            if any(state["status"] == "failed" for state in states)
             else "running"
         ),
         "completed": completed,

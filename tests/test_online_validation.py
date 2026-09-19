@@ -1,7 +1,6 @@
 from spotm3u.models import Track
 from spotm3u.online import SourceCandidate, validate_source_candidate
 
-
 TRACK = Track(title="Song Name", artists=["Artist"], duration_ms=210_000)
 
 
@@ -35,7 +34,10 @@ def test_obvious_unsuitable_versions_are_rejected() -> None:
 
 
 def test_music_video_is_not_rejected() -> None:
-    assert validate_source_candidate(TRACK, source(title="Song Name Official Music Video")).status == "accepted"
+    assert (
+        validate_source_candidate(TRACK, source(title="Song Name Official Music Video")).status
+        == "accepted"
+    )
 
 
 def test_missing_metadata_is_accepted() -> None:
@@ -44,7 +46,12 @@ def test_missing_metadata_is_accepted() -> None:
 
 
 def test_wrong_artist_is_rejected_but_ambiguous_title_is_tolerated() -> None:
-    assert validate_source_candidate(TRACK, source(artist="Another Band", uploader="Another Band")).status == "rejected"
+    assert (
+        validate_source_candidate(
+            TRACK, source(artist="Another Band", uploader="Another Band")
+        ).status
+        == "rejected"
+    )
     assert validate_source_candidate(TRACK, source(title="Song")).status == "accepted"
 
 

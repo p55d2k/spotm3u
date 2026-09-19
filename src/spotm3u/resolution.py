@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 from .audio.resolver import LocalAudioResolver
 from .log import TrackLogger
-from .models import ResolvedTrack, Track
 from .metadata import enrich_metadata
+from .models import ResolvedTrack, Track
 from .online.audio_validation import AudioValidation, validate_downloaded_audio
 from .online.cache import DownloadCache
 from .online.downloader import DownloadError, download_track
@@ -180,6 +181,7 @@ class TrackResolver:
         later :meth:`complete` call. Splitting the phases lets callers search
         every track up front while later downloads are still running.
         """
+
         def report(stage: TrackStage) -> None:
             if stage_callback is not None:
                 stage_callback(stage)
@@ -199,7 +201,11 @@ class TrackResolver:
             report("enriching-metadata")
             metadata_result = enrich_metadata(local.resolved.local_path, track, self.output_dir)
             if metadata_result.errors:
-                log.info("metadata enrichment status=local path=%s errors=%s", local.resolved.local_path, "; ".join(metadata_result.errors))
+                log.info(
+                    "metadata enrichment status=local path=%s errors=%s",
+                    local.resolved.local_path,
+                    "; ".join(metadata_result.errors),
+                )
             return TrackResolution(
                 track, "local", resolved=resolved, candidates=(), reasons=("local match",)
             )
@@ -246,9 +252,9 @@ class TrackResolver:
         rejected_urls: list[str] = []
         download_failures = 0
         invalid_downloads: list[str] = []
-        uncertain_download: tuple[
-            Path, CandidateRanking, SourceValidation, AudioValidation
-        ] | None = None
+        uncertain_download: (
+            tuple[Path, CandidateRanking, SourceValidation, AudioValidation] | None
+        ) = None
         for position, ranking in enumerate(rankings, start=1):
             report("validating-source")
             source_validation = validate_source_candidate(track, ranking.candidate)
@@ -281,9 +287,7 @@ class TrackResolver:
                     log.info("download reused from cache path=%s", cached)
             if downloaded is None:
                 try:
-                    downloaded = self.downloader(
-                        track, ranking.candidate.url, self.output_dir
-                    )
+                    downloaded = self.downloader(track, ranking.candidate.url, self.output_dir)
                 except (DownloadError, OSError, RuntimeError) as exc:
                     download_failures += 1
                     log.warning("download failed url=%s error=%s", ranking.candidate.url, exc)
@@ -345,7 +349,9 @@ class TrackResolver:
                 status="downloaded",
             )
             reasons = ("reused cached download",) if reused_from_cache else ()
-            log.info("resolution status=downloaded url=%s path=%s", ranking.candidate.url, downloaded)
+            log.info(
+                "resolution status=downloaded url=%s path=%s", ranking.candidate.url, downloaded
+            )
             return TrackResolution(
                 track,
                 "downloaded",
@@ -380,7 +386,8 @@ class TrackResolver:
 
         if invalid_downloads:
             log.error(
-                "resolution status=failed reasons=all downloaded candidates failed audio validation; %s",
+                "resolution status=failed reasons=all downloaded candidates failed "
+                "audio validation; %s",
                 "; ".join(invalid_downloads),
             )
             return TrackResolution(
@@ -407,9 +414,7 @@ class TrackResolver:
                 reasons=(f"{download_failures} download attempt(s) failed",),
             )
 
-        log.error(
-            "resolution status=rejected reasons=no candidate passed source validation"
-        )
+        log.error("resolution status=rejected reasons=no candidate passed source validation")
         return TrackResolution(
             track,
             "rejected",

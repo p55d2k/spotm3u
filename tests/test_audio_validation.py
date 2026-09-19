@@ -1,11 +1,10 @@
-from pathlib import Path
 import sys
 import types
 import wave
+from pathlib import Path
 
 from spotm3u.models import Track
 from spotm3u.online import validate_downloaded_audio
-
 
 TRACK = Track("Song", ["Artist"], duration_ms=200_000)
 

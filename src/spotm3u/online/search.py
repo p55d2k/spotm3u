@@ -9,10 +9,10 @@ layer after all queries have been seen.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-import logging
 from typing import Any
 
 from ..log import track_identifier
@@ -80,7 +80,9 @@ class SourceCandidate:
     def platform(self) -> str | None:
         if self.source_type:
             return self.source_type
-        source = (self.metadata.get("extractor") or self.metadata.get("source_platform") or "").strip()
+        source = (
+            self.metadata.get("extractor") or self.metadata.get("source_platform") or ""
+        ).strip()
         return source or None
 
 
@@ -127,9 +129,7 @@ class OnlineSourceSearcher:
 
         workers = min(len(queries), self.max_search_workers)
         if workers <= 1:
-            results_per_query = [
-                self._run_query(yt_dlp, query, track) for query in queries
-            ]
+            results_per_query = [self._run_query(yt_dlp, query, track) for query in queries]
         else:
             with ThreadPoolExecutor(
                 max_workers=workers,
@@ -155,9 +155,7 @@ class OnlineSourceSearcher:
         )
         return tuple(results)
 
-    def _run_query(
-        self, yt_dlp: Any, query: str, track: Track
-    ) -> list[SourceCandidate]:
+    def _run_query(self, yt_dlp: Any, query: str, track: Track) -> list[SourceCandidate]:
         """Run one focused query and return its coerced candidates."""
         try:
             with yt_dlp.YoutubeDL(
@@ -171,9 +169,7 @@ class OnlineSourceSearcher:
                     "socket_timeout": self.socket_timeout,
                 }
             ) as ydl:
-                info = ydl.extract_info(
-                    f"ytsearch{self.max_results}:{query}", download=False
-                )
+                info = ydl.extract_info(f"ytsearch{self.max_results}:{query}", download=False)
         except (yt_dlp.utils.DownloadError, OSError) as exc:
             logger.warning(
                 "search track=%s query=%r status=failed reason=%s",
@@ -229,14 +225,12 @@ def build_search_queries(track: Track) -> tuple[str, ...]:
     if artists:
         templates = SEARCH_QUERY_TEMPLATES
         if not _is_instrumental_title(title):
-            templates = tuple(
-                template for template in templates
-                if "instrumental" not in template
-            )
+            templates = tuple(template for template in templates if "instrumental" not in template)
         else:
             title = _strip_instrumental_marker(title)
             templates = tuple(
-                template for template in templates
+                template
+                for template in templates
                 if "lyrics" not in template and "lyric" not in template
             )
         artist_text = " ".join(artists)
@@ -270,7 +264,8 @@ def _is_instrumental_title(title: str) -> bool:
 
 def _strip_instrumental_marker(title: str) -> str:
     parts = [
-        part for part in title.split()
+        part
+        for part in title.split()
         if part.casefold().rstrip(".") not in {"instrumental", "inst", "vocals", "vocal"}
     ]
     return " ".join(parts)

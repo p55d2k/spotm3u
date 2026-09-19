@@ -2,8 +2,8 @@ from spotm3u.models import Track
 from spotm3u.online import (
     CandidateRanking,
     SourceCandidate,
-    rank_source_candidates,
     rank_source_candidate,
+    rank_source_candidates,
 )
 
 
@@ -24,7 +24,10 @@ TRACK = Track(title="Song Name", artists=["Artist"], duration_ms=210_000)
 def test_exact_studio_recording_beats_unrelated_song() -> None:
     ranked = rank_source_candidates(
         TRACK,
-        [candidate("Unrelated Song", "Other Artist"), candidate("Song Name - Official Audio", "Artist")],
+        [
+            candidate("Unrelated Song", "Other Artist"),
+            candidate("Song Name - Official Audio", "Artist"),
+        ],
     )
     assert ranked[0].confidence == "strong"
     assert ranked[0].accepted

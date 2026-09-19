@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, Sequence
+from typing import Literal
 
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
@@ -123,9 +124,7 @@ class ProcessingJob:
         self._searched: int = 0
         self._error: str | None = None
         self._m3u_path: Path | None = None
-        self._deadline: float | None = (
-            time.monotonic() + timeout if timeout is not None else None
-        )
+        self._deadline: float | None = time.monotonic() + timeout if timeout is not None else None
         self._track_states: list[TrackJobState] = [
             TrackJobState(index, track.title, tuple(track.artists), "queued")
             for index, track in enumerate(self.tracks)
@@ -150,9 +149,7 @@ class ProcessingJob:
         )
 
     @staticmethod
-    def _progress_indices(
-        pending: tuple[int, ...] | None, total: int
-    ) -> Sequence[int]:
+    def _progress_indices(pending: tuple[int, ...] | None, total: int) -> Sequence[int]:
         """Indices the progress view counts; just the retried tracks during a retry."""
         return range(total) if pending is None else pending
 
@@ -224,9 +221,7 @@ class ProcessingJob:
             self._searched = 0
             self._error = None
             self._status = "running"
-            self._deadline = (
-                time.monotonic() + self.timeout if self.timeout is not None else None
-            )
+            self._deadline = time.monotonic() + self.timeout if self.timeout is not None else None
             for index in indices:
                 current = self._track_states[index]
                 self._track_states[index] = TrackJobState(
@@ -316,24 +311,20 @@ class ProcessingJob:
                 with self._lock:
                     self._current_index = index
                 self._check_deadline()
-                result = resolver.resolve(
-                    tracks[index], stage_callback=self._stage_reporter(index)
-                )
+                result = resolver.resolve(tracks[index], stage_callback=self._stage_reporter(index))
                 self._finalize_track(index, result)
                 self._mark_searched(index)
             return
 
-        phase_one = lambda index: resolver.prepare(
-            tracks[index], stage_callback=self._stage_reporter(index)
-        )
+        def phase_one(index):
+            return resolver.prepare(tracks[index], stage_callback=self._stage_reporter(index))
+
         prepared: list[TrackResolution | PreparedTrack | None] = [None] * len(tracks)
         with ThreadPoolExecutor(
             max_workers=self.max_workers,
             thread_name_prefix=f"spotm3u-search-{self.job_id}",
         ) as pool:
-            future_to_index = {
-                pool.submit(phase_one, index): index for index in selected
-            }
+            future_to_index = {pool.submit(phase_one, index): index for index in selected}
             for future in as_completed(future_to_index):
                 self._check_deadline()
                 index = future_to_index[future]
@@ -356,9 +347,12 @@ class ProcessingJob:
 
         if download_plans:
             self._check_deadline()
-            phase_two = lambda index_plan: resolver.complete(
-                index_plan[1], stage_callback=self._stage_reporter(index_plan[0])
-            )
+
+            def phase_two(index_plan):
+                return resolver.complete(
+                    index_plan[1], stage_callback=self._stage_reporter(index_plan[0])
+                )
+
             with ThreadPoolExecutor(
                 max_workers=self.max_download_workers,
                 thread_name_prefix=f"spotm3u-download-{self.job_id}",
@@ -402,9 +396,7 @@ class ProcessingJob:
         log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
         log.debug("stage=%s index=%d", status, index)
 
-    def _mark_searched(
-        self, index: int, status: TrackProcessingStatus | None = None
-    ) -> None:
+    def _mark_searched(self, index: int, status: TrackProcessingStatus | None = None) -> None:
         with self._lock:
             self._searched += 1
             self._current_index = index
@@ -462,11 +454,7 @@ class ProcessingJob:
         """Return a consistent, JSON-compatible view of the job state."""
         with self._lock:
             track_states = [state.as_dict() for state in self._track_states]
-            current = (
-                track_states[self._current_index]
-                if self._current_index is not None
-                else None
-            )
+            current = track_states[self._current_index] if self._current_index is not None else None
             resolutions = [state.resolution for state in self._track_states]
             counts = {
                 resolution: resolutions.count(resolution)
@@ -493,28 +481,21 @@ class ProcessingJob:
                 },
                 "current_track": current,
                 "completed": sum(
-                    self._track_states[index].status
-                    in {"complete", "failed", "ambiguous"}
+                    self._track_states[index].status in {"complete", "failed", "ambiguous"}
                     for index in progress
                 ),
                 # During a retry only the retried tracks are in flight, so the
                 # progress bar is measured against the retry set, not the playlist.
                 "progress_total": len(progress),
                 "searched": self._searched,
-                "successful": sum(
-                    state.status == "complete" for state in self._track_states
-                ),
+                "successful": sum(state.status == "complete" for state in self._track_states),
                 "failed": sum(state.status == "failed" for state in self._track_states),
-                "ambiguous": sum(
-                    state.status == "ambiguous" for state in self._track_states
-                ),
+                "ambiguous": sum(state.status == "ambiguous" for state in self._track_states),
                 "counts": counts,
                 "status": self._status,
                 "error": self._error,
                 "output_dir": str(self.output_dir),
-                "m3u_path": (
-                    str(self._m3u_path) if self._m3u_path is not None else None
-                ),
+                "m3u_path": (str(self._m3u_path) if self._m3u_path is not None else None),
                 "tracks": track_states,
             }
 
@@ -542,18 +523,14 @@ class JobManager:
         with self._lock:
             if playlist_id is not None:
                 return self._jobs.get(self._key(job_id, playlist_id))
-            matches = [
-                job for job in self._jobs.values() if job.job_id == job_id
-            ]
+            matches = [job for job in self._jobs.values() if job.job_id == job_id]
             return matches[0] if len(matches) == 1 else None
 
     def active_job_ids(self) -> set[str]:
         """Return ids of jobs that are still queued or running."""
         with self._lock:
             return {
-                job.job_id
-                for job in self._jobs.values()
-                if job.status in {"queued", "running"}
+                job.job_id for job in self._jobs.values() if job.status in {"queued", "running"}
             }
 
 

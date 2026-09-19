@@ -8,10 +8,10 @@ the full pipeline can be exercised without live Spotify or live web results.
 
 from __future__ import annotations
 
-from io import BytesIO
-from pathlib import Path
 import sys
 import types
+from io import BytesIO
+from pathlib import Path
 from zipfile import ZipFile
 
 from spotm3u.audio import LocalAudioResolver
@@ -120,8 +120,7 @@ def test_full_pipeline_resolves_local_and_downloaded_tracks(tmp_path, monkeypatc
     archive = export_zip(
         (
             "Morning.csv",
-            ZIP_HEADER
-            + "spotify:track:cs,Yellow,,Coldplay,269000\n"
+            ZIP_HEADER + "spotify:track:cs,Yellow,,Coldplay,269000\n"
             "spotify:track:ww,Wonderwall,,Oasis,258000\n",
         )
     )
@@ -165,7 +164,9 @@ def test_full_pipeline_reports_missing_rejected_and_failed(tmp_path, monkeypatch
                     artist="Wrong Artist",
                 )
             ],
-            "band broken song": [equal_track("https://example.com/broken", "Broken Song", "Band", 200)],
+            "band broken song": [
+                equal_track("https://example.com/broken", "Broken Song", "Band", 200)
+            ],
         },
         failing_urls={"https://example.com/broken"},
     )
@@ -174,8 +175,7 @@ def test_full_pipeline_reports_missing_rejected_and_failed(tmp_path, monkeypatch
     archive = export_zip(
         (
             "Whatever.csv",
-            ZIP_HEADER
-            + "spotify:track:m,Missing Song,,Nobody,150000\n"
+            ZIP_HEADER + "spotify:track:m,Missing Song,,Nobody,150000\n"
             "spotify:track:r,Perfect,,Ed Sheeran,250000\n"
             "spotify:track:f,Broken Song,,Band,200000\n",
         )
@@ -204,9 +204,7 @@ def test_full_pipeline_reports_missing_rejected_and_failed(tmp_path, monkeypatch
     assert entries(m3u_path.read_text(encoding="utf-8")) == []
 
 
-def test_full_pipeline_shares_one_download_across_duplicate_entries(
-    tmp_path, monkeypatch
-) -> None:
+def test_full_pipeline_shares_one_download_across_duplicate_entries(tmp_path, monkeypatch) -> None:
     download_log: list[str] = []
     install_yt_dlp(
         monkeypatch,
@@ -218,8 +216,7 @@ def test_full_pipeline_shares_one_download_across_duplicate_entries(
     archive = export_zip(
         (
             "Loop.csv",
-            ZIP_HEADER
-            + "spotify:track:ww,Wonderwall,,Oasis,258000\n"
+            ZIP_HEADER + "spotify:track:ww,Wonderwall,,Oasis,258000\n"
             "spotify:track:ww,Wonderwall,,Oasis,258000\n",
         )
     )

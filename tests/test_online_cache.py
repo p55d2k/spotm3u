@@ -5,7 +5,6 @@ from spotm3u.models import Track
 from spotm3u.online import DownloadCache, SourceCandidate, cache_metadata_key, source_identity
 from spotm3u.resolution import TrackResolver
 
-
 TRACK = Track("Song", ["Artist"], duration_ms=200_000)
 
 
@@ -80,11 +79,17 @@ def test_same_source_is_reused_without_redownloading(tmp_path, monkeypatch):
     cache = DownloadCache(tmp_path / "downloads")
     calls: list[str] = []
     first = make_resolver(
-        tmp_path, monkeypatch, cache=cache, url="https://www.youtube.com/watch?v=abc123XYZ",
+        tmp_path,
+        monkeypatch,
+        cache=cache,
+        url="https://www.youtube.com/watch?v=abc123XYZ",
         downloader=downloading(calls, cache.download_dir),
     )
     second = make_resolver(
-        tmp_path, monkeypatch, cache=cache, url="https://www.youtube.com/watch?v=abc123XYZ",
+        tmp_path,
+        monkeypatch,
+        cache=cache,
+        url="https://www.youtube.com/watch?v=abc123XYZ",
         downloader=downloading(calls, cache.download_dir),
     )
 
@@ -98,11 +103,17 @@ def test_metadata_identity_reuse_with_different_source(tmp_path, monkeypatch):
     cache = DownloadCache(tmp_path / "downloads")
     calls: list[str] = []
     first = make_resolver(
-        tmp_path, monkeypatch, cache=cache, url="https://www.youtube.com/watch?v=abc123XYZ",
+        tmp_path,
+        monkeypatch,
+        cache=cache,
+        url="https://www.youtube.com/watch?v=abc123XYZ",
         downloader=downloading(calls, cache.download_dir),
     )
     second = make_resolver(
-        tmp_path, monkeypatch, cache=cache, url="https://www.youtube.com/watch?v=zyx6543210",
+        tmp_path,
+        monkeypatch,
+        cache=cache,
+        url="https://www.youtube.com/watch?v=zyx6543210",
         downloader=downloading(calls, cache.download_dir),
     )
 
@@ -123,27 +134,57 @@ def test_near_match_with_different_title_core_is_not_reused(tmp_path, monkeypatc
     install_cache_validation(monkeypatch)
     cache = DownloadCache(tmp_path / "downloads")
     path = cache.download_dir / "entry.mp3"
-    cache.store(Track("Wonderwall", ["Oasis"], duration_ms=200_000), "https://www.youtube.com/watch?v=abc123XYZ", path)
+    cache.store(
+        Track("Wonderwall", ["Oasis"], duration_ms=200_000),
+        "https://www.youtube.com/watch?v=abc123XYZ",
+        path,
+    )
 
-    assert cache.lookup(Track("Champagne Supernova", ["Oasis"], duration_ms=200_000), "https://www.youtube.com/watch?v=zyx6543210") is None
+    assert (
+        cache.lookup(
+            Track("Champagne Supernova", ["Oasis"], duration_ms=200_000),
+            "https://www.youtube.com/watch?v=zyx6543210",
+        )
+        is None
+    )
 
 
 def test_different_artist_is_not_reused(tmp_path, monkeypatch):
     install_cache_validation(monkeypatch)
     cache = DownloadCache(tmp_path / "downloads")
     path = cache.download_dir / "entry.mp3"
-    cache.store(Track("Song", ["Artist"], duration_ms=200_000), "https://www.youtube.com/watch?v=abc123XYZ", path)
+    cache.store(
+        Track("Song", ["Artist"], duration_ms=200_000),
+        "https://www.youtube.com/watch?v=abc123XYZ",
+        path,
+    )
 
-    assert cache.lookup(Track("Song", ["Other Artist"], duration_ms=200_000), "https://www.youtube.com/watch?v=zyx6543210") is None
+    assert (
+        cache.lookup(
+            Track("Song", ["Other Artist"], duration_ms=200_000),
+            "https://www.youtube.com/watch?v=zyx6543210",
+        )
+        is None
+    )
 
 
 def test_duration_conflict_blocks_metadata_reuse(tmp_path, monkeypatch):
     install_cache_validation(monkeypatch)
     cache = DownloadCache(tmp_path / "downloads")
     path = cache.download_dir / "entry.mp3"
-    cache.store(Track("Song", ["Artist"], duration_ms=200_000), "https://www.youtube.com/watch?v=abc123XYZ", path)
+    cache.store(
+        Track("Song", ["Artist"], duration_ms=200_000),
+        "https://www.youtube.com/watch?v=abc123XYZ",
+        path,
+    )
 
-    assert cache.lookup(Track("Song", ["Artist"], duration_ms=300_000), "https://www.youtube.com/watch?v=zyx6543210") is None
+    assert (
+        cache.lookup(
+            Track("Song", ["Artist"], duration_ms=300_000),
+            "https://www.youtube.com/watch?v=zyx6543210",
+        )
+        is None
+    )
 
 
 def test_stored_source_is_reused_across_resolver_instances(tmp_path, monkeypatch):
@@ -151,13 +192,19 @@ def test_stored_source_is_reused_across_resolver_instances(tmp_path, monkeypatch
     calls: list[str] = []
     cache = DownloadCache(downloads)
     first = make_resolver(
-        tmp_path, monkeypatch, cache=cache, url="https://www.youtube.com/watch?v=abc123XYZ",
+        tmp_path,
+        monkeypatch,
+        cache=cache,
+        url="https://www.youtube.com/watch?v=abc123XYZ",
         downloader=downloading(calls, downloads),
     )
 
     other_cache = DownloadCache(downloads)
     second = make_resolver(
-        tmp_path, monkeypatch, cache=other_cache, url="https://www.youtube.com/watch?v=abc123XYZ",
+        tmp_path,
+        monkeypatch,
+        cache=other_cache,
+        url="https://www.youtube.com/watch?v=abc123XYZ",
         downloader=downloading(calls, downloads),
     )
 

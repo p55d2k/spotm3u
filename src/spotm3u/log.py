@@ -75,11 +75,11 @@ class TrackLogger:
         self._job_id = job_id
         self._track = track
 
-    def with_track(self, track: Track) -> "TrackLogger":
+    def with_track(self, track: Track) -> TrackLogger:
         """Return a copy of this logger bound to a specific track."""
         return TrackLogger(self._logger, job_id=self._job_id, track=track)
 
-    def with_job(self, job_id: str | None) -> "TrackLogger":
+    def with_job(self, job_id: str | None) -> TrackLogger:
         """Return a copy of this logger bound to a background job."""
         return TrackLogger(self._logger, job_id=job_id, track=self._track)
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -49,9 +49,7 @@ def add_to_apple_music(
     files = [Path(path).expanduser().resolve() for path in paths]
     missing = [path for path in files if not path.is_file()]
     if missing:
-        raise AppleMusicError(
-            f"{len(missing)} resolved audio file(s) are no longer available."
-        )
+        raise AppleMusicError(f"{len(missing)} resolved audio file(s) are no longer available.")
     script = _apple_script(playlist_name, files)
     try:
         completed = runner(
@@ -74,12 +72,12 @@ def add_to_apple_music(
 def _apple_script(playlist_name: str, paths: list[Path]) -> str:
     playlist = _as_script_string(playlist_name)
     additions = "\n".join(
-        f'        try\n'
+        f"        try\n"
         f'            add POSIX file "{_as_script_string(path)}" to targetPlaylist\n'
-        f'            set importedCount to importedCount + 1\n'
-        f'        on error\n'
-        f'            set failedCount to failedCount + 1\n'
-        f'        end try'
+        f"            set importedCount to importedCount + 1\n"
+        f"        on error\n"
+        f"            set failedCount to failedCount + 1\n"
+        f"        end try"
         for path in paths
     )
     return f'''tell application "Music"

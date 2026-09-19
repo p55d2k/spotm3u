@@ -1,16 +1,25 @@
 """Online source search utilities for tracks without a local match."""
 
-from .search import (
-    OnlineSourceSearcher,
-    SourceCandidate,
-    build_search_queries,
-    search_online_sources,
+from ..metadata import MetadataResult, enrich_metadata
+from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
+from .cache import DownloadCache, cache_metadata_key, source_identity
+from .downloader import (
+    DownloadError,
+    describe_youtube_setup,
+    download_source,
+    download_track,
 )
 from .ranking import (
     CandidateRanking,
     ScoreComponents,
     rank_source_candidate,
     rank_source_candidates,
+)
+from .search import (
+    OnlineSourceSearcher,
+    SourceCandidate,
+    build_search_queries,
+    search_online_sources,
 )
 from .source_quality import (
     SourceProfile,
@@ -25,15 +34,6 @@ from .validation import (
     validate_source_candidate,
     validate_source_candidates,
 )
-from .downloader import (
-    DownloadError,
-    describe_youtube_setup,
-    download_source,
-    download_track,
-)
-from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
-from .cache import DownloadCache, cache_metadata_key, source_identity
-from ..metadata import enrich_metadata, MetadataResult
 
 __all__ = [
     "OnlineSourceSearcher",

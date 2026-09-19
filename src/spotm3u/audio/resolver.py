@@ -146,7 +146,8 @@ class LocalAudioResolver:
         bigram_index: dict[str, set[int]] = {}
 
         audio_paths = (
-            path for path in sorted(self.root.rglob("*"))
+            path
+            for path in sorted(self.root.rglob("*"))
             if path.is_file() and path.suffix.lower() in self.extensions
         )
         for path in audio_paths:
@@ -292,9 +293,7 @@ class LocalAudioResolver:
         chosen = tied[0]
         return Resolution(track, ResolvedTrack(track, chosen), tied)
 
-    def resolve_all(
-        self, tracks: list[Track], *, max_workers: int = 1
-    ) -> list[Resolution]:
+    def resolve_all(self, tracks: list[Track], *, max_workers: int = 1) -> list[Resolution]:
         """Resolve tracks in source order, preserving duplicates.
 
         With ``max_workers > 1`` tracks are matched in parallel; every slot is

@@ -12,7 +12,7 @@ from ..models import ResolvedTrack
 
 def _iter_tracks(tracks: Iterable[Any] | Any) -> Iterable[Any]:
     if hasattr(tracks, "results"):
-        return getattr(tracks, "results")
+        return tracks.results
     return tracks
 
 
@@ -20,16 +20,16 @@ def _extract_resolved(item: Any) -> Any | None:
     if item is None:
         return None
     if hasattr(item, "successful"):
-        if not getattr(item, "successful") or getattr(item, "resolved", None) is None:
+        if not item.successful or getattr(item, "resolved", None) is None:
             return None
-        item = getattr(item, "resolved")
+        item = item.resolved
     if isinstance(item, ResolvedTrack):
         if item.status in {"missing", "ambiguous", "rejected", "failed", "uncertain"}:
             return None
         if item.local_path is None:
             return None
         return item
-    if hasattr(item, "local_path") and hasattr(item, "track") and getattr(item, "local_path") is not None:
+    if hasattr(item, "local_path") and hasattr(item, "track") and item.local_path is not None:
         status = getattr(item, "status", "local")
         if status in {"missing", "ambiguous", "rejected", "failed", "uncertain"}:
             return None
@@ -60,7 +60,9 @@ def m3u_text(
             entry = Path(path).as_posix()
         if extended:
             track = resolved.track
-            duration = (track.duration_ms or 0) // 1000 if track and track.duration_ms is not None else 0
+            duration = (
+                (track.duration_ms or 0) // 1000 if track and track.duration_ms is not None else 0
+            )
             artists = ", ".join(track.artists) if track and track.artists else ""
             title = track.title if track and track.title else ""
             display = f"{artists} - {title}" if artists else title

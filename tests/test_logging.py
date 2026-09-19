@@ -1,7 +1,6 @@
 """Tests for diagnostic logging: context helpers and pipeline traceability."""
 
 import logging
-from pathlib import Path
 
 from spotm3u import log as log_module
 from spotm3u.audio.resolver import LocalAudioResolver
@@ -121,7 +120,9 @@ def test_failed_track_is_traceable_through_job_logs(tmp_path, caplog) -> None:
     assert "no local match" in text
 
 
-def test_resolution_failure_logs_download_and_validation_status(tmp_path, caplog, monkeypatch) -> None:
+def test_resolution_failure_logs_download_and_validation_status(
+    tmp_path, caplog, monkeypatch
+) -> None:
     music = tmp_path / "music"
     music.mkdir()
     downloaded = tmp_path / "output" / "song.mp3"

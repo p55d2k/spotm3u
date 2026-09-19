@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
-from pathlib import Path
 import re
 import wave
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from ..log import track_identifier
@@ -54,8 +54,10 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
         return _invalid(audio_path, "file is unreadable")
 
     try:
-        from mutagen import File  # type: ignore
-        from mutagen import MutagenError  # type: ignore
+        from mutagen import (
+            File,  # type: ignore
+            MutagenError,  # type: ignore
+        )
 
         parsed = File(audio_path, easy=True)
     except (MutagenError, OSError, TypeError, ValueError):

@@ -1,15 +1,13 @@
-from pathlib import Path
 import sys
 import time
 import types
+from pathlib import Path
 from urllib.error import URLError
 
 import pytest
 
 from spotm3u.models import Track
-from spotm3u.online import DownloadError, download_track
-from spotm3u.online import downloader
-
+from spotm3u.online import DownloadError, download_track, downloader
 
 TRACK = Track(title="Song / Name", artists=["An Artist"], spotify_id="track-1")
 YOUTUBE_URL = "https://youtube.com/watch?v=example"
@@ -43,9 +41,7 @@ def _noop_validate_provider(_url, _home):
 def install_fake_yt_dlp(monkeypatch, fake=FakeYoutubeDL, *, validate_provider=None):
     monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=fake))
     validate_provider = validate_provider or _noop_validate_provider
-    monkeypatch.setattr(
-        "spotm3u.online.downloader._validate_pot_provider", validate_provider
-    )
+    monkeypatch.setattr("spotm3u.online.downloader._validate_pot_provider", validate_provider)
     monkeypatch.setattr(
         "spotm3u.online.downloader.validate_downloaded_audio",
         lambda track, path: types.SimpleNamespace(status="valid", reasons=()),
@@ -166,9 +162,7 @@ def test_invalid_download_is_discarded(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=Fake))
     monkeypatch.setattr(
         "spotm3u.online.downloader.validate_downloaded_audio",
-        lambda track, path: types.SimpleNamespace(
-            status="invalid", reasons=("speech detected",)
-        ),
+        lambda track, path: types.SimpleNamespace(status="invalid", reasons=("speech detected",)),
     )
 
     with pytest.raises(DownloadError, match="invalid"):
@@ -258,9 +252,7 @@ def test_configured_http_provider_is_checked_before_yt_dlp_starts(tmp_path, monk
 
 def test_youtube_without_provider_skips_provider_preflight(tmp_path, monkeypatch):
     checks = []
-    install_fake_yt_dlp(
-        monkeypatch, validate_provider=lambda url, home: checks.append((url, home))
-    )
+    install_fake_yt_dlp(monkeypatch, validate_provider=lambda url, home: checks.append((url, home)))
 
     download_track(TRACK, YOUTUBE_URL, tmp_path)
 
@@ -301,9 +293,7 @@ def test_youtube_authentication_required_is_not_a_bot_retry(message, tmp_path, m
     assert "youtube" not in invocations[0].get("extractor_args", {})
 
 
-def test_youtube_authentication_required_with_browser_points_at_cookie_load(
-    tmp_path, monkeypatch
-):
+def test_youtube_authentication_required_with_browser_points_at_cookie_load(tmp_path, monkeypatch):
     class LoginRequired(FakeYoutubeDL):
         def download(self, urls):
             raise RuntimeError("LOGIN_REQUIRED: Sign in to confirm you're not a bot")
@@ -323,9 +313,7 @@ def test_youtube_authentication_required_with_browser_points_at_cookie_load(
         "bgutil:http server is not available",
     ],
 )
-def test_youtube_po_token_failure_is_not_browser_authentication(
-    message, tmp_path, monkeypatch
-):
+def test_youtube_po_token_failure_is_not_browser_authentication(message, tmp_path, monkeypatch):
     class PotFailure(FakeYoutubeDL):
         def download(self, urls):
             raise RuntimeError(message)
@@ -351,9 +339,7 @@ def test_youtube_po_token_failure_is_not_browser_authentication(
         "failed to load cookies",
     ],
 )
-def test_youtube_browser_cookie_extraction_failure_reports_setup(
-    message, tmp_path, monkeypatch
-):
+def test_youtube_browser_cookie_extraction_failure_reports_setup(message, tmp_path, monkeypatch):
     class CookieFailure(FakeYoutubeDL):
         def download(self, urls):
             raise RuntimeError(message)
@@ -613,9 +599,7 @@ def test_describe_youtube_setup_reports_unreachable_provider_without_raising(mon
 
     monkeypatch.setattr(downloader, "urlopen", boom)
 
-    report = downloader.describe_youtube_setup(
-        pot_provider_url="http://user:secret@127.0.0.1:4416"
-    )
+    report = downloader.describe_youtube_setup(pot_provider_url="http://user:secret@127.0.0.1:4416")
 
     assert report["http_provider"]["reachable"] is False
     assert "secret" not in repr(report)
@@ -672,10 +656,7 @@ def test_plugins_load_once_under_concurrent_downloads(monkeypatch):
 
     from spotm3u.online import _ytdlp
 
-    threads = [
-        threading.Thread(target=_ytdlp.ensure_ytdlp_plugins_loaded)
-        for _ in range(8)
-    ]
+    threads = [threading.Thread(target=_ytdlp.ensure_ytdlp_plugins_loaded) for _ in range(8)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -710,9 +691,7 @@ def test_source_url_credentials_are_not_echoed_in_errors(tmp_path, monkeypatch):
     install_fake_yt_dlp(monkeypatch, Failing)
 
     with pytest.raises(DownloadError) as failure:
-        download_track(
-            TRACK, "https://user:secret@example.com/source", tmp_path
-        )
+        download_track(TRACK, "https://user:secret@example.com/source", tmp_path)
 
     assert "secret" not in str(failure.value)
 

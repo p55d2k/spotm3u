@@ -11,9 +11,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-import requests
-
 import mutagen.id3 as mutagen_id3
+import requests
 
 from .models import Track
 
@@ -105,12 +104,12 @@ def _normalize_identity(value: str | None) -> str:
     return " ".join("".join(char if char.isalnum() else " " for char in text).split())
 
 
-def _artist_album_match(artist: str | None, album: str | None, candidate_artist: str | None, candidate_album: str | None) -> bool:
+def _artist_album_match(
+    artist: str | None, album: str | None, candidate_artist: str | None, candidate_album: str | None
+) -> bool:
     """Return True when artist+album metadata appear to match, ignoring punctuation/casing noise."""
     artist_key = _normalize_identity(artist)
-    album_key = _normalize_identity(
-        _normalize_album_for_search(album) if album else album
-    )
+    album_key = _normalize_identity(_normalize_album_for_search(album) if album else album)
     candidate_artist_key = _normalize_identity(candidate_artist)
     candidate_album_key = _normalize_identity(
         _normalize_album_for_search(candidate_album) if candidate_album else candidate_album
@@ -138,8 +137,8 @@ def _cache_dir(download_dir: Path) -> Path:
 
 def _cache_key(artist: str, album: str) -> str:
     """Generate a stable cache key from artist and album."""
-    normalized = _normalize_identity(artist) + "||" + _normalize_identity(
-        _normalize_album_for_search(album)
+    normalized = (
+        _normalize_identity(artist) + "||" + _normalize_identity(_normalize_album_for_search(album))
     )
     safe = re.sub(r"[^a-z0-9]+", "_", normalized.casefold()).strip("_")
     return safe[:120] or "unknown"
@@ -311,7 +310,8 @@ def _download_artwork(url: str) -> bytes | None:
             content_type in {"image/jpeg", "image/png", "image/webp"}
             or data.startswith(b"\xff\xd8\xff")
             or data.startswith(b"\x89PNG\r\n\x1a\n")
-            or data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+            or data.startswith(b"RIFF")
+            and data[8:12] == b"WEBP"
         ):
             return None
         return data
@@ -346,8 +346,12 @@ def _embedded_artwork(path: Path) -> tuple[bytes, str] | None:
 
 def _sidecar_artwork(path: Path) -> tuple[bytes, str] | None:
     """Read artwork saved alongside an audio download by a source tool."""
-    for suffix, mime in ((".jpg", "image/jpeg"), (".jpeg", "image/jpeg"),
-                         (".png", "image/png"), (".webp", "image/webp")):
+    for suffix, mime in (
+        (".jpg", "image/jpeg"),
+        (".jpeg", "image/jpeg"),
+        (".png", "image/png"),
+        (".webp", "image/webp"),
+    ):
         candidate = path.with_suffix(suffix)
         try:
             data = candidate.read_bytes()
@@ -396,8 +400,10 @@ def _find_album_artwork(
     for release in releases:
         release_artist = release.get("artist-credit-phrase")
         release_album = release.get("title")
-        if release_artist and release_album and not _artist_album_match(
-            artist, album, release_artist, release_album
+        if (
+            release_artist
+            and release_album
+            and not _artist_album_match(artist, album, release_artist, release_album)
         ):
             continue
         rg_id = release.get("id")
@@ -551,7 +557,11 @@ def _embed_artwork(path: Path, artwork_data: bytes, mime_type: str = "image/jpeg
         return False
 
 
-def enrich_metadata(path: str | Path | list[Track] | tuple[Track, ...], track: Track | list[Track] | tuple[Track, ...] | None, download_dir: str | Path) -> MetadataResult | list[MetadataResult]:
+def enrich_metadata(
+    path: str | Path | list[Track] | tuple[Track, ...],
+    track: Track | list[Track] | tuple[Track, ...] | None,
+    download_dir: str | Path,
+) -> MetadataResult | list[MetadataResult]:
     """Enrich one track or a batch of tracks with artwork and ID3 metadata.
 
     Accepts both the single-track form and the batch form used by the tests.
@@ -561,7 +571,10 @@ def enrich_metadata(path: str | Path | list[Track] | tuple[Track, ...], track: T
         resolved_paths = list(track) if isinstance(track, (list, tuple)) else list(track or ())
         if len(tracks) != len(resolved_paths):
             raise ValueError("track and path counts do not match")
-        return [enrich_metadata(item_path, item_track, download_dir) for item_track, item_path in zip(tracks, resolved_paths)]
+        return [
+            enrich_metadata(item_path, item_track, download_dir)
+            for item_track, item_path in zip(tracks, resolved_paths, strict=True)
+        ]
 
     audio_path = Path(path)
     download_path = Path(download_dir)
@@ -596,9 +609,7 @@ def enrich_metadata(path: str | Path | list[Track] | tuple[Track, ...], track: T
         )
         if artwork_data:
             try:
-                embedded = _embed_artwork(
-                    audio_path, artwork_data, _image_mime(artwork_data)
-                )
+                embedded = _embed_artwork(audio_path, artwork_data, _image_mime(artwork_data))
             except (OSError, ValueError, RuntimeError) as exc:
                 logger.warning("Artwork embed failed path=%s: %s", audio_path, exc)
                 embedded = False
@@ -629,7 +640,7 @@ def enrich_metadata_batch(
 ) -> list[MetadataResult]:
     """Enrich metadata for multiple tracks, reusing artwork cache."""
     results: list[MetadataResult] = []
-    for track, path in zip(tracks, resolved_paths):
+    for track, path in zip(tracks, resolved_paths, strict=True):
         result = enrich_metadata(path, track, download_dir)
         results.append(result)
     return results

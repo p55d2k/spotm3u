@@ -12,10 +12,10 @@ and the file itself still passes audio validation.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import re
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -117,7 +117,7 @@ class DownloadCache:
             "duration_s": _seconds(track.duration_ms),
             "source_url": url,
             "file": str(relative),
-            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "recorded_at": datetime.now(UTC).isoformat(),
         }
         with _MANIFEST_LOCK:
             entries = self._load_entries()
@@ -167,7 +167,9 @@ def _duration_compatible(track: Track, entry: dict[str, Any]) -> bool:
     cached = _number(entry.get("duration_s"))
     if requested is None or cached is None:
         return True
-    return abs(cached - requested) <= max(_DURATION_TOLERANCE_S, requested * _DURATION_TOLERANCE_RATIO)
+    return abs(cached - requested) <= max(
+        _DURATION_TOLERANCE_S, requested * _DURATION_TOLERANCE_RATIO
+    )
 
 
 def _seconds(value: int | None) -> float | None:

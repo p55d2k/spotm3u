@@ -181,9 +181,7 @@ def discover_config_path() -> Path | None:
     if env_path:
         candidate = Path(env_path).expanduser()
         if not candidate.is_file():
-            raise ConfigError(
-                f"SPOTM3U_CONFIG points to a missing file: {candidate}"
-            )
+            raise ConfigError(f"SPOTM3U_CONFIG points to a missing file: {candidate}")
         return candidate
     candidate = Path.cwd() / "config.toml"
     return candidate if candidate.is_file() else None

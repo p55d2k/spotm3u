@@ -294,8 +294,15 @@ authentication data are not collected or logged.
 
 ```bash
 uv sync --dev
+uv run pre-commit install
 uv run pytest
 ```
+
+`pre-commit install` is a one-time step per clone; it wires the Git `pre-commit`
+hook so every commit runs [Ruff](https://docs.astral.sh/ruff/) lint/format and
+the full `pytest` suite. Ruff is configured in `pyproject.toml`; the hook list
+lives in `.pre-commit-config.yaml`. Run the checks against the whole tree at any
+time with `uv run pre-commit run --all-files`.
 
 The same test suite runs in GitHub Actions. The reusable services live under
 `src/spotm3u/`; tests are under `tests/`; architecture details are in `docs/`.

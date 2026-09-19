@@ -1,4 +1,4 @@
-""""Tests for the background processing job abstraction."""
+""" "Tests for the background processing job abstraction."""
 
 import threading
 import time
@@ -28,7 +28,11 @@ class FakeResolver:
     def resolve(self, track, *, stage_callback=None):
         stages: list[str] = []
         if stage_callback is None:
-            stage_callback = lambda _stage: None
+
+            def _ignore_stage(_stage):
+                return None
+
+            stage_callback = _ignore_stage
         for stage in (
             "resolving-local",
             "searching",
@@ -160,7 +164,7 @@ def test_job_cannot_be_started_twice(tmp_path: Path) -> None:
     job.start()
     try:
         job.start()
-        assert False, "expected JobStartError"
+        raise AssertionError("expected JobStartError")
     except JobStartError:
         pass
     job.wait(timeout=5)
@@ -455,9 +459,7 @@ def test_job_m3u_options_control_relative_and_extended_output(tmp_path: Path) ->
         playlist_name="Playlist",
         tracks=tracks,
         output_dir=output,
-        resolver_factory=lambda: FakeResolver(
-            [_resolution(tracks[0], "local", path=local_file)]
-        ),
+        resolver_factory=lambda: FakeResolver([_resolution(tracks[0], "local", path=local_file)]),
         m3u_extended=False,
         m3u_relative=True,
     )
@@ -501,9 +503,7 @@ class DownloadCapResolver:
     def complete(self, prepared, *, stage_callback=None):
         with type(self).lock:
             type(self).complete_active += 1
-            type(self).complete_max = max(
-                type(self).complete_max, type(self).complete_active
-            )
+            type(self).complete_max = max(type(self).complete_max, type(self).complete_active)
         try:
             time.sleep(0.1)
         finally:
@@ -691,7 +691,7 @@ def test_retry_is_rejected_while_the_job_is_running(tmp_path: Path) -> None:
 
     try:
         job.retry()
-        assert False, "expected JobStartError"
+        raise AssertionError("expected JobStartError")
     except JobStartError:
         pass
 

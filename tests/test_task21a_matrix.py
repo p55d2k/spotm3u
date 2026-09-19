@@ -68,7 +68,11 @@ def test_featured_artists_are_tolerated() -> None:
 
 def test_feat_formatting_variants_are_tolerated() -> None:
     track = Track(title="Wonderwall", artists=["Oasis", "Noel Gallagher"], duration_ms=258_000)
-    for artist in ("Oasis feat. Noel Gallagher", "Oasis ft. Noel Gallagher", "Oasis featuring Noel Gallagher"):
+    for artist in (
+        "Oasis feat. Noel Gallagher",
+        "Oasis ft. Noel Gallagher",
+        "Oasis featuring Noel Gallagher",
+    ):
         assert rank_source_candidate(track, source(artist=artist)).accepted
 
 
@@ -86,7 +90,10 @@ def test_music_video_candidate_is_preferred_over_generic_but_below_audio() -> No
 
 
 def test_live_candidate_is_rejected() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall (Live at Knebworth)")).confidence == "rejected"
+    assert (
+        rank_source_candidate(TRACK, source(title="Wonderwall (Live at Knebworth)")).confidence
+        == "rejected"
+    )
 
 
 def test_remix_candidate_is_rejected() -> None:
@@ -94,15 +101,23 @@ def test_remix_candidate_is_rejected() -> None:
 
 
 def test_cover_candidate_is_rejected() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall (Cover by Fan)")).confidence == "rejected"
+    assert (
+        rank_source_candidate(TRACK, source(title="Wonderwall (Cover by Fan)")).confidence
+        == "rejected"
+    )
 
 
 def test_movie_scene_candidate_is_rejected() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall Movie Scene")).confidence == "rejected"
+    assert (
+        rank_source_candidate(TRACK, source(title="Wonderwall Movie Scene")).confidence
+        == "rejected"
+    )
 
 
 def test_obvious_unrelated_song_is_rejected() -> None:
-    assert rank_source_candidate(TRACK, source(title="Champagne Supernova")).confidence == "rejected"
+    assert (
+        rank_source_candidate(TRACK, source(title="Champagne Supernova")).confidence == "rejected"
+    )
 
 
 def test_incomplete_metadata_candidate_is_accepted() -> None:
@@ -110,17 +125,25 @@ def test_incomplete_metadata_candidate_is_accepted() -> None:
         TRACK, source(title="Wonderwall", artist=None, uploader=None, duration_s=None)
     )
     assert result.accepted
-    assert validate_source_candidate(
-        TRACK, source(title="Wonderwall", artist=None, uploader=None, duration_s=None)
-    ).status == "accepted"
+    assert (
+        validate_source_candidate(
+            TRACK, source(title="Wonderwall", artist=None, uploader=None, duration_s=None)
+        ).status
+        == "accepted"
+    )
 
 
 def test_harmless_extra_title_text_is_accepted() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall - Original Studio Recording")).accepted
+    assert rank_source_candidate(
+        TRACK, source(title="Wonderwall - Original Studio Recording")
+    ).accepted
     assert rank_source_candidate(TRACK, source(title="Wonderwall [Official]")).accepted
 
 
 def test_wrong_artist_is_rejected() -> None:
-    assert rank_source_candidate(
-        TRACK, source(title="Wonderwall", artist="Another Band", uploader="Another Band")
-    ).confidence == "rejected"
+    assert (
+        rank_source_candidate(
+            TRACK, source(title="Wonderwall", artist="Another Band", uploader="Another Band")
+        ).confidence
+        == "rejected"
+    )

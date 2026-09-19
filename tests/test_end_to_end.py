@@ -70,8 +70,7 @@ def _mock_audio_valid(track, path):
 ZIP_CONTENT = _export_zip(
     (
         "Mixed.csv",
-        ZIP_HEADER
-        + "spotify:track:local,First Song,,Local Artist,200000\n"
+        ZIP_HEADER + "spotify:track:local,First Song,,Local Artist,200000\n"
         "spotify:track:online,Second Song,,Online Artist,250000\n"
         "spotify:track:miss,Missing Song,,Nobody,180000\n",
     ),
@@ -92,9 +91,7 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
         lambda **kw: _FakeSearcher(no_results_titles=frozenset({"Missing Song"})),
     )
     monkeypatch.setattr("spotm3u.app.download_track", _mock_download)
-    monkeypatch.setattr(
-        "spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid
-    )
+    monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
 
     download_dir = tmp_path / "downloads"
     client = create_app(
@@ -174,9 +171,7 @@ def test_e2e_second_playlist_independent(tmp_path, monkeypatch):
     music.mkdir()
     monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kw: _FakeSearcher())
     monkeypatch.setattr("spotm3u.app.download_track", _mock_download)
-    monkeypatch.setattr(
-        "spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid
-    )
+    monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
 
     download_dir = tmp_path / "downloads"
     client = create_app(
@@ -228,15 +223,12 @@ def test_e2e_all_tracks_local_no_online_search(tmp_path, monkeypatch):
 
     monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kw: _NoSearch())
 
-    client = create_app(
-        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}
-    ).test_client()
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
 
     zip_data = _export_zip(
         (
             "AllLocal.csv",
-            ZIP_HEADER
-            + "spotify:track:a,Song One,,Artist A,200000\n"
+            ZIP_HEADER + "spotify:track:a,Song One,,Artist A,200000\n"
             "spotify:track:b,Song Two,,Artist B,250000\n",
         ),
     )
