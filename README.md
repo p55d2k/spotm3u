@@ -22,6 +22,8 @@ Exportify → Download → Launch → Upload ZIP → Get M3U
 4. Upload ZIP → drag in the Exportify ZIP and choose playlists.
 5. Get M3U → review matches and download the generated playlist.
 
+## Overview
+
 spotm3u is a local Flask application that turns playlists exported from
 [Exportify](https://exportify.net/) into M3U playlists for audio already on
 your computer. When a track is not found locally, it can search for and
