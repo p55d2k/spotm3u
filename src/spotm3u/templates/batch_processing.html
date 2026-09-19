@@ -53,6 +53,10 @@
       const etaChip = document.getElementById("eta-chip");
       const statusUrl = "{{ url_for('batch_processing_status', job_id=job_id) }}";
       const playlistViews = new Map();
+      const artworkUrl = (playlistId, index) =>
+        "{{ url_for('track_artwork', job_id=job_id, playlist_id='playlist', index=0) }}"
+          .replace("/playlist/", "/" + playlistId + "/")
+          .replace(/\/0$/, "/") + index;
 
       function progressFraction(state) {
         const total = state.total || 1;
@@ -88,13 +92,25 @@
 
       // Compact rows with the album art, the Lucide status icon (hover for the
       // meaning), and a truncated title so long names never blow up the row.
-      function createTrackRow(track) {
+      function createTrackRow(track, playlistId) {
         const item = document.createElement("li");
         item.classList.add("track-" + (track.resolution || track.status || "queued"));
         const art = document.createElement("div");
         art.className = "track-artwork";
         art.setAttribute("aria-hidden", "true");
         art.textContent = "♪";
+        if (track.artwork) {
+          const img = document.createElement("img");
+          img.className = "track-art-img";
+          img.width = 48;
+          img.height = 48;
+          img.alt = "";
+          img.loading = "lazy";
+          img.onerror = () => img.remove();
+          img.src = artworkUrl(playlistId, track.index);
+          art.textContent = "";
+          art.appendChild(img);
+        }
         const artRow = document.createElement("div");
         artRow.className = "track-art-row";
         artRow.appendChild(art);
@@ -134,16 +150,39 @@
 
       // Refresh an existing row in place so a status change never rebuilds the
       // list, which would otherwise reset its scroll position on every poll.
-      function updateTrackRow(item, track) {
+      function updateTrackRow(item, track, playlistId) {
         const status = track.resolution || track.status || "queued";
         item.className = "track-" + status;
+        const main = item.querySelector(".track-art-main");
+        const artists = main.querySelector(".track-artists");
+        if (track.artists && track.artists.length) {
+          const artistText = track.artists.join(", ");
+          const artistElement = artists || main.appendChild(document.createElement("div"));
+          artistElement.className = "track-artists";
+          artistElement.dataset.tooltip = artistText;
+          artistElement.textContent = artistText;
+        } else if (artists) {
+          artists.remove();
+        }
+        const art = item.querySelector(".track-artwork");
+        if (track.artwork && !art.querySelector("img")) {
+          const img = document.createElement("img");
+          img.className = "track-art-img";
+          img.width = 48;
+          img.height = 48;
+          img.alt = "";
+          img.loading = "lazy";
+          img.onerror = () => img.remove();
+          img.src = artworkUrl(playlistId, track.index);
+          art.textContent = "";
+          art.appendChild(img);
+        }
         const icon = item.querySelector(".track-icon");
         if (icon && icon.dataset.statusIcon !== status) {
           icon.classList.remove("track-icon-wait", "track-icon-ok", "track-icon-warn", "track-icon-err");
           icon.dataset.statusIcon = status;
           applyStatusIcons(item);
         }
-        const main = item.querySelector(".track-art-main");
         const existingReason = main.querySelector(".track-reason");
         if (track.reason) {
           const reason = existingReason || main.appendChild(document.createElement("div"));
@@ -155,14 +194,14 @@
       }
 
       // Tracks keep their playlist order, so each list is updated by index.
-      function renderTrackRows(container, tracks) {
+      function renderTrackRows(container, tracks, playlistId) {
         const scrollTop = container.scrollTop;
         for (let index = 0; index < tracks.length; index += 1) {
           const existing = container.children[index];
           if (existing) {
-            updateTrackRow(existing, tracks[index]);
+            updateTrackRow(existing, tracks[index], playlistId);
           } else {
-            container.appendChild(createTrackRow(tracks[index]));
+            container.appendChild(createTrackRow(tracks[index], playlistId));
           }
         }
         while (container.children.length > tracks.length) {
@@ -205,7 +244,7 @@
         } else {
           view.activeTrack.hidden = true;
         }
-        renderTrackRows(view.tracks, playlist.tracks);
+        renderTrackRows(view.tracks, playlist.tracks, playlist.playlist.id);
       }
 
       function renderEta(state) {

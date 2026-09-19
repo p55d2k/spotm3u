@@ -124,6 +124,10 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
     (music / "Artist - Second.mp3").write_bytes(b"audio")
+    monkeypatch.setattr(
+        "spotm3u.app.cached_artwork_path",
+        lambda _download_dir, _track: music / "artwork.jpg",
+    )
     monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     upload = client.post(
@@ -151,6 +155,7 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
     assert status["status"] == "completed"
     assert status["total"] == 2
     assert len(status["playlists"]) == 2
+    assert all(track["artwork"] for playlist in status["playlists"] for track in playlist["tracks"])
     assert client.get(f"/processing/{job_id}/batch/result").status_code == 200
     assert (music / "spotm3u-downloads" / "playlist-0.m3u").is_file()
     assert (music / "spotm3u-downloads" / "playlist-1.m3u").is_file()

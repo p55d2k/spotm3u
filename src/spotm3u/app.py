@@ -580,7 +580,11 @@ def _selected_playlist_ids(job_directory: Path | None) -> list[str]:
 
 
 def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
-    states = [job.as_dict() for job in jobs]
+    states = []
+    for job in jobs:
+        state = job.as_dict()
+        _annotate_artwork(job, state)
+        states.append(state)
     total = sum(int(state["playlist"]["total_tracks"]) for state in states)
     completed = sum(int(state["completed"]) for state in states)
     searched = sum(int(state["searched"]) for state in states)

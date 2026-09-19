@@ -238,13 +238,36 @@
       function updateTrackRow(item, track) {
         const status = track.resolution || track.status || "queued";
         item.className = "track-" + status;
+        const main = item.querySelector(".track-art-main");
+        const artists = main.querySelector(".track-artists");
+        if (track.artists && track.artists.length) {
+          const artistText = track.artists.join(", ");
+          const artistElement = artists || main.appendChild(document.createElement("div"));
+          artistElement.className = "track-artists";
+          artistElement.dataset.tooltip = artistText;
+          artistElement.textContent = artistText;
+        } else if (artists) {
+          artists.remove();
+        }
+        const art = item.querySelector(".track-artwork");
+        if (track.artwork && !art.querySelector("img")) {
+          const img = document.createElement("img");
+          img.className = "track-art-img";
+          img.width = 48;
+          img.height = 48;
+          img.alt = "";
+          img.loading = "lazy";
+          img.onerror = () => img.remove();
+          img.src = artworkUrl(track.index);
+          art.textContent = "";
+          art.appendChild(img);
+        }
         const icon = item.querySelector(".track-icon");
         if (icon && icon.dataset.statusIcon !== status) {
           icon.classList.remove("track-icon-wait", "track-icon-ok", "track-icon-warn", "track-icon-err");
           icon.dataset.statusIcon = status;
           applyStatusIcons(item);
         }
-        const main = item.querySelector(".track-art-main");
         const existingReason = main.querySelector(".track-reason");
         if (track.reason) {
           const reason = existingReason || main.appendChild(document.createElement("div"));
