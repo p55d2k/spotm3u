@@ -384,6 +384,9 @@ def test_enrich_metadata_error_handling(tmp_path, monkeypatch):
     import spotm3u.metadata as metadata_module
 
     monkeypatch.setattr(metadata_module, "ID3", failing_id3)
+    # Keep the artwork lookup offline; otherwise this test makes real
+    # MusicBrainz/Cover Art Archive requests and blocks on the socket timeout.
+    _install_fake_requests(monkeypatch)
 
     track = Track(title="Track", artists=["Artist"], album="Album")
     mp3_path = tmp_path / "test.mp3"
