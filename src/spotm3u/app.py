@@ -1,6 +1,7 @@
 """Flask application for the spotm3u web interface."""
 
 import json
+import logging
 import re
 import secrets
 from functools import partial
@@ -14,11 +15,11 @@ from .audio.resolver import LocalAudioResolver
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, JobStartError, ProcessingJob
-from .log import configure_logging
+from .log import PACKAGE_LOGGER, configure_logging
 from .metadata import cached_artwork_path
 from .models import Playlist
 from .normalization import sanitize_filename_component
-from .online import OnlineSourceSearcher, download_track
+from .online import OnlineSourceSearcher, describe_youtube_setup, download_track
 from .online.cache import DownloadCache
 from .resolution import TrackResolver
 from .uploads import UploadError, cleanup_jobs, default_upload_root, store_upload
@@ -49,6 +50,13 @@ def create_app(config: dict | None = None) -> Flask:
         app.config["MUSIC_LIBRARY"] = str(Path.home() / "Music")
     if config:
         app.config.update(config)
+
+    report = describe_youtube_setup(
+        cookies_from_browser=app.config.get("YTDLP_COOKIES_FROM_BROWSER"),
+        pot_provider_url=app.config.get("YTDLP_POT_PROVIDER_URL"),
+        pot_provider_home=app.config.get("YTDLP_POT_PROVIDER_HOME"),
+    )
+    logging.getLogger(PACKAGE_LOGGER).info("youtube setup: %s", json.dumps(report, sort_keys=True))
 
     @app.get("/")
     def index():
