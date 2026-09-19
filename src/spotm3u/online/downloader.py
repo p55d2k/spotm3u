@@ -151,6 +151,7 @@ def download_track(
     cookies_from_browser: str | None = None,
     pot_provider_url: str | None = None,
     pot_provider_home: str | None = None,
+    ffmpeg_location: str | None = None,
 ) -> Path:
     """Download ``source_url`` and return its verified local MP3 path.
 
@@ -161,6 +162,9 @@ def download_track(
     ffmpeg run cannot occupy a worker forever. It is raised as a
     :class:`DownloadError`; ``socket_timeout`` remains the network-level
     fallback that bounds each socket operation.
+
+    ``ffmpeg_location``, when given, is passed to yt-dlp unchanged so a bundled
+    or otherwise non-``PATH`` FFmpeg is found for audio extraction.
     """
     _validate_source_url(source_url)
     destination = Path(output_dir).expanduser().resolve()
@@ -183,6 +187,7 @@ def download_track(
         cookies_from_browser=cookies_from_browser,
         pot_provider_url=pot_provider_url,
         pot_provider_home=pot_provider_home,
+        ffmpeg_location=ffmpeg_location,
     )
 
 
@@ -200,6 +205,7 @@ def _download_single_flight(
     cookies_from_browser: str | None,
     pot_provider_url: str | None,
     pot_provider_home: str | None,
+    ffmpeg_location: str | None,
 ) -> Path:
     """Download ``output_path`` exactly once no matter how many callers race.
 
@@ -238,6 +244,7 @@ def _download_single_flight(
                     cookies_from_browser=cookies_from_browser,
                     pot_provider_url=pot_provider_url,
                     pot_provider_home=pot_provider_home,
+                    ffmpeg_location=ffmpeg_location,
                 ),
             )
 
@@ -314,6 +321,7 @@ def _perform_download(
     cookies_from_browser: str | None,
     pot_provider_url: str | None,
     pot_provider_home: str | None,
+    ffmpeg_location: str | None,
 ) -> Path:
     """Run the actual yt-dlp/ffmpeg download under the per-path lock."""
     if timeout is not None and timeout > 0:
@@ -332,6 +340,7 @@ def _perform_download(
                 cookies_from_browser=cookies_from_browser,
                 pot_provider_url=pot_provider_url,
                 pot_provider_home=pot_provider_home,
+                ffmpeg_location=ffmpeg_location,
             )
         except TimeoutError as exc:
             _prune_partial(output_path)
@@ -356,6 +365,7 @@ def _perform_download(
         cookies_from_browser=cookies_from_browser,
         pot_provider_url=pot_provider_url,
         pot_provider_home=pot_provider_home,
+        ffmpeg_location=ffmpeg_location,
     )
 
 
@@ -372,6 +382,7 @@ def _download_guarded(
     cookies_from_browser: str | None,
     pot_provider_url: str | None,
     pot_provider_home: str | None,
+    ffmpeg_location: str | None,
 ) -> Path:
     """Run :func:`_download_to` under the per-output-path lock."""
     with _output_lock(output_path):
@@ -387,6 +398,7 @@ def _download_guarded(
             cookies_from_browser=cookies_from_browser,
             pot_provider_url=pot_provider_url,
             pot_provider_home=pot_provider_home,
+            ffmpeg_location=ffmpeg_location,
         )
 
 
@@ -458,6 +470,7 @@ def _download_to(
     cookies_from_browser: str | None,
     pot_provider_url: str | None,
     pot_provider_home: str | None,
+    ffmpeg_location: str | None,
 ) -> Path:
     output_template = str(output_path.with_suffix(".%(ext)s"))
     try:
@@ -502,6 +515,8 @@ def _download_to(
         "continuedl": False,
         "overwrites": True,
     }
+    if ffmpeg_location:
+        options["ffmpeg_location"] = ffmpeg_location
     if cookies_from_browser:
         options["cookiesfrombrowser"] = (cookies_from_browser.casefold(),)
     if is_youtube:

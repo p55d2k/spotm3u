@@ -14,6 +14,7 @@ from .apple_music import AppleMusicError, add_to_apple_music, apple_music_availa
 from .audio.resolver import LocalAudioResolver
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
+from .ffmpeg import locate_ffmpeg_location
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
 from .metadata import cached_artwork_path
@@ -683,6 +684,7 @@ def _build_processing_job(
             cookies_from_browser=cookies_from_browser,
             pot_provider_url=pot_provider_url,
             pot_provider_home=pot_provider_home,
+            ffmpeg_location=locate_ffmpeg_location(),
         )
         return TrackResolver(
             local_resolver,

@@ -40,39 +40,14 @@ def test_bundle_root_falls_back_to_executable_directory(monkeypatch) -> None:
     monkeypatch.delenv("_MEIPASS", raising=False)
     monkeypatch.delattr(sys, "frozen", raising=False)
 
-    assert launcher.bundle_root() == Path(sys.executable).resolve().parent
-
-
-def test_prepend_bundled_tools_is_noop_in_development(monkeypatch) -> None:
-    monkeypatch.delattr(sys, "frozen", raising=False)
-    original = os.environ.get("PATH", "")
-    monkeypatch.setattr(launcher, "is_frozen", lambda: False)
-
-    launcher.prepend_bundled_tools_to_path()
-
-    assert os.environ.get("PATH", "") == original
-
-
-def test_prepend_bundled_tools_prepends_only_existing_directory(monkeypatch, tmp_path) -> None:
-    bundled = tmp_path / "ffmpeg"
-    bundled.mkdir()
-    monkeypatch.setattr(launcher, "is_frozen", lambda: True)
-    monkeypatch.setattr(launcher, "bundle_root", lambda: tmp_path)
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")
-
-    launcher.prepend_bundled_tools_to_path()
-
-    assert os.environ["PATH"] == f"{bundled}:/usr/bin:/bin"
-    # Idempotent: a second call does not duplicate the entry.
-    launcher.prepend_bundled_tools_to_path()
-    assert os.environ["PATH"] == f"{bundled}:/usr/bin:/bin"
+    assert launcher.bundle_roots()[-1] == Path(sys.executable).resolve().parent
 
 
 def test_bundle_config_points_at_bundled_config_toml(monkeypatch, tmp_path) -> None:
     bundled_config = tmp_path / "config.toml"
     bundled_config.write_text("", encoding="utf-8")
     monkeypatch.setattr(launcher, "is_frozen", lambda: True)
-    monkeypatch.setattr(launcher, "bundle_root", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "bundle_roots", lambda: (tmp_path,))
     monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
 
     launcher.configure_config_path_for_bundle()
@@ -86,9 +61,26 @@ def test_bundle_config_respects_explicit_config_env(monkeypatch, tmp_path) -> No
     explicit = tomldir / "explicit.toml"
     explicit.write_text("", encoding="utf-8")
     monkeypatch.setattr(launcher, "is_frozen", lambda: True)
-    monkeypatch.setattr(launcher, "bundle_root", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "bundle_roots", lambda: (tmp_path,))
     monkeypatch.setenv("SPOTM3U_CONFIG", str(explicit))
 
     launcher.configure_config_path_for_bundle()
 
     assert os.environ["SPOTM3U_CONFIG"] == str(explicit)
+
+
+def test_bundle_config_prefers_executable_dir_over_internal(monkeypatch, tmp_path) -> None:
+    exe_dir = tmp_path / "exe"
+    internal = tmp_path / "_internal"
+    exe_dir.mkdir()
+    internal.mkdir()
+    user_config = exe_dir / "config.toml"
+    user_config.write_text("", encoding="utf-8")
+    (internal / "config.toml").write_text("", encoding="utf-8")
+    monkeypatch.setattr(launcher, "is_frozen", lambda: True)
+    monkeypatch.setattr(launcher, "bundle_roots", lambda: (internal, exe_dir))
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+
+    launcher.configure_config_path_for_bundle()
+
+    assert os.environ["SPOTM3U_CONFIG"] == str(user_config)
