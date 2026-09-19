@@ -20,13 +20,17 @@ blockers.
 
 ## Production/Packaging Entry Point
 
-- The packaging entry point is the console script defined in `pyproject.toml`:
-  `spotm3u = "spotm3u.app:run"`.
-- `spotm3u.app.run()` (`src/spotm3u/app.py:710`) currently starts the Flask
-  development server (`app.run(port=..., debug=True)`). This is a development
-  assumption.
-- The packaged launcher must call a **non-debug production entry point**; it
-  cannot reuse `run()` as-is. This is a blocker (see below).
+- The packaging and production entry point is `spotm3u.launcher:main`,
+  exposed as the console script `spotm3u = "spotm3u.launcher:main"` in
+  `pyproject.toml` and usable directly as the PyInstaller target.
+- The launcher starts the same Flask app as development (`create_app`), binds
+  loopback (`127.0.0.1`), and runs without the debug reloader
+  (`debug=False, use_reloader=False, threaded=True`).
+- When packaged, it prepends a bundled `ffmpeg/` directory to `PATH` and
+  falls back to a `config.toml` next to the executable (unless
+  `SPOTM3U_CONFIG` is set).
+- The development entry (`spotm3u.app.run`) is retained as-is for the dev
+  server with `debug=True`; it is not the packaging entry.
 
 ## Runtime Files
 
@@ -99,13 +103,10 @@ spotm3u-<version>-<os>-<arch>.zip
 
 ## Packaging Assumptions and Blockers
 
-- **Blocker — dev entry point**: `spotm3u.app.run()` runs the Flask dev server
-  with `debug=True`. A production entry point is required before the standalone
-  executable is usable, or the packaged app must pass `debug=False` through a
-  separate entry function.
 - **Config discovery**: `config.toml` is discovered from the current working
-  directory (or `SPOTM3U_CONFIG`); the bundled launcher should either document
-  this or set a stable config location in the jar/executable directory.
+  directory (or `SPOTM3U_CONFIG`); the bundled launcher falls back to a
+  `config.toml` next to the executable when packaged, honoring an explicit
+  `SPOTM3U_CONFIG` first.
 - **Writable paths assumed**: uploads default to the temp directory and
   downloads to `~/Music/spotm3u-downloads`; these must be writable and are not
   bundled.

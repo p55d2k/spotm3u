@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-spotm3u = "spotm3u.app:run"
+spotm3u = "spotm3u.launcher:main"
 
 [dependency-groups]
 dev = [
