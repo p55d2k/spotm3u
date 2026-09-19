@@ -80,10 +80,18 @@ jobs:
       - name: Build with PyInstaller
         env:
           SPOTM3U_FFMPEG_DIR: ${{ github.workspace }}/ffmpeg-stage
+          SPOTM3U_APP_VERSION: ${{ env.VERSION }}
         run: uv run -q --group build pyinstaller --noconfirm --clean packaging/spotm3u.spec
 
       - name: Package release archive
-        run: uv run -q python packaging/make_archive.py dist/spotm3u dist-artifacts/spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            bundle="dist/spotm3u.app"
+          else
+            bundle="dist/spotm3u"
+          fi
+          uv run -q python packaging/make_archive.py "$bundle" "dist-artifacts/spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
 
       - name: Upload build archive
         uses: actions/upload-artifact@v4
@@ -156,6 +164,14 @@ jobs:
           mkdir -p "$extract_dir"
           unzip -q "$archive" -d "$extract_dir"
 
+      - name: Validate macOS application bundle
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          archive=$(find dist-artifacts -type f -name "spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip" -print -quit)
+          test -n "$archive"
+          uv run -q python packaging/verify_macos_bundle.py "$archive"
+
       - name: Extract and smoke test packaged application
         if: matrix.platform == 'windows'
         run: uv run -q python packaging/smoke_test.py dist-artifacts
@@ -164,9 +180,9 @@ jobs:
         if: matrix.platform != 'windows'
         shell: bash
         run: |
-          bundle=$(find dist-artifacts -type d -name spotm3u -print -quit)
-          test -n "$bundle"
-          uv run -q python packaging/smoke_test.py "$bundle"
+          artifact=$(find dist-artifacts -type d -name '*-extracted' -print -quit)
+          test -n "$artifact"
+          uv run -q python packaging/smoke_test.py "$artifact"
 
   release:
     name: Publish GitHub Release

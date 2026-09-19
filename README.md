@@ -58,23 +58,47 @@ to the Music app.
 
 Download the archive for your platform from
 [GitHub Releases](https://github.com/p55d2k/spotm3u/releases), extract it, and
-run the `spotm3u` executable (`spotm3u.exe` on Windows). Then open
-<http://127.0.0.1:5001/>.
+start the application. Then open <http://127.0.0.1:5001/>.
 
 The release archives built by CI include a Python runtime, application
 dependencies, and FFmpeg/ffprobe. They do not require Python, `uv`, or a
 system FFmpeg installation. CI currently builds:
 
-| Platform | Architecture | Archive suffix |
-| --- | --- | --- |
-| Windows | x86_64 | `windows-x86_64` |
-| macOS | arm64 | `macos-arm64` |
-| Linux | x86_64 | `linux-x86_64` |
+| Platform | Architecture | Archive suffix | Launch |
+| --- | --- | --- | --- |
+| Windows | x86_64 | `windows-x86_64` | Run `spotm3u.exe` |
+| macOS | arm64 | `macos-arm64` | Open `spotm3u.app` (see below) |
+| Linux | x86_64 | `linux-x86_64` | Run `spotm3u` |
 
-The executables are not signed or notarized. macOS Gatekeeper or Windows
-SmartScreen may display a warning on first launch. Apple Music integration is
-macOS-only. A YouTube PO-token provider is an optional external service and is
-not bundled; see [YouTube downloads](docs/troubleshooting.md#youtube-downloads).
+None of the releases are signed or notarized. The project does not use Apple
+Developer Program membership, Developer ID certificates, or Apple's
+notarization service, so macOS and Windows may show a security prompt on first
+launch. Apple Music integration is macOS-only. A YouTube PO-token provider is
+an optional external service and is not bundled; see
+[YouTube downloads](docs/troubleshooting.md#youtube-downloads).
+
+### macOS first launch
+
+The macOS archive contains a normal application bundle, `spotm3u.app`. Because
+the build is not Apple-signed or notarized, macOS may refuse to open it on the
+first double-click. Approve it once through Apple's standard flow:
+
+1. Download `spotm3u-<version>-macos-arm64.zip` from
+   [GitHub Releases](https://github.com/p55d2k/spotm3u/releases).
+2. Extract the ZIP. You get `spotm3u.app`.
+3. Right-click (Control-click) `spotm3u.app` and choose **Open**.
+4. If macOS shows a security warning, choose **Open** to confirm.
+5. spotm3u starts; open <http://127.0.0.1:5001/> in your browser.
+
+This approval is needed only once. Afterwards, launch `spotm3u.app` with a
+normal double-click like any other app.
+
+The exact wording and appearance of the first-launch prompt varies between
+macOS versions, so the steps above describe the flow rather than one specific
+dialog. This is Apple's normal way to approve an unsigned app: do not disable
+Gatekeeper and do not run `xattr` to strip the quarantine attribute. Those
+steps are not part of the installation, and the release does not attempt to
+bypass Gatekeeper.
 
 ### Run from source
 

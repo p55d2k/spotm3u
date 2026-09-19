@@ -7,6 +7,11 @@ and the bgutil PO token plugin need is collected here; generated output lands
 in the git-ignored ``build/`` and ``dist/`` directories at the repository
 root.
 
+On macOS the COLLECT output is additionally wrapped into a normal
+``dist/spotm3u.app`` application bundle so users can launch it through
+Finder/Gatekeeper's one-time Right-click -> Open flow. The same onedir layout
+is kept on every platform; only macOS gains the ``.app`` wrapper.
+
 Usage (from the repository root):
 
     SPOTM3U_FFMPEG_DIR=<dir containing ffmpeg[.exe] and ffprobe[.exe]> \
@@ -99,3 +104,17 @@ coll = COLLECT(
     upx=False,
     name="spotm3u",
 )
+
+# macOS ships a real application bundle. BUNDLE relocates the collected files
+# into Contents/Frameworks (with data cross-linked through Contents/Resources)
+# and puts the executable in Contents/MacOS, which is what lets the frozen
+# bootloader find ``sys._MEIPASS``. It is a no-op on other platforms, but is
+# only declared on macOS so non-macOS builds keep their existing layout.
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="spotm3u.app",
+        icon=None,
+        bundle_identifier="com.github.p55d2k.spotm3u",
+        version=os.environ.get("SPOTM3U_APP_VERSION", "0.0.0"),
+    )

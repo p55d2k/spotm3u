@@ -45,6 +45,44 @@ def test_check_bundled_ffmpeg_rejects_missing_dir(tmp_path) -> None:
         smoke_test.check_bundled_ffmpeg(tmp_path)
 
 
+def _fake_app(tmp_path) -> Path:
+    app = tmp_path / "spotm3u.app"
+    macos = app / "Contents" / "MacOS"
+    macos.mkdir(parents=True)
+    (macos / "spotm3u").write_bytes(b"exe")
+    ffmpeg_dir = app / "Contents" / "Frameworks" / "ffmpeg"
+    ffmpeg_dir.mkdir(parents=True)
+    (ffmpeg_dir / "ffmpeg").write_bytes(b"a")
+    (ffmpeg_dir / "ffprobe").write_bytes(b"b")
+    return app
+
+
+def test_find_executable_inside_app_bundle(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+
+    assert smoke_test.is_app_bundle(app)
+    assert smoke_test.find_executable(app) == app / "Contents" / "MacOS" / "spotm3u"
+
+
+def test_check_bundled_ffmpeg_accepts_app_bundle(tmp_path) -> None:
+    smoke_test.check_bundled_ffmpeg(_fake_app(tmp_path))
+
+
+def test_bundle_root_detects_app_directory(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+
+    assert smoke_test._bundle_root(app) == app
+
+
+def test_bundle_root_finds_app_in_extraction_directory(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    container = tmp_path / "extracted"
+    container.mkdir()
+    app.rename(container / "spotm3u.app")
+
+    assert smoke_test._bundle_root(container) == container / "spotm3u.app"
+
+
 def test_bundle_root_unpacks_single_zip(tmp_path) -> None:
     bundle = tmp_path / "spotm3u"
     bundle.mkdir(parents=True)

@@ -2,10 +2,12 @@
 
 Starts the bundled executable directly -- no system Python, uv, or FFmpeg is
 used -- then exercises the web server, a rendered template, static assets, and
-the FFmpeg binaries bundled under ``_internal``. Exits non-zero on any failure
-so CI treats the run as a failed build.
+the bundled FFmpeg binaries. Understands both the onedir layout (executable and
+``_internal`` beside each other) and the macOS ``spotm3u.app`` bundle layout.
+Exits non-zero on any failure so CI treats the run as a failed build.
 
-Accepts a bundle directory, a release ZIP, or a directory containing one ZIP.
+Accepts a bundle directory, an extracted ``.app``, a release ZIP, or a
+directory containing one ZIP.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ HOME_MARKER = "Open Exportify"
 _LISTENING = re.compile(r"listening on http://127\.0\.0\.1:(\d+)")
 _SMOKE_PORT = 5290
 STARTUP_TIMEOUT = 90
+_SYMLINK_MODE = 0o120777
 
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -37,9 +40,22 @@ def _get(url: str) -> tuple[int, str]:
         return exc.code, ""
 
 
+def is_app_bundle(bundle: Path) -> bool:
+    """True when ``bundle`` is a macOS ``.app`` application bundle."""
+    return bundle.suffix == ".app" and (bundle / "Contents" / "MacOS").is_dir()
+
+
+def _executable_directory(bundle: Path) -> Path:
+    """Directory that directly contains the packaged executable."""
+    return bundle / "Contents" / "MacOS" if is_app_bundle(bundle) else bundle
+
+
 def find_executable(bundle: Path) -> Path:
+    directory = _executable_directory(bundle)
     candidates = {
-        candidate.name.lower(): candidate for candidate in bundle.iterdir() if candidate.is_file()
+        candidate.name.lower(): candidate
+        for candidate in directory.iterdir()
+        if candidate.is_file()
     }
     for name in ("spotm3u.exe", "spotm3u"):
         candidate = candidates.get(name)
@@ -48,14 +64,34 @@ def find_executable(bundle: Path) -> Path:
     raise SystemExit(f"no spotm3u executable found in {bundle}")
 
 
+def _ffmpeg_directories(bundle: Path) -> tuple[Path, ...]:
+    """Bundle locations that may hold FFmpeg, in preference order.
+
+    One-folder builds keep FFmpeg under ``_internal``; macOS ``.app`` bundles
+    keep it in ``Contents/Frameworks`` or ``Contents/Resources`` depending on
+    how PyInstaller classifies and cross-links the directory.
+    """
+    if is_app_bundle(bundle):
+        contents = bundle / "Contents"
+        return (
+            contents / "Frameworks" / "ffmpeg",
+            contents / "Resources" / "ffmpeg",
+            contents / "MacOS" / "ffmpeg",
+        )
+    return (bundle / "_internal" / "ffmpeg", bundle / "ffmpeg")
+
+
 def check_bundled_ffmpeg(bundle: Path) -> None:
-    ffmpeg_dir = bundle / "_internal" / "ffmpeg"
-    if not ffmpeg_dir.is_dir():
-        raise SystemExit(f"bundled ffmpeg directory missing: expected {ffmpeg_dir}")
-    present = {p.stem.lower() for p in ffmpeg_dir.iterdir() if p.is_file()}
     required = {"ffmpeg", "ffprobe"}
-    if not (present & required):
-        raise SystemExit(f"ffmpeg/ffprobe not found in {ffmpeg_dir}: got {sorted(present)}")
+    for ffmpeg_dir in _ffmpeg_directories(bundle):
+        if not ffmpeg_dir.is_dir():
+            continue
+        present = {p.stem.lower() for p in ffmpeg_dir.iterdir() if p.is_file()}
+        if present & required:
+            return
+    raise SystemExit(
+        f"bundled ffmpeg directory missing: expected one of {_ffmpeg_directories(bundle)}"
+    )
 
 
 def smoke_test(bundle: Path) -> None:
@@ -113,30 +149,67 @@ def smoke_test(bundle: Path) -> None:
         log_handle.close()
 
 
+def _has_executable(directory: Path) -> bool:
+    return any((directory / name).is_file() for name in ("spotm3u", "spotm3u.exe"))
+
+
+def _app_root(start: Path) -> Path | None:
+    """The enclosing ``.app`` bundle for a path inside one, if any."""
+    for candidate in (start, *start.parents):
+        if candidate.suffix == ".app":
+            return candidate
+    return None
+
+
 def _bundle_root(target: Path) -> Path:
     target = target.expanduser().resolve()
     if target.is_dir():
-        if any(
-            p.is_file() and p.name.lower() in {"spotm3u", "spotm3u.exe"} for p in target.iterdir()
-        ):
+        if is_app_bundle(target) or _has_executable(target):
             return target
+        apps = sorted(p for p in target.rglob("*.app") if p.is_dir())
+        if len(apps) == 1:
+            return apps[0]
+        if len(apps) > 1:
+            raise SystemExit(f"multiple .app bundles found in {target}")
         archives = sorted(target.rglob("*.zip"))
         if len(archives) == 1:
             return _unpack(archives[0], target.parent)
-        raise SystemExit(f"expected a bundle directory or exactly one ZIP in {target}")
+        executables = [
+            p
+            for p in target.rglob("*")
+            if p.is_file() and p.name.lower() in {"spotm3u", "spotm3u.exe"}
+        ]
+        if len(executables) == 1:
+            return _app_root(executables[0].parent) or executables[0].parent
+        raise SystemExit(f"expected a bundle directory, .app, or exactly one ZIP in {target}")
     return _unpack(target, target.parent)
+
+
+def _extract_zip(archive: Path, into: Path) -> None:
+    """Extract a ZIP, restoring Unix permissions and symlink entries."""
+    with zipfile.ZipFile(archive) as zf:
+        for info in zf.infolist():
+            zf.extract(info, into)
+            target = into / info.filename
+            mode = info.external_attr >> 16
+            if mode == _SYMLINK_MODE:
+                link = target.read_text(encoding="utf-8")
+                target.unlink()
+                target.symlink_to(link)
+            elif mode & 0o777:
+                target.chmod(mode & 0o777)
 
 
 def _unpack(archive: Path, into: Path) -> Path:
     extract_dir = into / f"{archive.stem}-extracted"
-    with zipfile.ZipFile(archive) as zf:
-        zf.extractall(extract_dir)
+    _extract_zip(archive, extract_dir)
     for candidate in extract_dir.rglob("*"):
         if candidate.is_file() and candidate.name.lower() in {"spotm3u", "spotm3u.exe"}:
-            bundle = candidate.parent
+            bundle = _app_root(candidate.parent) or candidate.parent
             _make_executable(candidate)
-            for name in ("ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"):
-                _make_executable(bundle / "_internal" / "ffmpeg" / name)
+            for ffmpeg_dir in _ffmpeg_directories(bundle):
+                for name in ("ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"):
+                    _make_executable(ffmpeg_dir / name)
             return bundle
     raise SystemExit(f"no spotm3u executable found in extracted archive {archive}")
 

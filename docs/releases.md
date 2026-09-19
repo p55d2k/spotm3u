@@ -21,8 +21,17 @@ requests run CI but do not publish a release.
 
 Archives are named
 `spotm3u-<version>-<platform>-<arch>.zip`. The tag's `v` prefix is removed from
-the filename and release name. A failed build or verification job prevents
-publishing.
+the filename and release name. The Windows and Linux archives contain the
+one-folder bundle directory (`spotm3u/`); the macOS archive contains the
+application bundle itself (`spotm3u.app/`). A failed build or verification job
+prevents publishing.
+
+Releases are intentionally unsigned and un-notarized: the workflow does not use
+Apple Developer Program membership, Developer ID certificates, signing secrets,
+or notarization. The macOS verification job validates the bundle structure and
+runs the smoke test, but never fails merely because the app is unsigned. See the
+README for the one-time macOS Right-click → Open approval users perform on first
+launch.
 
 Version tags should follow semantic versioning: increment the patch for
 backward-compatible fixes, the minor for backward-compatible features, and the
