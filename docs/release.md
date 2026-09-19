@@ -139,9 +139,10 @@ group (`pyproject.toml`). A one-folder build is produced with:
 
 ```sh
 uv sync --group build
-# Optional: bundle FFmpeg into _internal/ffmpeg. Stage real (un-symlinked)
-# binaries from e.g. a Homebrew install:  mkdir -p ffmpeg-stage/ffmpeg && \
-#   for b in ffmpeg ffprobe; do cp -L "$(command -v $b)" ffmpeg-stage/ffmpeg/; done
+# Optional: bundle FFmpeg into _internal/ffmpeg. The spec copies the CONTENTS
+# of $SPOTM3U_FFMPEG_DIR there, so it must hold ffmpeg + ffprobe directly.
+# Stage real (un-symlinked) binaries from e.g. a Homebrew install:
+#   packaging/stage_ffmpeg.py ffmpeg-stage
 SPOTM3U_FFMPEG_DIR=/abs/path/ffmpeg-stage uv run --group build pyinstaller \
   --noconfirm --clean packaging/spotm3u.spec
 ```

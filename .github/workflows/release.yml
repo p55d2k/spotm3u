@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+          - os: macos-14
+            platform: macos
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --locked --group build
+
+      - name: Install FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Stage FFmpeg for bundling
+        run: uv run -q python packaging/stage_ffmpeg.py ffmpeg-stage
+
+      - name: Compute release version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build with PyInstaller
+        env:
+          SPOTM3U_FFMPEG_DIR: ${{ github.workspace }}/ffmpeg-stage
+        run: uv run -q --group build pyinstaller --noconfirm --clean packaging/spotm3u.spec
+
+      - name: Package release archive
+        run: uv run -q python packaging/make_archive.py dist/spotm3u dist-artifacts/spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip
+
+      - name: Upload build archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist-artifacts/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download platform archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "spotm3u-*"
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Compute release version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: spotm3u ${{ env.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release-artifacts/*.zip
