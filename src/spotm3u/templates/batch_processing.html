@@ -52,6 +52,7 @@
       const resultLink = document.getElementById("result-link");
       const etaChip = document.getElementById("eta-chip");
       const statusUrl = "{{ url_for('batch_processing_status', job_id=job_id) }}";
+      const playlistViews = new Map();
 
       function progressFraction(state) {
         const total = state.total || 1;
@@ -131,6 +132,82 @@
         return item;
       }
 
+      // Refresh an existing row in place so a status change never rebuilds the
+      // list, which would otherwise reset its scroll position on every poll.
+      function updateTrackRow(item, track) {
+        const status = track.resolution || track.status || "queued";
+        item.className = "track-" + status;
+        const icon = item.querySelector(".track-icon");
+        if (icon && icon.dataset.statusIcon !== status) {
+          icon.classList.remove("track-icon-wait", "track-icon-ok", "track-icon-warn", "track-icon-err");
+          icon.dataset.statusIcon = status;
+          applyStatusIcons(item);
+        }
+        const main = item.querySelector(".track-art-main");
+        const existingReason = main.querySelector(".track-reason");
+        if (track.reason) {
+          const reason = existingReason || main.appendChild(document.createElement("div"));
+          reason.className = "track-reason";
+          reason.textContent = track.reason;
+        } else if (existingReason) {
+          existingReason.remove();
+        }
+      }
+
+      // Tracks keep their playlist order, so each list is updated by index.
+      function renderTrackRows(container, tracks) {
+        const scrollTop = container.scrollTop;
+        for (let index = 0; index < tracks.length; index += 1) {
+          const existing = container.children[index];
+          if (existing) {
+            updateTrackRow(existing, tracks[index]);
+          } else {
+            container.appendChild(createTrackRow(tracks[index]));
+          }
+        }
+        while (container.children.length > tracks.length) {
+          container.lastElementChild.remove();
+        }
+        container.scrollTop = scrollTop;
+      }
+
+      function createPlaylistView(playlist) {
+        const item = document.createElement("section");
+        const heading = document.createElement("h2");
+        heading.textContent = playlist.playlist.name;
+        const detail = document.createElement("p");
+        const trackBar = document.createElement("div");
+        trackBar.className = "progress-track";
+        const trackProgress = document.createElement("div");
+        trackProgress.className = "progress-bar";
+        trackBar.appendChild(trackProgress);
+        const activeTrack = document.createElement("p");
+        activeTrack.className = "current-track";
+        activeTrack.hidden = true;
+        const tracks = document.createElement("ol");
+        tracks.className = "track-list";
+        item.append(heading, detail, trackBar, activeTrack, tracks);
+        return {item, detail, trackProgress, activeTrack, tracks};
+      }
+
+      function updatePlaylistView(view, playlist) {
+        view.item.className = "batch-playlist" + (playlist.status === "running" ? " active" : "");
+        view.detail.textContent = stageLabel(playlist.status) + " · " +
+          playlist.searched + " / " + playlist.playlist.total_tracks + " found · " +
+          playlist.completed + " / " + playlist.playlist.total_tracks + " tracks · " +
+          playlist.successful + " successful · " + playlist.failed + " failed";
+        view.trackProgress.style.width = (playlist.playlist.total_tracks
+          ? Math.round(playlist.completed / playlist.playlist.total_tracks * 100) : 0) + "%";
+        if (playlist.current_track) {
+          view.activeTrack.hidden = false;
+          view.activeTrack.textContent = "Current: " + playlist.current_track.title +
+            " — " + stageLabel(playlist.current_track.status);
+        } else {
+          view.activeTrack.hidden = true;
+        }
+        renderTrackRows(view.tracks, playlist.tracks);
+      }
+
       function renderEta(state) {
         if (state.status !== "running") {
           etaChip.hidden = true;
@@ -167,39 +244,25 @@
             active.current_track.title + " — " + stageLabel(active.current_track.status)
           : active ? "Active playlist: " + active.playlist.name : "";
         renderEta(state);
-        list.textContent = "";
+        // Reuse each playlist's DOM so its track list keeps its scroll position
+        // while the status poll refreshes every 700 ms.
+        const seen = new Set();
         for (const playlist of state.playlists) {
-          const item = document.createElement("section");
-          item.className = "batch-playlist" + (playlist.status === "running" ? " active" : "");
-          const heading = document.createElement("h2");
-          heading.textContent = playlist.playlist.name;
-          const detail = document.createElement("p");
-          detail.textContent = stageLabel(playlist.status) + " · " +
-            playlist.searched + " / " + playlist.playlist.total_tracks + " found · " +
-            playlist.completed + " / " + playlist.playlist.total_tracks + " tracks · " +
-            playlist.successful + " successful · " + playlist.failed + " failed";
-          const trackBar = document.createElement("div");
-          trackBar.className = "progress-track";
-          const trackProgress = document.createElement("div");
-          trackProgress.className = "progress-bar";
-          trackProgress.style.width = (playlist.playlist.total_tracks
-            ? Math.round(playlist.completed / playlist.playlist.total_tracks * 100) : 0) + "%";
-          trackBar.appendChild(trackProgress);
-          item.append(heading, detail, trackBar);
-          if (playlist.current_track) {
-            const activeTrack = document.createElement("p");
-            activeTrack.className = "current-track";
-            activeTrack.textContent = "Current: " + playlist.current_track.title +
-              " — " + stageLabel(playlist.current_track.status);
-            item.appendChild(activeTrack);
+          const key = playlist.playlist.id;
+          seen.add(key);
+          let view = playlistViews.get(key);
+          if (!view) {
+            view = createPlaylistView(playlist);
+            playlistViews.set(key, view);
+            list.appendChild(view.item);
           }
-          const tracks = document.createElement("ol");
-          tracks.className = "track-list";
-          for (const track of playlist.tracks) {
-            tracks.appendChild(createTrackRow(track));
+          updatePlaylistView(view, playlist);
+        }
+        for (const [key, view] of playlistViews) {
+          if (!seen.has(key)) {
+            view.item.remove();
+            playlistViews.delete(key);
           }
-          item.appendChild(tracks);
-          list.appendChild(item);
         }
         resultLink.textContent = "";
         if (state.status === "completed") {

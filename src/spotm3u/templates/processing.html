@@ -233,11 +233,43 @@
         return item;
       }
 
-      function renderTracks(tracks) {
-        trackList.textContent = "";
-        for (const track of tracks) {
-          trackList.appendChild(createTrackRow(track));
+      // Refresh an existing row in place so a status change never rebuilds the
+      // list, which would otherwise reset its scroll position every second.
+      function updateTrackRow(item, track) {
+        const status = track.resolution || track.status || "queued";
+        item.className = "track-" + status;
+        const icon = item.querySelector(".track-icon");
+        if (icon && icon.dataset.statusIcon !== status) {
+          icon.classList.remove("track-icon-wait", "track-icon-ok", "track-icon-warn", "track-icon-err");
+          icon.dataset.statusIcon = status;
+          applyStatusIcons(item);
         }
+        const main = item.querySelector(".track-art-main");
+        const existingReason = main.querySelector(".track-reason");
+        if (track.reason) {
+          const reason = existingReason || main.appendChild(document.createElement("div"));
+          reason.className = "track-reason";
+          reason.textContent = track.reason;
+        } else if (existingReason) {
+          existingReason.remove();
+        }
+      }
+
+      // Tracks keep their playlist order, so the list can be updated by index.
+      function renderTracks(tracks) {
+        const scrollTop = trackList.scrollTop;
+        for (let index = 0; index < tracks.length; index += 1) {
+          const existing = trackList.children[index];
+          if (existing) {
+            updateTrackRow(existing, tracks[index]);
+          } else {
+            trackList.appendChild(createTrackRow(tracks[index]));
+          }
+        }
+        while (trackList.children.length > tracks.length) {
+          trackList.lastElementChild.remove();
+        }
+        trackList.scrollTop = scrollTop;
       }
 
       async function poll() {

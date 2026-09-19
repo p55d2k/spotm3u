@@ -555,6 +555,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   margin: 0.9rem 0 0;
   max-height: 20rem;
   overflow-y: auto;
+  overflow-anchor: none;
   padding: 0.25rem 0.75rem;
 }
 
