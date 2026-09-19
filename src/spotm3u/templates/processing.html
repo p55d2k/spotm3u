@@ -28,6 +28,7 @@
         <p id="job-status-text" class="status-line" role="status"></p>
         <div class="progress-track" aria-hidden="true">
           <div id="progress-bar" class="progress-bar"></div>
+          <span id="eta-chip" class="eta-chip" hidden></span>
         </div>
         <dl class="stats">
           <div><dt>Searched</dt><dd id="stat-searched">0</dd></div>
@@ -36,6 +37,7 @@
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
         </dl>
         <p id="current-track" class="current-track"></p>
+        <p id="eta" class="eta" hidden aria-live="polite"></p>
         <p id="job-error" class="error" hidden></p>
         <ol id="track-list" class="track-list"></ol>
       </section>
@@ -53,7 +55,15 @@
       const jobError = document.getElementById("job-error");
       const trackList = document.getElementById("track-list");
       const downloadWrap = document.getElementById("download-wrap");
+      const etaEl = document.getElementById("eta");
+      const etaChip = document.getElementById("eta-chip");
       const statusUrl = "{{ url_for('processing_status', job_id=job_id, playlist_id=playlist_id) }}";
+
+      let lastRenderAt = 0;
+
+      function fmtNumber(n) {
+        return n.toLocaleString();
+      }
 
       const stageLabels = {
         queued: "Queued",
@@ -88,6 +98,62 @@
         }
       }
 
+      // Only show ETA while there is enough signal and the estimate is still
+      // plausibly near-term; once the estimate gets too old or drifts too far
+      // out we quietly hide it rather than showing a stale projection.
+      const ETA_MAX_FUTURE_MS = 5 * 60 * 1000;
+      const ETA_STALE_MS = 30_000;
+
+      function fmtRemaining(elapsedMs, completed, total) {
+        if (total <= 0 || completed <= 0) {
+          return "";
+        }
+        const fraction = Math.max(0, Math.min(1, completed / total));
+        if (fraction <= 0) {
+          return "";
+        }
+        const seconds = elapsedMs / 1000;
+        if (seconds < 1) {
+          return "";
+        }
+        const projectedTotalSeconds = seconds / fraction;
+        const remainingSeconds = projectedTotalSeconds - seconds;
+        if (remainingSeconds <= 0) {
+          return "";
+        }
+        if (remainingSeconds > ETA_MAX_FUTURE_MS / 1000) {
+          return "";
+        }
+        const remaining = Math.max(1, Math.round(remainingSeconds));
+        if (remaining < 60) {
+          return "About " + remaining + " seconds remaining";
+        }
+        const minutes = Math.max(1, Math.round(remainingSeconds / 60));
+        return "About " + minutes + " minutes remaining";
+      }
+
+      function renderEta(state) {
+        if (state.status !== "running") {
+          etaEl.hidden = true;
+          etaChip.hidden = true;
+          return;
+        }
+        const now = performance.now();
+        const elapsedMs = now - state.started_at;
+        const etaTotal = state.progress_total || state.playlist.total_tracks || 1;
+        const remaining = fmtRemaining(elapsedMs, state.completed, etaTotal);
+        if (!remaining || now - lastRenderAt > ETA_STALE_MS) {
+          etaEl.hidden = true;
+          etaChip.hidden = true;
+          return;
+        }
+        lastRenderAt = now;
+        etaEl.hidden = false;
+        etaEl.textContent = remaining;
+        etaChip.hidden = false;
+        etaChip.textContent = remaining;
+      }
+
       function render(state) {
         progressSection.hidden = false;
         const total = state.progress_total || state.playlist.total_tracks || 1;
@@ -98,13 +164,14 @@
             : 0;
         progressBar.style.width = percent + "%";
         statusText.textContent = statusLabel(state.status);
-        statCompleted.textContent = state.completed + " / " + total;
-        statSearched.textContent = searched + " / " + total;
-        statSuccessful.textContent = state.successful;
-        statFailed.textContent = state.failed;
+        statCompleted.textContent = fmtNumber(state.completed) + " / " + fmtNumber(total);
+        statSearched.textContent = fmtNumber(searched) + " / " + fmtNumber(total);
+        statSuccessful.textContent = fmtNumber(state.successful);
+        statFailed.textContent = fmtNumber(state.failed);
         currentTrackText.textContent = state.current_track
           ? "Current: " + state.current_track.title + " — " + stageLabel(state.current_track.status)
           : "";
+        renderEta(state);
         jobError.hidden = !state.error;
         jobError.textContent = state.error || "";
         renderTracks(state.tracks);
@@ -118,8 +185,6 @@
         }
       }
 
-      // Mirrors the result page row: title plus a status badge, then artists
-      // and the processing reason underneath.
       function createTrackRow(track) {
         const item = document.createElement("li");
         item.classList.add("track-" + track.status);

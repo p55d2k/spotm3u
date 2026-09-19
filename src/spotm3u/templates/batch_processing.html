@@ -29,6 +29,7 @@
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
         </dl>
         <p id="current-track" class="current-track"></p>
+        <p id="eta" class="eta" hidden aria-live="politely"></p>
         <div id="playlists" class="batch-playlists"></div>
         <p id="result-link"></p>
       </section>
@@ -46,7 +47,29 @@
       const currentTrack = document.getElementById("current-track");
       const list = document.getElementById("playlists");
       const resultLink = document.getElementById("result-link");
+      const etaEl = document.getElementById("eta");
       const statusUrl = "{{ url_for('batch_processing_status', job_id=job_id) }}";
+
+      let lastRenderAt = 0;
+
+      const ETA_MAX_FUTURE_SECONDS = 5 * 60;
+      const ETA_STALE_MS = 30_000;
+
+      function fmtRemaining(elapsedMs, completed, total) {
+        if (total <= 0 || completed <= 0) return "";
+        const fraction = Math.max(0, Math.min(1, completed / total));
+        if (fraction <= 0) return "";
+        const seconds = elapsedMs / 1000;
+        if (seconds < 1) return "";
+        const projectedTotalSeconds = seconds / fraction;
+        const remainingSeconds = projectedTotalSeconds - seconds;
+        if (remainingSeconds <= 0) return "";
+        if (remainingSeconds > ETA_MAX_FUTURE_SECONDS) return "";
+        const remaining = Math.max(1, Math.round(remainingSeconds));
+        if (remaining < 60) return "About " + remaining + " seconds remaining";
+        const minutes = Math.max(1, Math.round(remainingSeconds / 60));
+        return "About " + minutes + " minutes remaining";
+      }
       const stageLabels = {
         queued: "Waiting to start",
         "resolving-local": "Finding local audio",
@@ -91,6 +114,23 @@
         return item;
       }
 
+      function renderEta(state) {
+        if (state.status !== "running") {
+          etaEl.hidden = true;
+          return;
+        }
+        const now = performance.now();
+        const elapsedMs = now - state.started_at;
+        const remaining = fmtRemaining(elapsedMs, state.completed, state.total);
+        if (!remaining || now - lastRenderAt > ETA_STALE_MS) {
+          etaEl.hidden = true;
+          return;
+        }
+        lastRenderAt = now;
+        etaEl.hidden = false;
+        etaEl.textContent = remaining;
+      }
+
       function render(state) {
         progress.hidden = false;
         status.textContent = state.status === "completed"
@@ -109,6 +149,7 @@
           ? "Active playlist: " + active.playlist.name + " · Current: " +
             active.current_track.title + " — " + stageLabel(active.current_track.status)
           : active ? "Active playlist: " + active.playlist.name : "";
+        renderEta(state);
         list.textContent = "";
         for (const playlist of state.playlists) {
           const item = document.createElement("section");
@@ -159,7 +200,10 @@
       }
       async function poll() {
         const response = await fetch(statusUrl);
-        if (response.ok) render(await response.json());
+        if (response.ok) {
+          render(await response.json());
+          lastRenderAt = performance.now();
+        }
       }
       form.addEventListener("submit", async (event) => {
         event.preventDefault();

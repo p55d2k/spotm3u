@@ -473,6 +473,37 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .stats dd { font-size: 1.2rem; font-weight: 750; margin: 0.25rem 0 0; }
 .current-track { color: var(--muted); margin: 0.65rem 0 0; }
 
+.eta {
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0.65rem 0 0;
+  min-height: 1.15rem;
+}
+
+.eta[hidden] { visibility: hidden; }
+
+.progress-track { display: flex; align-items: center; gap: 0.65rem; }
+
+.eta-chip {
+  background: var(--blue-soft);
+  border: 1px solid rgb(37 99 235 / 35%);
+  border-radius: 999px;
+  color: var(--blue-dark);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.6rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .eta-chip {
+  background: #193b70;
+  border-color: #2a4f8f;
+  color: #cfe0ff;
+}
+
 .batch-playlists { display: grid; gap: 0.6rem; margin-top: 0.9rem; }
 .batch-playlist { border: 1px solid var(--line); border-radius: 14px; padding: 1rem; }
 .batch-playlist.active { border-color: var(--blue); box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }

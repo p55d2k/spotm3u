@@ -125,6 +125,8 @@ class ProcessingJob:
         self._error: str | None = None
         self._m3u_path: Path | None = None
         self._deadline: float | None = time.monotonic() + timeout if timeout is not None else None
+        self._started_at: float | None = None
+        self._completed_at: float | None = None
         self._track_states: list[TrackJobState] = [
             TrackJobState(index, track.title, tuple(track.artists), "queued")
             for index, track in enumerate(self.tracks)
@@ -132,6 +134,8 @@ class ProcessingJob:
         self._results: list[TrackResolution | None] = [None] * len(self.tracks)
         # Set while a retry is running: the tracks the progress belongs to.
         self._pending: tuple[int, ...] | None = None
+        self._started_at: float | None = None
+        self._completed_at: float | None = None
 
     @property
     def status(self) -> JobStatus:
@@ -184,6 +188,7 @@ class ProcessingJob:
             if self._status != "queued":
                 raise JobStartError("job has already started")
             self._status = "running"
+            self._started_at = time.monotonic()
             if self._thread is not None:
                 return
             self._thread = threading.Thread(
@@ -210,6 +215,7 @@ class ProcessingJob:
         with self._lock:
             if self._status in {"queued", "running"}:
                 raise JobStartError("job is still running")
+            self._started_at = self._started_at or time.monotonic()
             indices = tuple(
                 index
                 for index, result in enumerate(self._results)
@@ -271,6 +277,7 @@ class ProcessingJob:
                 self._current_index = None
                 self._pending = None
                 self._status = "completed"
+                self._completed_at = time.monotonic()
             track_log.info(
                 "job completed m3u_path=%s successful=%d failed=%d",
                 m3u_path,
@@ -283,6 +290,7 @@ class ProcessingJob:
                 self._pending = None
                 self._error = str(exc)
                 self._status = "failed"
+                self._completed_at = time.monotonic()
             track_log.exception("job failed: %s", exc)
 
     def _resolve_all(
@@ -497,6 +505,12 @@ class ProcessingJob:
                 "output_dir": str(self.output_dir),
                 "m3u_path": (str(self._m3u_path) if self._m3u_path is not None else None),
                 "tracks": track_states,
+                "started_at": (
+                    int(self._started_at * 1000) if self._started_at is not None else None
+                ),
+                "completed_at": (
+                    int(self._completed_at * 1000) if self._completed_at is not None else None
+                ),
             }
 
     def as_dict(self) -> dict[str, object]:
