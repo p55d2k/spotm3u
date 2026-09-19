@@ -282,12 +282,13 @@ def test_peer_result_is_not_reused_when_it_is_invalid_for_the_waiting_track(tmp_
     import threading
 
     gate = threading.Event()
-    first_started = threading.Event()
+    good_started = threading.Event()
     calls: list[str] = []
 
     def fake_perform(track, source_url, destination, output_path, **kwargs):
         calls.append(track.spotify_id)
-        first_started.set()
+        if track.spotify_id == "shared-good":
+            good_started.set()
         gate.wait(timeout=5)
         output_path.write_bytes(b"mp3")
         return output_path
@@ -312,16 +313,18 @@ def test_peer_result_is_not_reused_when_it_is_invalid_for_the_waiting_track(tmp_
         except BaseException as exc:  # noqa: BLE001 - collected for the assertion
             errors.append(exc)
 
-    threads = [
-        threading.Thread(target=run, args=(good,)),
-        threading.Thread(target=run, args=(other,)),
-    ]
-    for thread in threads:
-        thread.start()
-    assert first_started.wait(timeout=5)
+    # ``good`` must be the single-flight owner and ``other`` the waiting peer:
+    # only then does the peer hit the invalid-reuse path that this test guards.
+    # Starting ``good`` first and waiting for its download to begin is
+    # deterministic, whereas racing both threads makes the outcome a coin flip.
+    good_thread = threading.Thread(target=run, args=(good,))
+    good_thread.start()
+    assert good_started.wait(timeout=5)
+    other_thread = threading.Thread(target=run, args=(other,))
+    other_thread.start()
     time.sleep(0.1)
     gate.set()
-    for thread in threads:
+    for thread in (good_thread, other_thread):
         thread.join(timeout=5)
 
     assert not errors
@@ -809,6 +812,59 @@ def test_plugins_load_once_under_concurrent_downloads(monkeypatch):
         thread.join()
 
     assert loads == [1]
+
+
+def test_plugin_load_timeout_does_not_stall_worker(monkeypatch):
+
+    flag = types.SimpleNamespace(value=False)
+
+    def hung_load_all_plugins():
+        time.sleep(10)
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace())
+    monkeypatch.setitem(
+        sys.modules, "yt_dlp.globals", types.SimpleNamespace(all_plugins_loaded=flag)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "yt_dlp.plugins",
+        types.SimpleNamespace(load_all_plugins=hung_load_all_plugins),
+    )
+
+    from spotm3u.online import _ytdlp
+
+    start = time.monotonic()
+    _ytdlp._load_with_timeout(hung_load_all_plugins, timeout=0.1)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 2.0
+    assert not flag.value
+
+
+def test_plugin_load_timeout_still_marks_done_when_hung_import_finishes(monkeypatch):
+
+    flag = types.SimpleNamespace(value=False)
+
+    def slow_load_all_plugins():
+        time.sleep(0.2)
+        flag.value = True
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace())
+    monkeypatch.setitem(
+        sys.modules, "yt_dlp.globals", types.SimpleNamespace(all_plugins_loaded=flag)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "yt_dlp.plugins",
+        types.SimpleNamespace(load_all_plugins=slow_load_all_plugins),
+    )
+
+    from spotm3u.online import _ytdlp
+
+    _ytdlp._load_with_timeout(slow_load_all_plugins, timeout=0.05)
+    time.sleep(0.3)
+
+    assert flag.value
 
 
 # --- Secret redaction -------------------------------------------------------
