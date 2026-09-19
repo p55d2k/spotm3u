@@ -137,6 +137,15 @@ Resolved files retain the individual artist values in their ID3 metadata, so
 collaborations are imported as collaborations rather than one concatenated
 artist name.
 
+When a user playlist with the same name already exists in Music, the app asks
+the user (via an AppleScript dialog) whether to **Add all** (append every
+file, creating duplicates), **Skip duplicates** (only add files whose location
+is not already in that playlist, so re-importing the same M3U twice does not
+double-add), or **Cancel**. A cancelled import changes nothing. The playlist
+is revealed in Music as a best effort, but Music may not come to the
+foreground, so the result page also tells the user to open Apple Music and
+look for the playlist in the Library sidebar.
+
 The integration is not shown on other platforms. Music reports per-entry
 errors back to the app; unresolved tracks and import failures are reported as
 partial results rather than being claimed as successful. The M3U download

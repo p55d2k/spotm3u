@@ -477,7 +477,10 @@ def create_app(config: dict | None = None) -> Flask:
                 "apple_music": {
                     "imported": result.imported,
                     "failed": result.failed,
+                    "skipped": result.skipped,
                     "unresolved": unresolved,
+                    "mode": result.mode,
+                    "cancelled": result.cancelled,
                     "partial": bool(result.failed or unresolved),
                 },
             },
