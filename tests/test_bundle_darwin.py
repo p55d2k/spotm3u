@@ -59,6 +59,7 @@ def test_bundle_darwin_dylibs_rewrites_and_signs_copies(monkeypatch, tmp_path) -
     monkeypatch.setattr(bundle, "_dylib_deps", fake_deps)
     monkeypatch.setattr(bundle, "_homebrew_dep", lambda dep: True)
     monkeypatch.setattr(bundle, "_tool", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(bundle, "_codesign_available", lambda: True)
 
     class FakeSubprocess:
         DEVNULL = -3
