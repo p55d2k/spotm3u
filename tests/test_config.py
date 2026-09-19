@@ -25,7 +25,7 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     config = load_config(tmp_path / "missing.toml")
 
     assert config.port == 5001
-    assert config.resolve_workers == 4
+    assert config.resolve_workers == 3
     assert config.max_upload_size == DEFAULT_MAX_UPLOAD_SIZE
     assert config.max_job_age == DEFAULT_MAX_JOB_AGE
     assert config.max_search_workers == 4

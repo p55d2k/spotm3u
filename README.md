@@ -259,7 +259,7 @@ Configuration is optional TOML, loaded from `./config.toml` or the path in
 | `web.upload_root`                       | system temp/`spotm3u`               | Temporary upload/job root      |
 | `web.music_library`                     | `~/Music`                           | Local audio search root        |
 | `web.download_dir`                      | `<music_library>/spotm3u-downloads` | Persistent MP3 and M3U output  |
-| `web.resolve_workers`                   | `4`                                 | Track resolution workers       |
+| `web.resolve_workers`                   | `3`                                 | Track resolution workers       |
 | `web.log_level`                         | `INFO`                              | `DEBUG`, `INFO`, etc.          |
 | `upload.max_upload_size`                | `50 MiB`                            | Compressed upload limit        |
 | `upload.max_decompressed_size`          | `512 MiB`                           | Expanded archive limit         |

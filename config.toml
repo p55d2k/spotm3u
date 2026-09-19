@@ -31,7 +31,7 @@
 # download_dir = "~/Music/spotm3u-downloads"
 
 # How many tracks are resolved in parallel (search phase only).
-# resolve_workers = 4
+# resolve_workers = 3
 
 # Logging verbosity for developer diagnostics. Per-track records always
 # include the job and track identifiers. Use DEBUG for full stage tracing.

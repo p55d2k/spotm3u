@@ -37,7 +37,7 @@ class Config:
     upload_root: str | None = None
     music_library: str | None = None
     download_dir: str | None = None
-    resolve_workers: int = 4
+    resolve_workers: int = 3
     log_level: str | None = None
     # [upload]
     max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE
