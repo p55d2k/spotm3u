@@ -546,25 +546,27 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .track-filter[aria-pressed="true"] .filter-count { color: rgb(255 255 255 / 78%); }
 
 .track-list {
-  counter-reset: track;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 0 1.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   list-style: none;
   margin: 0.9rem 0 0;
   max-height: 20rem;
   overflow-y: auto;
-  padding-left: 0;
+  padding: 0.25rem 0.75rem;
 }
 
-/* The counter sits outside the text flow so wrapped titles, artists, and
-   reasons stay aligned with the track title instead of the list edge. */
-.track-list li { border-bottom: 1px solid var(--stat-line); counter-increment: track; font-size: 0.9rem; padding: 0.5rem 0 0.5rem 2.15rem; position: relative; }
+.track-list li { border-bottom: 1px solid var(--stat-line); font-size: 0.9rem; padding: 0.5rem 0; }
 .track-list li:last-child { border-bottom: 0; }
-.track-list li::before { color: var(--faint); content: counter(track) "."; left: 0; position: absolute; text-align: right; width: 1.6rem; }
+.track-list li:nth-last-child(2):not(:last-child) { border-bottom: 0; }
 
 .track-head { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .track-title { color: var(--ink); }
 .track-artists { color: var(--muted); font-size: 0.85rem; }
 
-.track-art-row { align-items: flex-start; display: flex; gap: 0.7rem; min-width: 0; }
+.track-art-row { align-items: center; display: flex; gap: 0.7rem; min-width: 0; }
 .track-art-main { flex: 1 1 auto; min-width: 0; }
 
 .track-artwork {

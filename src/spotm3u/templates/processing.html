@@ -195,7 +195,10 @@
           art.textContent = "";
           art.appendChild(img);
         }
-        item.appendChild(art);
+        const artRow = document.createElement("div");
+        artRow.className = "track-art-row";
+        artRow.appendChild(art);
+        item.appendChild(artRow);
         const main = document.createElement("div");
         main.className = "track-art-main";
         const head = document.createElement("div");
@@ -220,7 +223,7 @@
           reason.textContent = track.reason;
           main.appendChild(reason);
         }
-        item.appendChild(main);
+        artRow.appendChild(main);
         return item;
       }
 
