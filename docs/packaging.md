@@ -11,6 +11,15 @@ packaged application use the same Flask app, but the packaged launcher starts
 without Flask's debug reloader and discovers configuration inside the bundle
 or beside the executable.
 
+The launcher binds to `127.0.0.1`, prefers the configured `web.port`, and falls
+back to a free loopback port when it is taken. It then opens the UI in the
+default browser once the server accepts connections, and never opens it twice
+because no reloader process is spawned. On Windows the executable is built
+windowed (`console=False`) so a double-click never flashes a terminal; that
+build has no standard streams, so a startup failure is reported through a
+native message box and the process exits non-zero. macOS and Linux keep their
+console for logs.
+
 ## Build locally
 
 Build dependencies are separate from runtime and development dependencies:
@@ -67,4 +76,7 @@ The release workflow then verifies each archive:
   not checked.
 - `packaging/smoke_test.py` launches the packaged executable, renders the home
   template, serves a static asset, and confirms the bundled FFmpeg. It accepts
-  both the one-folder layout and the macOS `.app` bundle.
+  both the one-folder layout and the macOS `.app` bundle. Readiness is taken
+  from the HTTP response on the configured port rather than from the startup
+  log, so the windowed Windows build is verified the same way as the rest, and
+  `SPOTM3U_NO_BROWSER=1` keeps a browser tab from opening during the check.

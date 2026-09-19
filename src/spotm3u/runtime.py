@@ -1,7 +1,8 @@
 """Runtime environment helpers shared by the launcher and packaging helpers.
 
-Distinguishes a PyInstaller bundle from a normal interpreter and returns the
-directories that hold bundled resources and sibling binaries.
+Distinguishes a PyInstaller bundle from a normal interpreter, reports whether
+standard streams exist, and returns the directories that hold bundled resources
+and sibling binaries.
 """
 
 from __future__ import annotations
@@ -13,6 +14,16 @@ from pathlib import Path
 def is_frozen() -> bool:
     """True when running inside a PyInstaller bundle."""
     return getattr(sys, "frozen", False)
+
+
+def has_console() -> bool:
+    """True when the process can report errors on a standard stream.
+
+    A windowed (no-console) PyInstaller build on Windows leaves ``sys.stdout``
+    and ``sys.stderr`` at ``None``, so messages there would be lost and a
+    graphical error mechanism is needed instead.
+    """
+    return sys.stdout is not None or sys.stderr is not None
 
 
 def bundle_root() -> Path:

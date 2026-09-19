@@ -12,7 +12,10 @@
 # Fallback examples are shown next to each setting.
 
 [web]
-# HTTP port used by `spotm3u`.
+# Preferred HTTP port used by `spotm3u`. The server binds to 127.0.0.1 and
+# falls back to a free port when this one is already taken, so a busy port
+# does not prevent startup. The UI opens in the default browser once the
+# server is ready; set SPOTM3U_NO_BROWSER=1 to keep the browser closed.
 # port = 5001
 
 # Where uploaded Exportify ZIP jobs are stored temporarily.

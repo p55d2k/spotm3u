@@ -18,7 +18,7 @@ Exportify → Download → Launch → Upload ZIP → Get M3U
 
 1. Exportify → export your Spotify playlists and download the ZIP.
 2. Download → get the spotm3u app for your platform.
-3. Launch → run the app and open <http://127.0.0.1:5001/>.
+3. Launch → start the app; spotm3u opens in your default browser.
 4. Upload ZIP → drag in the Exportify ZIP and choose playlists.
 5. Get M3U → review matches and download the generated playlist.
 
@@ -58,7 +58,9 @@ to the Music app.
 
 Download the archive for your platform from
 [GitHub Releases](https://github.com/p55d2k/spotm3u/releases), extract it, and
-start the application. Then open <http://127.0.0.1:5001/>.
+start the application. spotm3u starts a local server on a free loopback port
+and opens its interface in your default browser, so there is no URL to type and
+no terminal to keep open.
 
 The release archives built by CI include a Python runtime, application
 dependencies, and FFmpeg/ffprobe. They do not require Python, `uv`, or a
@@ -66,9 +68,13 @@ system FFmpeg installation. CI currently builds:
 
 | Platform | Architecture | Archive suffix | Launch |
 | --- | --- | --- | --- |
-| Windows | x86_64 | `windows-x86_64` | Run `spotm3u.exe` |
+| Windows | x86_64 | `windows-x86_64` | Double-click `spotm3u.exe` |
 | macOS | arm64 | `macos-arm64` | Open `spotm3u.app` (see below) |
 | Linux | x86_64 | `linux-x86_64` | Run `spotm3u` |
+
+The server binds to `127.0.0.1` only, so the interface is not reachable from
+other machines. It prefers the port configured in `config.toml` and otherwise
+picks a free one; the browser always opens the port actually in use.
 
 None of the releases are signed or notarized. The project does not use Apple
 Developer Program membership, Developer ID certificates, or Apple's
@@ -76,6 +82,22 @@ notarization service, so macOS and Windows may show a security prompt on first
 launch. Apple Music integration is macOS-only. A YouTube PO-token provider is
 an optional external service and is not bundled; see
 [YouTube downloads](docs/troubleshooting.md#youtube-downloads).
+
+### Windows first launch
+
+The Windows build has no console window: double-clicking the executable starts
+spotm3u silently and opens it in your browser.
+
+```text
+Download spotm3u-<version>-windows-x86_64.zip
+        ↓
+Extract it and double-click spotm3u.exe
+        ↓
+SpotM3U opens in your default browser
+```
+
+If spotm3u cannot start, it shows a dialog explaining the problem, since a
+windowed application has no console to print a traceback to.
 
 ### macOS first launch
 
@@ -88,7 +110,7 @@ first double-click. Approve it once through Apple's standard flow:
 2. Extract the ZIP. You get `spotm3u.app`.
 3. Right-click (Control-click) `spotm3u.app` and choose **Open**.
 4. If macOS shows a security warning, choose **Open** to confirm.
-5. spotm3u starts; open <http://127.0.0.1:5001/> in your browser.
+5. spotm3u starts and opens its interface in your default browser.
 
 This approval is needed only once. Afterwards, launch `spotm3u.app` with a
 normal double-click like any other app.
@@ -112,8 +134,10 @@ uv sync
 uv run spotm3u
 ```
 
-Open <http://127.0.0.1:5001/>. No Spotify account credentials or API key are
-needed by spotm3u.
+`uv run spotm3u` serves on <http://127.0.0.1:5001/> and opens it in your
+default browser once the server is ready. Set `SPOTM3U_NO_BROWSER=1` to keep
+the browser closed. No Spotify account credentials or API key are needed by
+spotm3u.
 
 ## Usage
 

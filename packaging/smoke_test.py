@@ -6,6 +6,12 @@ the bundled FFmpeg binaries. Understands both the onedir layout (executable and
 ``_internal`` beside each other) and the macOS ``spotm3u.app`` bundle layout.
 Exits non-zero on any failure so CI treats the run as a failed build.
 
+The application opens its UI in the default browser on start; that is disabled
+here because a CI runner has no user to show it to and the test drives the
+server over HTTP itself. The Windows build is windowed, so the port is probed
+over HTTP instead of being read from the startup log, which that build does not
+have.
+
 Accepts a bundle directory, an extracted ``.app``, a release ZIP, or a
 directory containing one ZIP.
 """
@@ -26,6 +32,7 @@ from pathlib import Path
 HOME_MARKER = "Open Exportify"
 _LISTENING = re.compile(r"listening on http://127\.0\.0\.1:(\d+)")
 _SMOKE_PORT = 5290
+_POLL_INTERVAL = 0.25
 STARTUP_TIMEOUT = 90
 _SYMLINK_MODE = 0o120777
 
@@ -94,6 +101,53 @@ def check_bundled_ffmpeg(bundle: Path) -> None:
     )
 
 
+def _read_log(log_path: Path) -> str:
+    try:
+        return log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _fail_if_exited(proc: subprocess.Popen, log_path: Path) -> None:
+    """Fail fast with the captured output when the app died during startup."""
+    code = proc.poll()
+    if code is not None:
+        raise SystemExit(
+            f"packaged app exited with status {code} before serving:\n{_read_log(log_path)}"
+        )
+
+
+def wait_for_home(
+    proc: subprocess.Popen,
+    log_path: Path,
+    *,
+    preferred_port: int = _SMOKE_PORT,
+    timeout: float = STARTUP_TIMEOUT,
+) -> tuple[int, int, str]:
+    """Wait for the packaged app to serve its home page.
+
+    Returns ``(port, status, body)``. The startup log is still honored when the
+    app had to fall back to a different port, but readiness itself comes from
+    the HTTP response so a windowed Windows build -- which has no standard
+    streams to log to -- is verified the same way as every other platform.
+    """
+    deadline = time.monotonic() + timeout
+    port = preferred_port
+    while time.monotonic() < deadline:
+        match = _LISTENING.search(_read_log(log_path))
+        if match:
+            port = int(match.group(1))
+        try:
+            status, body = _get(f"http://127.0.0.1:{port}/")
+        except OSError:
+            status, body = 0, ""
+        if status:
+            return port, status, body
+        _fail_if_exited(proc, log_path)
+        time.sleep(_POLL_INTERVAL)
+    raise SystemExit(f"packaged app did not serve within {timeout}s:\n{_read_log(log_path)}")
+
+
 def smoke_test(bundle: Path) -> None:
     exe = find_executable(bundle)
     check_bundled_ffmpeg(bundle)
@@ -104,6 +158,7 @@ def smoke_test(bundle: Path) -> None:
     log_path = work / "server.log"
     env = dict(os.environ)
     env["SPOTM3U_CONFIG"] = str(config)
+    env["SPOTM3U_NO_BROWSER"] = "1"
     log_handle = log_path.open("wb")
     proc = subprocess.Popen(
         [str(exe)],
@@ -113,24 +168,7 @@ def smoke_test(bundle: Path) -> None:
         stderr=subprocess.STDOUT,
     )
     try:
-        port: int | None = None
-        deadline = time.monotonic() + STARTUP_TIMEOUT
-        while time.monotonic() < deadline:
-            text = log_path.read_text(encoding="utf-8", errors="replace")
-            match = _LISTENING.search(text)
-            if match:
-                port = int(match.group(1))
-                break
-            if proc.poll() is not None:
-                raise SystemExit(f"packaged app exited before listening:\n{text}")
-            time.sleep(0.25)
-        if port is None:
-            raise SystemExit(
-                f"packaged app did not start within {STARTUP_TIMEOUT}s:\n"
-                f"{log_path.read_text(encoding='utf-8', errors='replace')}"
-            )
-
-        status, body = _get(f"http://127.0.0.1:{port}/")
+        port, status, body = wait_for_home(proc, log_path)
         assert status == 200, f"home returned {status}"
         assert HOME_MARKER in body, f"home template marker {HOME_MARKER!r} missing"
 

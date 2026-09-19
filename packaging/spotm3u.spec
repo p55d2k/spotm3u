@@ -12,6 +12,12 @@ On macOS the COLLECT output is additionally wrapped into a normal
 Finder/Gatekeeper's one-time Right-click -> Open flow. The same onedir layout
 is kept on every platform; only macOS gains the ``.app`` wrapper.
 
+The Windows executable is built windowed (no console) so double-clicking
+``spotm3u.exe`` never flashes a terminal; the launcher opens the UI in the
+default browser and reports startup failures through a native message box.
+Other platforms keep their console so developers and release verification can
+read the logs.
+
 Usage (from the repository root):
 
     SPOTM3U_FFMPEG_DIR=<dir containing ffmpeg[.exe] and ffprobe[.exe]> \
@@ -93,7 +99,10 @@ exe = EXE(
     debug=False,
     strip=False,
     upx=False,
-    console=True,
+    # Windowed on Windows only: a double-clicked ``spotm3u.exe`` must not open a
+    # console window. Other platforms keep the console for logs, and a
+    # windowed build has no standard streams to log to.
+    console=sys.platform != "win32",
 )
 
 coll = COLLECT(

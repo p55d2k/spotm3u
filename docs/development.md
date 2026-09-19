@@ -19,8 +19,16 @@ Start the development server with:
 uv run spotm3u
 ```
 
-The server listens on `127.0.0.1:5001`. Configuration is optional and is read
-from `./config.toml`, or from the path in `SPOTM3U_CONFIG`.
+Configuration is optional and is read from `./config.toml`, or from the path
+in `SPOTM3U_CONFIG`. The server binds to loopback (`127.0.0.1`) and prefers the
+configured `web.port` (default 5001), falling back to a free port when that one
+is taken; the chosen port is printed on startup. The UI opens in the default
+browser as soon as the server accepts connections, and `SPOTM3U_NO_BROWSER=1`
+keeps that tab from opening.
+
+The same launcher serves the packaged applications, where the reloader is
+disabled and the Windows build is windowed instead of console-based; see
+[packaging.md](packaging.md).
 
 ## Checks
 

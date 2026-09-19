@@ -1,7 +1,12 @@
 """Tests for the packaged-application smoke test helper."""
 
+import contextlib
+import http.server
 import importlib.util
+import socket
+import threading
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -124,6 +129,86 @@ def test_bundle_root_unpacks_single_zip(tmp_path) -> None:
     root = smoke_test._bundle_root(wrapper)
 
     assert (root / "spotm3u").is_file()
+
+
+class _FakeProc:
+    """Stand-in for ``subprocess.Popen`` that reports an exit status."""
+
+    def __init__(self, returncode: int | None = None) -> None:
+        self.returncode = returncode
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+
+class _HomeHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - name required by http.server
+        body = b"ok"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        """Keep the test output free of request logs."""
+
+
+@contextlib.contextmanager
+def _home_server() -> Iterator[int]:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HomeHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield int(server.server_address[1])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def test_wait_for_home_uses_the_port_reported_in_the_log(tmp_path) -> None:
+    log = tmp_path / "server.log"
+
+    with _home_server() as port:
+        log.write_text(f"spotm3u listening on http://127.0.0.1:{port}\n", encoding="utf-8")
+
+        found = smoke_test.wait_for_home(_FakeProc(), log, preferred_port=_free_port(), timeout=15)
+
+    assert found == (port, 200, "ok")
+
+
+def test_wait_for_home_probes_the_preferred_port_without_a_log(tmp_path) -> None:
+    # A windowed Windows build has no standard streams, so there is nothing to
+    # parse: readiness has to come from the HTTP response on the port the
+    # application was configured to use.
+    log = tmp_path / "server.log"
+
+    with _home_server() as port:
+        found = smoke_test.wait_for_home(_FakeProc(), log, preferred_port=port, timeout=15)
+
+    assert found == (port, 200, "ok")
+
+
+def test_wait_for_home_fails_when_the_app_exits(tmp_path) -> None:
+    log = tmp_path / "server.log"
+    log.write_text("boom", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="exited with status 3"):
+        smoke_test.wait_for_home(_FakeProc(3), log, preferred_port=_free_port(), timeout=15)
+
+
+def test_wait_for_home_times_out_with_the_captured_log(tmp_path) -> None:
+    log = tmp_path / "server.log"
+    log.write_text("nothing to see", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="nothing to see"):
+        smoke_test.wait_for_home(_FakeProc(), log, preferred_port=_free_port(), timeout=0.2)
 
 
 def _dist_bundle() -> Path | None:

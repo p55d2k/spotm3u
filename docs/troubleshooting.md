@@ -2,10 +2,26 @@
 
 ## The server does not start
 
-Check the terminal for the configuration error and confirm that port 5001 is
-available. To use another port, set `web.port` in `config.toml`. Packaged
-launches bind to `127.0.0.1`; the application is not intended to be exposed
-directly to the network.
+Configuration errors are reported in the terminal for source runs. A packaged
+Windows build has no console, so it shows a dialog instead.
+
+spotm3u prefers the `web.port` from `config.toml` (default 5001) and falls back
+to a free port when that port is already taken, so another program using 5001
+does not stop it from starting. The port actually in use is the one the browser
+opens; the startup log names it for source runs.
+
+Packaged launches bind to `127.0.0.1` only; the application is not intended to
+be exposed directly to the network.
+
+## The browser does not open
+
+spotm3u opens its interface in the default browser once the server is ready.
+Set `SPOTM3U_NO_BROWSER=1` to disable that and open the printed URL yourself;
+the startup log reports it as `listening on http://127.0.0.1:<port>`.
+
+If no browser starts, the application is still running: open the printed URL
+manually. A machine without a registered default browser cannot be opened
+automatically.
 
 ## Online downloads fail because FFmpeg is missing
 
