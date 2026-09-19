@@ -4,6 +4,24 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+spotm3u turns Spotify playlists exported from [Exportify](https://exportify.net/) into M3U playlists for music already on your computer.
+
+## Download
+
+- [Download for Windows](https://github.com/p55d2k/spotm3u/releases)
+- [Download for macOS](https://github.com/p55d2k/spotm3u/releases)
+- [Download for Linux](https://github.com/p55d2k/spotm3u/releases)
+
+## Quick start
+
+Exportify → Download → Launch → Upload ZIP → Get M3U
+
+1. Exportify → export your Spotify playlists and download the ZIP.
+2. Download → get the spotm3u app for your platform.
+3. Launch → run the app and open <http://127.0.0.1:5001/>.
+4. Upload ZIP → drag in the Exportify ZIP and choose playlists.
+5. Get M3U → review matches and download the generated playlist.
+
 spotm3u is a local Flask application that turns playlists exported from
 [Exportify](https://exportify.net/) into M3U playlists for audio already on
 your computer. When a track is not found locally, it can search for and
