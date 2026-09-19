@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import requests
 
 from spotm3u.metadata import (
     MetadataResult,
@@ -12,6 +13,8 @@ from spotm3u.metadata import (
     _find_album_artwork,
     _normalize_album_for_search,
     _write_all_metadata,
+    artwork_artist,
+    cached_artwork_path,
     enrich_metadata,
 )
 from spotm3u.models import Track
@@ -199,6 +202,316 @@ def test_stale_negative_cache_does_not_block_retry(tmp_path, monkeypatch):
     assert data == b"fake-image-data"
     assert source == "coverartarchive"
     assert not marker.exists()
+
+
+def _song_search_requests(monkeypatch, results):
+    """Patch requests so iTunes song search returns ``results`` and nothing else."""
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+        content = b""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": results}
+
+    def fake_get(url, **kwargs):
+        if "musicbrainz.org" in url:
+            return FakeResponse()
+        if "itunes.apple.com" in url:
+            return FakeResponse()
+        image = FakeResponse()
+        image.headers = {"Content-Type": "image/jpeg"}
+        image.content = b"song-image"
+        return image
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+
+
+def test_song_fallback_is_used_when_album_is_missing(tmp_path, monkeypatch):
+    _song_search_requests(
+        monkeypatch,
+        [
+            {
+                "artistName": "Artist",
+                "trackName": "Home",
+                "collectionName": "An Album",
+                "artworkUrl100": "https://images.example/100x100bb.jpg",
+            }
+        ],
+    )
+
+    data, source = _find_album_artwork(tmp_path, "Artist", "", "Home")
+
+    assert data == b"song-image"
+    assert source == "itunes-song"
+    assert (tmp_path / "artwork_cache" / "artist_home.jpg").is_file()
+
+
+def test_song_fallback_rejects_other_artists_common_titles(tmp_path, monkeypatch):
+    _song_search_requests(
+        monkeypatch,
+        [
+            {
+                "artistName": "Another Singer",
+                "trackName": "Home",
+                "collectionName": "Other Album",
+                "artworkUrl100": "https://images.example/100x100bb.jpg",
+            }
+        ],
+    )
+
+    data, source = _find_album_artwork(tmp_path, "Artist", "", "Home")
+
+    assert data is None
+    assert source == "not-found"
+
+
+def test_album_lookup_failure_falls_back_to_song_artwork(tmp_path, monkeypatch):
+    _song_search_requests(
+        monkeypatch,
+        [
+            {
+                "artistName": "Artist",
+                "trackName": "Home",
+                "collectionName": "Different Collection",
+                "artworkUrl100": "https://images.example/100x100bb.jpg",
+            }
+        ],
+    )
+
+    data, source = _find_album_artwork(tmp_path, "Artist", "Not the actual album", "Home")
+
+    assert data == b"song-image"
+    assert source == "itunes-song"
+
+
+def test_album_identity_is_primary_for_artwork(tmp_path, monkeypatch):
+    _install_fake_requests(monkeypatch)
+
+    data, source = _find_album_artwork(tmp_path, "Artist", "Album", "Different Song")
+
+    assert data == b"fake-image-data"
+    assert source == "coverartarchive"
+
+
+def test_release_artwork_must_match_artist_and_album(tmp_path, monkeypatch):
+    """A same-titled album by the wrong artist must not be used as artwork."""
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+        content = b""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "release-groups": [
+                    {
+                        "id": "wrong-artist-rg",
+                        "title": "Future Nostalgia",
+                        "artist-credit-phrase": "U2",
+                    }
+                ]
+            }
+
+    def fake_get(url, **kwargs):
+        if "musicbrainz.org" in url:
+            return FakeResponse()
+        if "coverartarchive.org" in url:
+            return FakeResponse()
+        return FakeResponse()
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
+
+    assert data is None
+    assert source == "not-found"
+
+
+def test_external_api_failure_is_graceful(tmp_path, monkeypatch):
+    def unreachable(*_args, **_kwargs):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+
+    data, source = _find_album_artwork(tmp_path, "Artist", "", "Home")
+
+    assert data is None
+    assert source == "not-found"
+
+
+def test_malformed_api_response_is_graceful(tmp_path, monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "image/jpeg"}
+        content = b""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            raise ValueError("malformed body")
+
+    def fake_get(url, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+
+    data, source = _find_album_artwork(tmp_path, "Artist", "Album", "Home")
+
+    assert data is None
+    assert source == "not-found"
+
+
+def test_multiple_artists_never_form_one_lookup_string():
+    track = Track("Home", ["Jackson W.", "Jackson Z."], album="Album", album_artist="Jackson Z.")
+    assert artwork_artist(track) == "Jackson Z."
+
+    collab = Track("Home", ["Jackson W.", "Jackson Z."])
+    assert artwork_artist(collab) == "Jackson W."
+
+    key = _cache_key(artwork_artist(collab) or "", collab.album or "", collab.title)
+    assert "jackson_w" in key
+    assert "jacksonz" not in key
+
+
+def test_duplicate_tracks_from_same_album_share_cached_artwork(tmp_path, monkeypatch):
+    from spotm3u import metadata
+
+    calls: list[str] = []
+    _install_fake_requests(monkeypatch)
+    base_get = metadata.requests.get
+
+    def counting_get(url, **kwargs):
+        calls.append(url)
+        return base_get(url, **kwargs)
+
+    monkeypatch.setattr(metadata.requests, "get", counting_get)
+
+    data1, source1 = _find_album_artwork(
+        tmp_path, "Oasis", "(What's the Story) Morning Glory?", "Song 1"
+    )
+    data2, source2 = _find_album_artwork(
+        tmp_path, "Oasis", "(What's the Story) Morning Glory?", "Song 2"
+    )
+
+    assert data2 == data1
+    assert source2 == "cache"
+    assert sum("musicbrainz" in call for call in calls) == 1
+
+
+def test_concurrent_lookups_share_one_fetch(tmp_path, monkeypatch):
+    import threading
+
+    gate = threading.Event()
+    started = threading.Event()
+    musicbrainz_calls: list[str] = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "image/jpeg"}
+        content = b"concurrent-image"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "release-groups": [
+                    {
+                        "id": "dedup-rg",
+                        "title": "Dedup Album",
+                        "artist-credit-phrase": "Dedup Artist",
+                    }
+                ]
+            }
+
+    def fake_get(url, **kwargs):
+        if "musicbrainz.org" in url:
+            musicbrainz_calls.append(url)
+            started.set()
+            gate.wait(5)
+            return FakeResponse()
+        if "coverartarchive.org" in url:
+            image = FakeResponse()
+            image.json = lambda: {
+                "images": [
+                    {
+                        "front": True,
+                        "image": "http://example.com/art.jpg",
+                        "width": 500,
+                        "height": 500,
+                    }
+                ]
+            }
+            return image
+        image = FakeResponse()
+        image.content = b"concurrent-image"
+        return image
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+
+    results: dict[int, tuple[bytes | None, str | None]] = {}
+
+    def work(index: int) -> None:
+        results[index] = _find_album_artwork(
+            tmp_path, "Dedup Artist", "Dedup Album", f"Track {index}"
+        )
+
+    first = threading.Thread(target=work, args=(0,))
+    first.start()
+    assert started.wait(5)
+    second = threading.Thread(target=work, args=(1,))
+    second.start()
+    gate.set()
+    first.join(10)
+    second.join(10)
+
+    assert results[0][0] == results[1][0] == b"concurrent-image"
+    assert len(musicbrainz_calls) == 1
+
+
+def test_cached_artwork_path_returns_file_when_present(tmp_path):
+    from spotm3u import metadata
+
+    track = Track("Home", ["Artist"], album="Album")
+    assert cached_artwork_path(tmp_path, track) is None
+
+    cache_path = metadata._cached_artwork_path(
+        metadata._cache_dir(tmp_path), metadata._cache_key("Artist", "Album", "Home")
+    )
+    cache_path.write_bytes(b"image-bytes")
+    assert cached_artwork_path(tmp_path, track).read_bytes() == b"image-bytes"
+
+
+def test_enrich_metadata_uses_song_fallback_without_album(tmp_path, monkeypatch):
+    _mock_id3_operations(monkeypatch)
+    _song_search_requests(
+        monkeypatch,
+        [
+            {
+                "artistName": "Artist",
+                "trackName": "Home",
+                "collectionName": "An Album",
+                "artworkUrl100": "https://images.example/100x100bb.jpg",
+            }
+        ],
+    )
+
+    track = Track("Home", ["Artist"], album=None)
+    mp3_path = tmp_path / "test.mp3"
+    mp3_path.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3_path, track, tmp_path)
+
+    assert result.artwork_embedded is True
+    assert result.artwork_source == "itunes-song"
 
 
 def test_write_all_metadata_basic(monkeypatch):

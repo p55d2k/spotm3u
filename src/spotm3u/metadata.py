@@ -6,6 +6,8 @@ import logging
 import re
 import threading
 import unicodedata
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -55,12 +57,31 @@ def _id3_symbol(name: str):
 
 
 _ARTWORK_CACHE_DIR = "artwork_cache"
-_CACHE_LOCK = threading.Lock()
 _MUSICBRAINZ_BASE = "https://musicbrainz.org/ws/2"
 _COVERART_BASE = "https://coverartarchive.org"
 _ITUNES_BASE = "https://itunes.apple.com/search"
 _REQUEST_TIMEOUT = 15
 _USER_AGENT = "spotm3u/0.1 (https://github.com/zk/spotm3u)"
+
+# Bounded concurrency: album artwork lookups share one in-flight request per
+# identity and only a few external HTTP requests may be open at once, no matter
+# how many resolution workers are running.
+_ARTWORK_MEMORY_LIMIT = 1024
+_ARTWORK_MEMORY: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+_ARTWORK_INFLIGHT: dict[str, _PendingArtworkFetch] = {}
+_ARTWORK_LOCK = threading.Lock()
+_ARTWORK_FETCH_SEMAPHORE = threading.Semaphore(2)
+
+
+class _PendingArtworkFetch:
+    """A shared in-flight artwork fetch other threads can wait on."""
+
+    __slots__ = ("event", "result", "done")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.result: tuple[bytes, str] | None = None
+        self.done = False
 
 
 @dataclass(frozen=True)
@@ -104,6 +125,15 @@ def _normalize_identity(value: str | None) -> str:
     return " ".join("".join(char if char.isalnum() else " " for char in text).split())
 
 
+def _identity_score(left: str, right: str) -> float:
+    """Score how closely two normalized identities match, 0 to 100."""
+    if not left or not right:
+        return 0.0
+    if left in right or right in left:
+        return 100.0
+    return SequenceMatcher(None, left, right).ratio() * 100.0
+
+
 def _artist_album_match(
     artist: str | None, album: str | None, candidate_artist: str | None, candidate_album: str | None
 ) -> bool:
@@ -116,17 +146,35 @@ def _artist_album_match(
     )
     if not artist_key or not album_key or not candidate_artist_key or not candidate_album_key:
         return False
-
-    def score(left: str, right: str) -> float:
-        if not left or not right:
-            return 0.0
-        if left in right or right in left:
-            return 100.0
-        return SequenceMatcher(None, left, right).ratio() * 100.0
-
-    artist_score = score(artist_key, candidate_artist_key)
-    album_score = score(album_key, candidate_album_key)
+    artist_score = _identity_score(artist_key, candidate_artist_key)
+    album_score = _identity_score(album_key, candidate_album_key)
     return artist_score >= 80 and album_score >= 70
+
+
+def _artist_title_match(
+    artist: str | None, title: str | None, candidate_artist: str | None, candidate_title: str | None
+) -> bool:
+    """Return True when artist+title identity matches, with artist as the dominant constraint.
+
+    Used only for the song-title artwork fallback, so common song titles still
+    require a strongly matching artist identity.
+    """
+    artist_key = _normalize_identity(artist)
+    title_key = _normalize_identity(title)
+    candidate_artist_key = _normalize_identity(candidate_artist)
+    candidate_title_key = _normalize_identity(candidate_title)
+    if not artist_key or not title_key or not candidate_artist_key or not candidate_title_key:
+        return False
+    artist_score = _identity_score(artist_key, candidate_artist_key)
+    title_score = _identity_score(title_key, candidate_title_key)
+    return artist_score >= 80 and title_score >= 70
+
+
+def _has_reliable_album(album: str | None) -> bool:
+    """Return True when ``album`` is present and not clearly invalid."""
+    if not album:
+        return False
+    return bool(_normalize_identity(_normalize_album_for_search(album)))
 
 
 def _cache_dir(download_dir: Path) -> Path:
@@ -135,22 +183,30 @@ def _cache_dir(download_dir: Path) -> Path:
     return cache_path
 
 
-def _cache_key(artist: str, album: str) -> str:
-    """Generate a stable cache key from artist and album."""
+def _cache_key(artist: str = "", album: str = "", title: str = "") -> str:
+    """Generate a stable cache key from a release or song identity.
+
+    Album identity (artist + album) is preferred because artwork belongs to the
+    release; the song identity (artist + title) is used as the fallback key when
+    album metadata is missing.
+    """
+    release = album or title
     normalized = (
-        _normalize_identity(artist) + "||" + _normalize_identity(_normalize_album_for_search(album))
+        _normalize_identity(artist)
+        + "||"
+        + (_normalize_identity(_normalize_album_for_search(release)) if release else "")
     )
     safe = re.sub(r"[^a-z0-9]+", "_", normalized.casefold()).strip("_")
     return safe[:120] or "unknown"
 
 
-def _cached_artwork_path(cache_dir: Path, artist: str, album: str) -> Path:
-    return cache_dir / f"{_cache_key(artist, album)}.jpg"
+def _cached_artwork_path(cache_dir: Path, cache_key: str) -> Path:
+    return cache_dir / f"{cache_key}.jpg"
 
 
-def _load_cached_artwork(download_dir: Path, artist: str, album: str) -> bytes | None:
+def _load_cached_artwork(download_dir: Path, cache_key: str) -> bytes | None:
     cache_dir = _cache_dir(download_dir)
-    path = _cached_artwork_path(cache_dir, artist, album)
+    path = _cached_artwork_path(cache_dir, cache_key)
     if path.is_file():
         try:
             return path.read_bytes()
@@ -159,9 +215,9 @@ def _load_cached_artwork(download_dir: Path, artist: str, album: str) -> bytes |
     return None
 
 
-def _save_cached_artwork(download_dir: Path, artist: str, album: str, data: bytes) -> None:
+def _save_cached_artwork(download_dir: Path, cache_key: str, data: bytes) -> None:
     cache_dir = _cache_dir(download_dir)
-    path = _cached_artwork_path(cache_dir, artist, album)
+    path = _cached_artwork_path(cache_dir, cache_key)
     try:
         path.write_bytes(data)
     except OSError:
@@ -286,6 +342,100 @@ def _search_itunes_artwork(artist: str, album: str, title: str = "") -> list[Art
     return candidates
 
 
+def _search_itunes_song_artwork(artist: str, title: str) -> list[ArtworkCandidate]:
+    """Search Apple's public iTunes catalog for song artwork (album fallback)."""
+    term = f"{artist} {title}".strip()
+    if not term:
+        return []
+    try:
+        response = requests.get(
+            _ITUNES_BASE,
+            params={"term": term, "entity": "song", "limit": 25, "media": "music"},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        results = response.json().get("results", [])
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        logger.debug("iTunes song artwork lookup failed artist=%s title=%s: %s", artist, title, exc)
+        return []
+
+    candidates: list[ArtworkCandidate] = []
+    for result in results:
+        result_artist = result.get("artistName")
+        result_title = result.get("trackName")
+        if not _artist_title_match(artist, title, result_artist, result_title):
+            continue
+        image_url = result.get("artworkUrl100") or result.get("artworkUrl60")
+        if not image_url:
+            continue
+        candidates.append(
+            ArtworkCandidate(
+                url=re.sub(r"\b\d+x\d+bb\b", "1200x1200bb", image_url),
+                mime_type="image/jpeg",
+                source="itunes-song",
+                width=1200,
+                height=1200,
+                artist=result_artist,
+                album=result.get("collectionName") or result.get("albumName"),
+                title=result_title,
+            )
+        )
+    return candidates
+
+
+def _artwork_memory_key(download_dir: Path, cache_key: str) -> str:
+    """Scope the in-process memo to the cache directory so distinct libraries
+    never share identity results."""
+    return f"{str(_cache_dir(download_dir))}::{cache_key}"
+
+
+def _deduplicated_artwork_fetch(
+    download_dir: Path, cache_key: str, fetch: Callable[[], tuple[bytes | None, str | None]]
+) -> tuple[bytes | None, str | None]:
+    """Fetch artwork once per identity while concurrent workers wait and reuse.
+
+    The first caller performs the network lookup (under a bounded semaphore);
+    concurrent callers for the same identity join the in-flight request instead
+    of repeating it. Positive results are memoized process-wide (per cache
+    directory) so tracks from the same release share one lookup.
+    """
+    memory_key = _artwork_memory_key(download_dir, cache_key)
+    with _ARTWORK_LOCK:
+        entry = _ARTWORK_MEMORY.get(memory_key)
+        if entry is not None:
+            return entry
+        pending = _ARTWORK_INFLIGHT.get(memory_key)
+        if pending is not None:
+            owner = False
+        else:
+            pending = _PendingArtworkFetch()
+            _ARTWORK_INFLIGHT[memory_key] = pending
+            owner = True
+
+    if not owner:
+        pending.event.wait()
+        return pending.result
+
+    try:
+        with _ARTWORK_FETCH_SEMAPHORE:
+            result = fetch()
+    finally:
+        pending.result = result
+        pending.done = True
+        pending.event.set()
+        with _ARTWORK_LOCK:
+            _ARTWORK_INFLIGHT.pop(memory_key, None)
+
+    if result[0] is not None:
+        with _ARTWORK_LOCK:
+            _ARTWORK_MEMORY[memory_key] = result
+            _ARTWORK_MEMORY.move_to_end(memory_key)
+            while len(_ARTWORK_MEMORY) > _ARTWORK_MEMORY_LIMIT:
+                _ARTWORK_MEMORY.popitem(last=False)
+    return result
+
+
 def _select_best_artwork(candidates: list[ArtworkCandidate]) -> ArtworkCandidate | None:
     """Select the highest quality artwork candidate."""
     if not candidates:
@@ -369,7 +519,12 @@ def _find_album_artwork(
     title: str = "",
     audio_path: Path | None = None,
 ) -> tuple[bytes | None, str | None]:
-    """Find and download album artwork, using cache."""
+    """Find artwork for a track, preferring artist + album identity.
+
+    Artwork belongs to the release, so ``artist + album`` is the primary lookup
+    and ``artist + song title`` is used only when album metadata is missing or
+    the album lookup produced no reliable result. Results are cached by identity.
+    """
     # Older versions wrote permanent negative-cache markers. Remove only the
     # marker for this identity so improved lookup logic gets a fresh attempt.
     stale_failure = _cache_dir(download_dir) / f"{_cache_key(artist, album)}.failed"
@@ -382,19 +537,47 @@ def _find_album_artwork(
         embedded = _embedded_artwork(audio_path)
         if embedded is not None:
             data, mime = embedded
-            _save_cached_artwork(download_dir, artist, album, data)
+            _save_cached_artwork(download_dir, _cache_key(artist, album, title), data)
             return data, f"embedded:{mime}"
         sidecar = _sidecar_artwork(audio_path)
         if sidecar is not None:
             data, mime = sidecar
-            _save_cached_artwork(download_dir, artist, album, data)
+            _save_cached_artwork(download_dir, _cache_key(artist, album, title), data)
             return data, f"sidecar:{mime}"
 
-    cached = _load_cached_artwork(download_dir, artist, album)
+    cache_key = _cache_key(artist, album, title)
+    cached = _load_cached_artwork(download_dir, cache_key)
     if cached is not None:
         logger.debug("Artwork cache hit artist=%s album=%s", artist, album)
         return cached, "cache"
 
+    release_first = _has_reliable_album(album)
+
+    def fetch() -> tuple[bytes | None, str | None]:
+        if release_first:
+            data, source = _fetch_release_artwork(download_dir, artist, album, title, cache_key)
+            if data is not None:
+                return data, source
+        if title:
+            data, source = _fetch_song_artwork(download_dir, artist, title, cache_key)
+            if data is not None:
+                return data, source
+        # Negative results are deliberately not persisted. A later run may have
+        # network access or a newly indexed release/artwork source.
+        logger.info("Artwork not found artist=%s album=%s title=%s", artist, album, title)
+        return None, "not-found"
+
+    return _deduplicated_artwork_fetch(download_dir, cache_key, fetch)
+
+
+def _fetch_release_artwork(
+    download_dir: Path,
+    artist: str,
+    album: str,
+    title: str = "",
+    cache_key: str = "",
+) -> tuple[bytes | None, str | None]:
+    """Look up artwork by artist + album using MusicBrainz and iTunes."""
     releases = _search_musicbrainz_release(artist, album)
     candidates: list[ArtworkCandidate] = []
     for release in releases:
@@ -411,6 +594,26 @@ def _find_album_artwork(
             candidates.extend(_get_coverart_candidates(rg_id))
     candidates.extend(_search_itunes_artwork(artist, album, title))
 
+    return _pick_candidate(download_dir, candidates, cache_key, artist, album, title)
+
+
+def _fetch_song_artwork(
+    download_dir: Path, artist: str, title: str, cache_key: str = ""
+) -> tuple[bytes | None, str | None]:
+    """Look up artwork by artist + song title (album fallback)."""
+    candidates = _search_itunes_song_artwork(artist, title)
+    return _pick_candidate(download_dir, candidates, cache_key, artist, "", title)
+
+
+def _pick_candidate(
+    download_dir: Path,
+    candidates: list[ArtworkCandidate],
+    cache_key: str,
+    artist: str,
+    album: str,
+    title: str,
+) -> tuple[bytes | None, str | None]:
+    """Download the highest-quality candidate and cache a successful image."""
     for candidate in sorted(
         candidates,
         key=lambda item: (item.width or 0) * (item.height or 0),
@@ -418,18 +621,15 @@ def _find_album_artwork(
     ):
         data = _download_artwork(candidate.url)
         if data is not None:
-            _save_cached_artwork(download_dir, artist, album, data)
+            _save_cached_artwork(download_dir, cache_key, data)
             logger.info(
-                "Artwork downloaded artist=%s album=%s source=%s",
+                "Artwork downloaded artist=%s album=%s title=%s source=%s",
                 artist,
                 album,
+                title,
                 candidate.source,
             )
             return data, candidate.source
-
-    # Negative results are deliberately not persisted. A later run may have
-    # network access or a newly indexed release/artwork source.
-    logger.info("Artwork not found artist=%s album=%s", artist, album)
     return None, "not-found"
 
 
@@ -598,8 +798,8 @@ def enrich_metadata(
     except Exception as exc:  # pragma: no cover - defensive behavior
         errors.append(f"metadata write failed: {exc}")
 
-    if track.album and track.artists:
-        primary_artist = track.artists[0]
+    if track.artists:
+        primary_artist = track.album_artist or track.artists[0]
         artwork_data, source = _find_album_artwork(
             download_path,
             primary_artist,
@@ -618,11 +818,10 @@ def enrich_metadata(
                 artwork_source = source
             else:
                 errors.append("artwork embed failed")
+        elif source is not None:
+            errors.append(f"artwork not found: {source}")
         else:
-            if source is not None:
-                errors.append(f"artwork not found: {source}")
-            else:
-                errors.append("artwork not found: unknown")
+            errors.append("artwork not found: unknown")
     else:
         errors.append("missing album/artist for artwork lookup")
 
@@ -646,10 +845,37 @@ def enrich_metadata_batch(
     return results
 
 
+def artwork_artist(track: Track) -> str | None:
+    """Return the artist identity to use for artwork lookups.
+
+    Prefers the explicit album artist and otherwise the first structured
+    artist. Collaborations are never joined into one malformed string.
+    """
+    if not track.artists:
+        return None
+    return track.album_artist or track.artists[0]
+
+
+def cached_artwork_path(download_dir: str | Path, track: Track) -> Path | None:
+    """Return the locally cached artwork file for a track, or None.
+
+    Reads only the artwork cache written during resolution; performs no network
+    requests, so it is safe to call while rendering the interface.
+    """
+    artist = artwork_artist(track)
+    if artist is None:
+        return None
+    cache_key = _cache_key(artist, track.album or "", track.title)
+    path = _cached_artwork_path(_cache_dir(download_dir), cache_key)
+    return path if path.is_file() else None
+
+
 __all__ = [
     "MetadataResult",
     "ArtworkCandidate",
     "MetadataError",
+    "artwork_artist",
+    "cached_artwork_path",
     "_artist_album_match",
     "_normalize_identity",
     "enrich_metadata",

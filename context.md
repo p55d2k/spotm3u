@@ -92,6 +92,7 @@ M3U Download          ResolvedTrack ──→ Metadata / Artwork Enrichment ─�
 Read only the documentation relevant to the current task.
 
 - `docs/architecture.md` → project structure, data flow, module boundaries
+- `docs/artwork.md` → album artwork lookup priority, sources, caching, fallbacks
 - `docs/exportify.md` → Exportify ZIP format and parsing
 - `docs/web.md` → Flask routes, templates, sessions, UI flow
 - `docs/matching.md` → local music discovery and track matching

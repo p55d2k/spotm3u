@@ -564,6 +564,26 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .track-title { color: var(--ink); }
 .track-artists { color: var(--muted); font-size: 0.85rem; }
 
+.track-art-row { align-items: flex-start; display: flex; gap: 0.7rem; min-width: 0; }
+.track-art-main { flex: 1 1 auto; min-width: 0; }
+
+.track-artwork {
+  align-items: center;
+  background: linear-gradient(135deg, var(--surface-soft), var(--track));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--faint);
+  display: inline-flex;
+  flex: 0 0 3rem;
+  font-size: 1.05rem;
+  height: 3rem;
+  justify-content: center;
+  overflow: hidden;
+  width: 3rem;
+}
+
+.track-art-img { display: block; height: 3rem; object-fit: cover; width: 3rem; }
+
 .track-badge {
   border: 1px solid currentColor;
   border-radius: 999px;

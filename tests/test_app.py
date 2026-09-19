@@ -43,6 +43,17 @@ def test_static_stylesheet_is_available() -> None:
     assert b"font-family" in response.data
 
 
+def test_artwork_styles_support_light_and_dark_themes() -> None:
+    import pathlib
+
+    css_folder = create_app().static_folder
+    css = (pathlib.Path(css_folder) / "style.css").read_text(encoding="utf-8")
+
+    assert ".track-artwork" in css
+    assert "--track" in css
+    assert ':root[data-theme="dark"]' in css
+
+
 def test_playlist_selection_persists_state_and_redirects(tmp_path) -> None:
     client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
 
@@ -550,3 +561,80 @@ def test_result_page_exposes_rejected_reasons(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert b"no online source candidates" in response.data
+
+
+def _run_local_match_job(tmp_path, monkeypatch):
+    """Start playlist 1 (second.csv, track "Second") with a matching local file."""
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - Second.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    job = client.application.config["JOB_MANAGER"].get(job_id)
+    job.wait(timeout=10)
+    return client, job, music / "spotm3u-downloads"
+
+
+def test_artwork_route_returns_cached_image(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    track = job.tracks[0]
+    artwork_path = metadata._cached_artwork_path(
+        metadata._cache_dir(download_dir),
+        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    )
+    artwork_path.write_bytes(b"cached-artwork-bytes")
+
+    response = client.get(f"/processing/{job.job_id}/1/artwork/0")
+
+    assert response.status_code == 200
+    assert response.data == b"cached-artwork-bytes"
+    assert response.headers["Content-Type"] == "image/jpeg"
+
+
+def test_artwork_route_404_when_unavailable(tmp_path, monkeypatch) -> None:
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    response = client.get(f"/processing/{job.job_id}/1/artwork/0")
+
+    assert response.status_code == 404
+
+
+def test_artwork_route_404_for_unknown_index(tmp_path, monkeypatch) -> None:
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    response = client.get(f"/processing/{job.job_id}/1/artwork/5")
+
+    assert response.status_code == 404
+
+
+def test_result_page_shows_artwork_image_when_available(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    track = job.tracks[0]
+    artwork_path = metadata._cached_artwork_path(
+        metadata._cache_dir(download_dir),
+        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    )
+    artwork_path.write_bytes(b"cached-artwork-bytes")
+
+    response = client.get(f"/processing/{job.job_id}/1/result")
+
+    assert response.status_code == 200
+    assert b'class="track-art-img"' in response.data
+    assert f"/processing/{job.job_id}/1/artwork/0".encode() in response.data
+
+
+def test_result_page_shows_placeholder_without_artwork(tmp_path, monkeypatch) -> None:
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    response = client.get(f"/processing/{job.job_id}/1/result")
+
+    assert response.status_code == 200
+    assert b'class="track-art-img"' not in response.data
+    assert b'class="track-artwork"' in response.data

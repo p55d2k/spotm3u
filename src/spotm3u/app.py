@@ -15,6 +15,7 @@ from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import configure_logging
+from .metadata import cached_artwork_path
 from .models import Playlist
 from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, download_track
@@ -361,7 +362,9 @@ def create_app(config: dict | None = None) -> Flask:
         job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id:
             return jsonify({"error": "That processing job could not be found."}), 404
-        return jsonify(job.as_dict())
+        state = job.as_dict()
+        _annotate_artwork(job, state)
+        return jsonify(state)
 
     @app.post("/processing/<job_id>/<playlist_id>/retry")
     def retry_processing(job_id: str, playlist_id: str):
@@ -412,6 +415,7 @@ def create_app(config: dict | None = None) -> Flask:
         if job.status == "running" or job.status == "queued":
             return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
         state = job.as_dict()
+        _annotate_artwork(job, state)
         return render_template(
             "result.html",
             job_id=job_id,
@@ -471,6 +475,21 @@ def create_app(config: dict | None = None) -> Flask:
             },
             apple_music_available=True,
         )
+
+    @app.get("/processing/<job_id>/<playlist_id>/artwork/<int:index>")
+    def track_artwork(job_id: str, playlist_id: str, index: int):
+        """Serve locally cached artwork for a single track, without network access."""
+        job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
+        if job is None or job.playlist_id != playlist_id:
+            return jsonify({"error": "That processing job could not be found."}), 404
+        try:
+            track = job.tracks[index]
+        except IndexError:
+            return jsonify({"error": "That track is not available."}), 404
+        path = cached_artwork_path(job.output_dir, track)
+        if path is None:
+            return jsonify({"error": "No artwork is available for that track."}), 404
+        return send_file(path, mimetype="image/jpeg", max_age=3600)
 
     @app.errorhandler(RequestEntityTooLarge)
     def upload_too_large(_error):
@@ -561,6 +580,21 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
         ),
         "playlists": states,
     }
+
+
+def _annotate_artwork(job: ProcessingJob, state: dict[str, object]) -> None:
+    """Mark each track snapshot with whether cached artwork can be served."""
+    tracks = state.get("tracks")
+    if not isinstance(tracks, list):
+        return
+    for item in tracks:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        if not isinstance(index, int) or index < 0 or index >= len(job.tracks):
+            item["artwork"] = False
+            continue
+        item["artwork"] = cached_artwork_path(job.output_dir, job.tracks[index]) is not None
 
 
 def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:

@@ -58,6 +58,8 @@
       const downloadWrap = document.getElementById("download-wrap");
       const etaChip = document.getElementById("eta-chip");
       const statusUrl = "{{ url_for('processing_status', job_id=job_id, playlist_id=playlist_id) }}";
+      const artworkUrl = (index) =>
+        "{{ url_for('track_artwork', job_id=job_id, playlist_id=playlist_id, index=0) }}".replace(/\/0$/, "/") + index;
 
       function fmtNumber(n) {
         return n.toLocaleString();
@@ -177,6 +179,25 @@
       function createTrackRow(track) {
         const item = document.createElement("li");
         item.classList.add("track-" + track.status);
+        const art = document.createElement("div");
+        art.className = "track-artwork";
+        art.setAttribute("aria-hidden", "true");
+        art.textContent = "♪";
+        if (track.artwork) {
+          const img = document.createElement("img");
+          img.className = "track-art-img";
+          img.width = 48;
+          img.height = 48;
+          img.alt = "";
+          img.loading = "lazy";
+          img.onerror = () => img.remove();
+          img.src = artworkUrl(track.index);
+          art.textContent = "";
+          art.appendChild(img);
+        }
+        item.appendChild(art);
+        const main = document.createElement("div");
+        main.className = "track-art-main";
         const head = document.createElement("div");
         head.className = "track-head";
         const title = document.createElement("strong");
@@ -186,19 +207,20 @@
         badge.className = "track-badge";
         badge.textContent = (track.resolution || track.status || "").replace(/-/g, " ");
         head.append(title, badge);
-        item.appendChild(head);
+        main.appendChild(head);
         if (track.artists && track.artists.length) {
           const artists = document.createElement("div");
           artists.className = "track-artists";
           artists.textContent = track.artists.join(", ");
-          item.appendChild(artists);
+          main.appendChild(artists);
         }
         if (track.reason) {
           const reason = document.createElement("div");
           reason.className = "track-reason";
           reason.textContent = track.reason;
-          item.appendChild(reason);
+          main.appendChild(reason);
         }
+        item.appendChild(main);
         return item;
       }
 

@@ -84,16 +84,27 @@
           {% for track in state.tracks %}
           {% set status = track.resolution or track.status or 'unknown' %}
           <li class="track-{{ 'complete' if status in ('local', 'downloaded') else status }}">
-            <div class="track-head">
-              <strong class="track-title">{{ track.title }}</strong>
-              <span class="track-badge">{{ status | replace('-', ' ') }}</span>
+            <div class="track-art-row">
+              {% if track.artwork %}
+              <div class="track-artwork">
+                <img class="track-art-img" src="{{ url_for('track_artwork', job_id=job_id, playlist_id=playlist_id, index=track.index) }}" alt="" width="48" height="48" loading="lazy" onerror="this.remove()">
+              </div>
+              {% else %}
+              <div class="track-artwork" aria-hidden="true">♪</div>
+              {% endif %}
+              <div class="track-art-main">
+                <div class="track-head">
+                  <strong class="track-title">{{ track.title }}</strong>
+                  <span class="track-badge">{{ status | replace('-', ' ') }}</span>
+                </div>
+                {% if track.artists %}
+                <div class="track-artists">{{ track.artists | join(', ') }}</div>
+                {% endif %}
+                {% if track.reason %}
+                <div class="track-reason">{{ track.reason }}</div>
+                {% endif %}
+              </div>
             </div>
-            {% if track.artists %}
-            <div class="track-artists">{{ track.artists | join(', ') }}</div>
-            {% endif %}
-            {% if track.reason %}
-            <div class="track-reason">{{ track.reason }}</div>
-            {% endif %}
           </li>
           {% endfor %}
         </ol>
