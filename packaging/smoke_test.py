@@ -119,7 +119,7 @@ def _bundle_root(target: Path) -> Path:
             p.is_file() and p.name.lower() in {"spotm3u", "spotm3u.exe"} for p in target.iterdir()
         ):
             return target
-        archives = sorted(target.glob("*.zip"))
+        archives = sorted(target.rglob("*.zip"))
         if len(archives) == 1:
             return _unpack(archives[0], target.parent)
         raise SystemExit(f"expected a bundle directory or exactly one ZIP in {target}")

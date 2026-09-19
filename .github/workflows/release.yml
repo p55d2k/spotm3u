@@ -137,15 +137,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist-artifacts
 
       - name: Assert archive naming
         shell: bash
         run: |
           expected="spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
-          test -f "$expected" || { echo "expected release archive missing: $expected"; ls -la; exit 1; }
+          find dist-artifacts -type f -name "$expected" -print -quit | grep -q . || {
+            echo "expected release archive missing: $expected"
+            find dist-artifacts -maxdepth 3 -print
+            exit 1
+          }
 
       - name: Extract and smoke test packaged application
-        run: uv run -q python packaging/smoke_test.py "spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+        run: uv run -q python packaging/smoke_test.py dist-artifacts
 
   release:
     name: Publish GitHub Release

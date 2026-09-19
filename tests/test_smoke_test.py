@@ -54,7 +54,9 @@ def test_bundle_root_unpacks_single_zip(tmp_path) -> None:
         zf.write(bundle / "spotm3u", "spotm3u/spotm3u")
     wrapper = tmp_path / "artifact"
     wrapper.mkdir()
-    (wrapper / archive.name).write_bytes(archive.read_bytes())
+    nested = wrapper / "spotm3u-test"
+    nested.mkdir()
+    (nested / archive.name).write_bytes(archive.read_bytes())
 
     root = smoke_test._bundle_root(wrapper)
 
