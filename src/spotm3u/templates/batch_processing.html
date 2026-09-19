@@ -6,6 +6,7 @@
     {% include "_theme_init.html" %}
     <title>Batch processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include "_status_icons.html" %}
   </head>
   <body>
     {% include "_header.html" %}
@@ -84,33 +85,49 @@
       };
       const stageLabel = (stage) => stageLabels[stage] || stage;
 
-      // Mirrors the result page row: title plus a status badge, then artists
-      // and the processing reason underneath.
+      // Compact rows with the album art, the Lucide status icon (hover for the
+      // meaning), and a truncated title so long names never blow up the row.
       function createTrackRow(track) {
         const item = document.createElement("li");
-        item.classList.add("track-" + track.status);
+        item.classList.add("track-" + (track.resolution || track.status || "queued"));
+        const art = document.createElement("div");
+        art.className = "track-artwork";
+        art.setAttribute("aria-hidden", "true");
+        art.textContent = "♪";
+        const artRow = document.createElement("div");
+        artRow.className = "track-art-row";
+        artRow.appendChild(art);
+        const main = document.createElement("div");
+        main.className = "track-art-main";
         const head = document.createElement("div");
         head.className = "track-head";
         const title = document.createElement("strong");
         title.className = "track-title";
+        title.dataset.tooltip = track.title;
         title.textContent = track.title;
-        const badge = document.createElement("span");
-        badge.className = "track-badge";
-        badge.textContent = (track.resolution || track.status || "").replace(/-/g, " ");
-        head.append(title, badge);
-        item.appendChild(head);
+        head.appendChild(title);
+        main.appendChild(head);
         if (track.artists && track.artists.length) {
           const artists = document.createElement("div");
           artists.className = "track-artists";
-          artists.textContent = track.artists.join(", ");
-          item.appendChild(artists);
+          const names = track.artists.join(", ");
+          artists.dataset.tooltip = names;
+          artists.textContent = names;
+          main.appendChild(artists);
         }
         if (track.reason) {
           const reason = document.createElement("div");
           reason.className = "track-reason";
           reason.textContent = track.reason;
-          item.appendChild(reason);
+          main.appendChild(reason);
         }
+        artRow.appendChild(main);
+        item.appendChild(artRow);
+        const icon = document.createElement("span");
+        icon.className = "track-icon";
+        icon.dataset.statusIcon = track.resolution || track.status || "queued";
+        item.appendChild(icon);
+        applyStatusIcons(item);
         return item;
       }
 

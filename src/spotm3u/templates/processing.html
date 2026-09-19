@@ -6,6 +6,7 @@
     {% include "_theme_init.html" %}
     <title>Processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include "_status_icons.html" %}
   </head>
   <body>
     {% include "_header.html" %}
@@ -178,7 +179,7 @@
 
       function createTrackRow(track) {
         const item = document.createElement("li");
-        item.classList.add("track-" + track.status);
+        item.classList.add("track-" + (track.resolution || track.status || "queued"));
         const art = document.createElement("div");
         art.className = "track-artwork";
         art.setAttribute("aria-hidden", "true");
@@ -198,23 +199,22 @@
         const artRow = document.createElement("div");
         artRow.className = "track-art-row";
         artRow.appendChild(art);
-        item.appendChild(artRow);
         const main = document.createElement("div");
         main.className = "track-art-main";
         const head = document.createElement("div");
         head.className = "track-head";
         const title = document.createElement("strong");
         title.className = "track-title";
+        title.dataset.tooltip = track.title;
         title.textContent = track.title;
-        const badge = document.createElement("span");
-        badge.className = "track-badge";
-        badge.textContent = (track.resolution || track.status || "").replace(/-/g, " ");
-        head.append(title, badge);
+        head.appendChild(title);
         main.appendChild(head);
         if (track.artists && track.artists.length) {
           const artists = document.createElement("div");
           artists.className = "track-artists";
-          artists.textContent = track.artists.join(", ");
+          const names = track.artists.join(", ");
+          artists.dataset.tooltip = names;
+          artists.textContent = names;
           main.appendChild(artists);
         }
         if (track.reason) {
@@ -224,6 +224,12 @@
           main.appendChild(reason);
         }
         artRow.appendChild(main);
+        item.appendChild(artRow);
+        const icon = document.createElement("span");
+        icon.className = "track-icon";
+        icon.dataset.statusIcon = track.resolution || track.status || "queued";
+        item.appendChild(icon);
+        applyStatusIcons(item);
         return item;
       }
 

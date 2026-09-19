@@ -6,6 +6,7 @@
     {% include "_theme_init.html" %}
     <title>{{ state.playlist.name }} - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include "_status_icons.html" %}
   </head>
   <body>
     {% include "_header.html" %}
@@ -91,7 +92,8 @@
         <ol class="track-list" id="track-list">
           {% for track in state.tracks %}
           {% set status = track.resolution or track.status or 'unknown' %}
-          <li class="track-{{ 'complete' if status in ('local', 'downloaded') else status }}">
+          {% set row_class = 'complete' if status in ('local', 'downloaded') else status %}
+          <li class="track-{{ row_class }}">
             <div class="track-art-row">
               {% if track.artwork %}
               <div class="track-artwork">
@@ -102,17 +104,17 @@
               {% endif %}
               <div class="track-art-main">
                 <div class="track-head">
-                  <strong class="track-title">{{ track.title }}</strong>
-                  <span class="track-badge">{{ status | replace('-', ' ') }}</span>
+                  <strong class="track-title" data-tooltip="{{ track.title }}">{{ track.title }}</strong>
                 </div>
                 {% if track.artists %}
-                <div class="track-artists">{{ track.artists | join(', ') }}</div>
+                <div class="track-artists" data-tooltip="{{ track.artists | join(', ') }}">{{ track.artists | join(', ') }}</div>
                 {% endif %}
                 {% if track.reason %}
                 <div class="track-reason">{{ track.reason }}</div>
                 {% endif %}
               </div>
             </div>
+            <span class="track-icon" data-status-icon="{{ status }}"></span>
           </li>
           {% endfor %}
         </ol>
@@ -130,6 +132,7 @@
     </main>
     <script>
       (() => {
+        applyStatusIcons();
         const list = document.getElementById("track-list");
         const filters = [...document.querySelectorAll("[data-track-filter]")];
         const empty = document.getElementById("no-tracks-match");
