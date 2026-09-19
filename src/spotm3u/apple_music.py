@@ -39,7 +39,8 @@ def add_to_apple_music(
 
     Each path is added separately so intentional duplicate playlist entries
     remain duplicates where Music permits them. The AppleScript catches an
-    individual import failure and returns aggregate counts.
+    individual import failure and returns aggregate counts. On success the
+    playlist is opened in Music so the user sees the result.
     """
     if not apple_music_available():
         raise AppleMusicError("Apple Music integration is only available on macOS.")
@@ -88,6 +89,7 @@ def _apple_script(playlist_name: str, paths: list[Path]) -> str:
     set importedCount to 0
     set failedCount to 0
 {additions}
+    view targetPlaylist
     return (importedCount as text) & "|" & (failedCount as text)
 end tell'''
 
