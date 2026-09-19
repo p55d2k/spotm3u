@@ -1,48 +1,26 @@
-"""macOS Apple Music integration for resolved local playlist tracks."""
+"""macOS Apple Music integration for resolved local playlist tracks.
+
+On macOS "Add to Media Player" means adding the resolved files to an Apple
+Music user playlist through ``osascript``. The generated M3U is not imported
+directly because Music has no supported playlist-file import API; instead every
+resolved file already referenced by the playlist is added in playlist order, and
+Music reads the title, artist, and album from each file's own metadata.
+"""
 
 from __future__ import annotations
 
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
-VALID_MODES = frozenset({"created", "appended", "skipped-duplicates", "cancelled"})
+from .result import IMPORT_ACTIONS, MediaPlayerError, MediaPlayerResult
 
-
-class AppleMusicError(RuntimeError):
-    """Apple Music could not be controlled."""
-
-
-@dataclass(frozen=True)
-class AppleMusicResult:
-    """Outcome of importing resolved files into an Apple Music playlist.
-
-    ``mode`` describes how the import proceeded:
-
-    - ``created``: the playlist did not exist and was created fresh.
-    - ``appended``: the playlist already existed, the user chose "Add all",
-      so every file was appended (duplicates allowed).
-    - ``skipped-duplicates``: the playlist already existed, the user chose
-      "Skip duplicates", so files already present were left out.
-    - ``cancelled``: the playlist already existed and the user cancelled,
-      so nothing was changed.
-    """
-
-    imported: int
-    failed: int
-    skipped: int = 0
-    mode: str = "created"
-    cancelled: bool = False
-
-    @property
-    def complete(self) -> bool:
-        return self.failed == 0
+MACOS_PLATFORM = "darwin"
 
 
 def apple_music_available() -> bool:
     """Return whether the current host supports the Apple Music integration."""
-    return sys.platform == "darwin"
+    return sys.platform == MACOS_PLATFORM
 
 
 def add_to_apple_music(
@@ -50,7 +28,7 @@ def add_to_apple_music(
     paths: list[str | Path] | tuple[str | Path, ...],
     *,
     runner=subprocess.run,
-) -> AppleMusicResult:
+) -> MediaPlayerResult:
     """Add resolved local files to a Music user playlist on macOS.
 
     Each path is added separately so intentional duplicate playlist entries
@@ -64,14 +42,14 @@ def add_to_apple_music(
     tells the user where to find the playlist.
     """
     if not apple_music_available():
-        raise AppleMusicError("Apple Music integration is only available on macOS.")
+        raise MediaPlayerError("Add to Media Player is only available on macOS here.")
     if not playlist_name.strip():
-        raise AppleMusicError("Apple Music playlist name cannot be empty.")
+        raise MediaPlayerError("Apple Music playlist name cannot be empty.")
 
     files = [Path(path).expanduser().resolve() for path in paths]
     missing = [path for path in files if not path.is_file()]
     if missing:
-        raise AppleMusicError(f"{len(missing)} resolved audio file(s) are no longer available.")
+        raise MediaPlayerError(f"{len(missing)} resolved audio file(s) are no longer available.")
     script = _apple_script(playlist_name, files)
     try:
         completed = runner(
@@ -83,33 +61,54 @@ def add_to_apple_music(
         )
     except subprocess.CalledProcessError as exc:
         detail = exc.stderr.strip() if exc.stderr else str(exc)
-        raise AppleMusicError(f"Apple Music import failed: {detail}") from exc
+        raise MediaPlayerError(f"Apple Music import failed: {detail}") from exc
     except (OSError, subprocess.SubprocessError) as exc:
-        raise AppleMusicError(f"Apple Music import failed: {exc}") from exc
+        raise MediaPlayerError(f"Apple Music import failed: {exc}") from exc
 
     parts = completed.stdout.strip().split("|")
     if len(parts) == 2:
         imported_text, failed_text = parts
-        skipped_text, mode = "0", "created"
+        skipped_text, action = "0", "created"
     elif len(parts) == 4:
-        imported_text, failed_text, skipped_text, mode = parts
+        imported_text, failed_text, skipped_text, action = parts
     else:
-        raise AppleMusicError("Apple Music returned an invalid import result.")
+        raise MediaPlayerError("Apple Music returned an invalid import result.")
     try:
         imported = int(imported_text)
         failed = int(failed_text)
         skipped = int(skipped_text)
     except ValueError:
-        raise AppleMusicError("Apple Music returned an invalid import result.") from None
-    if mode not in VALID_MODES:
-        raise AppleMusicError("Apple Music returned an invalid import result.")
-    return AppleMusicResult(
+        raise MediaPlayerError("Apple Music returned an invalid import result.") from None
+    if action not in IMPORT_ACTIONS:
+        raise MediaPlayerError("Apple Music returned an invalid import result.")
+    return MediaPlayerResult(
+        action=action,
         imported=imported,
         failed=failed,
         skipped=skipped,
-        mode=mode,
-        cancelled=mode == "cancelled",
+        message=_apple_music_message(playlist_name, action, imported, failed, skipped),
     )
+
+
+def _apple_music_message(
+    playlist_name: str, action: str, imported: int, failed: int, skipped: int
+) -> str:
+    """Compose the user-facing result text for an Apple Music import."""
+    if action == "cancelled":
+        return (
+            f'Add to Media Player was cancelled. A playlist named "{playlist_name}" '
+            "already exists in Apple Music."
+        )
+    parts = [f"Added to Media Player. {imported} track(s) were imported into Apple Music."]
+    if skipped:
+        parts.append(f"{skipped} already-present track(s) were skipped.")
+    if failed:
+        parts.append(f"{failed} track(s) could not be imported.")
+    parts.append(
+        f'To see the playlist, open Apple Music and look for "{playlist_name}" '
+        "in your Library sidebar."
+    )
+    return " ".join(parts)
 
 
 def _apple_script(playlist_name: str, paths: list[Path]) -> str:
@@ -178,8 +177,6 @@ def _as_script_string(value: object) -> str:
 
 
 __all__ = [
-    "AppleMusicError",
-    "AppleMusicResult",
     "add_to_apple_music",
     "apple_music_available",
 ]

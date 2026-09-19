@@ -10,13 +10,13 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from .apple_music import AppleMusicError, add_to_apple_music, apple_music_available
 from .audio.resolver import LocalAudioResolver
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .ffmpeg import locate_ffmpeg_location
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
+from .media_player import MediaPlayerError, add_to_media_player, media_player_available
 from .metadata import cached_artwork_path
 from .models import Playlist
 from .normalization import sanitize_filename_component
@@ -430,7 +430,7 @@ def create_app(config: dict | None = None) -> Flask:
             job_id=job_id,
             playlist_id=playlist_id,
             state=state,
-            apple_music_available=apple_music_available(),
+            media_player_available=media_player_available(),
         )
 
     @app.get("/processing/<job_id>/<playlist_id>/playlist.m3u")
@@ -444,10 +444,17 @@ def create_app(config: dict | None = None) -> Flask:
         name = sanitize_filename_component(job.playlist_name) or job.playlist_id
         return send_file(m3u_path, as_attachment=True, download_name=f"{name}.m3u")
 
-    @app.post("/processing/<job_id>/<playlist_id>/apple-music")
-    def add_playlist_to_apple_music(job_id: str, playlist_id: str):
-        if not apple_music_available():
-            return jsonify({"error": "Apple Music integration is only available on macOS."}), 404
+    @app.post("/processing/<job_id>/<playlist_id>/media-player")
+    def add_playlist_to_media_player(job_id: str, playlist_id: str):
+        """Send the generated playlist to the platform's media player.
+
+        The playlist written by the processing job is reused as-is; nothing is
+        regenerated for this action, and the M3U download stays available.
+        """
+        if not media_player_available():
+            return jsonify(
+                {"error": "Add to Media Player is only available on macOS and Windows."}
+            ), 404
         job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id or job.status != "completed":
             return jsonify({"error": "That playlist is not ready to import."}), 404
@@ -457,17 +464,19 @@ def create_app(config: dict | None = None) -> Flask:
             for track in state["tracks"]
             if track["status"] == "complete" and track["local_path"]
         ]
+        if not paths:
+            return jsonify({"error": "There are no resolved tracks to add."}), 409
         unresolved = len(state["tracks"]) - len(paths)
         try:
-            result = add_to_apple_music(job.playlist_name, paths)
-        except AppleMusicError as error:
-            app.logger.warning("Apple Music import failed job=%s: %s", job_id, error)
+            result = add_to_media_player(job.playlist_name, job.m3u_path, paths)
+        except MediaPlayerError as error:
+            app.logger.warning("Add to Media Player failed job=%s: %s", job_id, error)
             return render_template(
                 "result.html",
                 job_id=job_id,
                 playlist_id=playlist_id,
-                state={**state, "apple_music_error": str(error)},
-                apple_music_available=True,
+                state={**state, "media_player_error": str(error)},
+                media_player_available=True,
             ), 502
         return render_template(
             "result.html",
@@ -475,17 +484,19 @@ def create_app(config: dict | None = None) -> Flask:
             playlist_id=playlist_id,
             state={
                 **state,
-                "apple_music": {
+                "media_player": {
+                    "action": result.action,
+                    "message": result.message,
                     "imported": result.imported,
                     "failed": result.failed,
                     "skipped": result.skipped,
-                    "unresolved": unresolved,
-                    "mode": result.mode,
                     "cancelled": result.cancelled,
+                    "opened": result.opened,
+                    "unresolved": unresolved,
                     "partial": bool(result.failed or unresolved),
                 },
             },
-            apple_music_available=True,
+            media_player_available=True,
         )
 
     @app.get("/processing/<job_id>/<playlist_id>/artwork/<int:index>")

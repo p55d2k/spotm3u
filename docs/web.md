@@ -136,15 +136,28 @@ When processing completes, offer a `Save playlist (M3U)` link to
 `GET /processing/<job_id>/<playlist_id>/playlist.m3u`, which downloads the
 generated playlist as an attachment.
 
-## Apple Music (macOS)
+## Add to Media Player
 
-On macOS, a completed result also offers **Add to Apple Music**. The app uses
-the system `osascript` command to ask the Music app to create or reuse a user
-playlist and add each resolved local file in playlist order. Each entry is
-added separately so duplicates are preserved where Music permits them.
-Resolved files retain the individual artist values in their ID3 metadata, so
-collaborations are imported as collaborations rather than one concatenated
-artist name.
+A completed result with at least one resolved track also offers **Add to Media
+Player**, which posts to
+`POST /processing/<job_id>/<playlist_id>/media-player`. The button label is the
+same on every platform; the behavior is platform-aware behind one application
+interface (`spotm3u.media_player.add_to_media_player`).
+
+The action always uses the playlist the processing job already generated. It is
+never regenerated for the import, and the M3U download stays available
+independently of it.
+
+### macOS
+
+On macOS the action adds to Apple Music. The app uses the system `osascript`
+command to ask the Music app to create or reuse a user playlist and add each
+resolved local file in playlist order, because Music has no supported
+playlist-file import. Each entry is added separately so duplicates are
+preserved where Music permits them. Resolved files retain the individual
+artist values in their ID3 metadata, so collaborations are imported as
+collaborations rather than one concatenated artist name, and Music reads the
+title, artist, and album from each file.
 
 When a user playlist with the same name already exists in Music, the app asks
 the user (via an AppleScript dialog) whether to **Add all** (append every
@@ -153,12 +166,27 @@ is not already in that playlist, so re-importing the same M3U twice does not
 double-add), or **Cancel**. A cancelled import changes nothing. The playlist
 is revealed in Music as a best effort, but Music may not come to the
 foreground, so the result page also tells the user to open Apple Music and
-look for the playlist in the Library sidebar.
+look for the playlist in the Library sidebar. Music reports per-entry errors
+back to the app; unresolved tracks and import failures are reported as partial
+results rather than being claimed as successful.
 
-The integration is not shown on other platforms. Music reports per-entry
-errors back to the app; unresolved tracks and import failures are reported as
-partial results rather than being claimed as successful. The M3U download
-remains available independently.
+### Windows
+
+Windows has no Apple-Music-equivalent playlist-import API, so the action stays
+standards-based: the generated `.m3u` is opened through its default file
+association with `os.startfile`, and any installed player that understands
+M3U (VLC, foobar2000, Windows Media Player, MusicBee, and so on) imports it.
+The playlist path is resolved with `pathlib` and passed to the association as
+a single argument, so drive letters, spaces, and Unicode characters survive
+and no shell is involved. Entries inside the playlist keep the forward slashes
+described in [M3U generation](m3u.md), which Windows players read normally. The
+result page confirms with *Playlist opened in your default media player.*
+
+### Other platforms
+
+The action is offered only on macOS and Windows. Everywhere else the manual
+M3U download keeps working, and no media-player integration is required for
+the playlist to be generated.
 
 The M3U and any downloaded MP3s are written to the persistent download
 directory so the playlist continues to reference real local files.

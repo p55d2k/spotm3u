@@ -79,8 +79,10 @@ picks a free one; the browser always opens the port actually in use.
 None of the releases are signed or notarized. The project does not use Apple
 Developer Program membership, Developer ID certificates, or Apple's
 notarization service, so macOS and Windows may show a security prompt on first
-launch. Apple Music integration is macOS-only. A YouTube PO-token provider is
-an optional external service and is not bundled; see
+launch. **Add to Media Player** is offered on macOS, where it adds to Apple
+Music, and on Windows, where the generated M3U opens with its default
+associated media player. A YouTube PO-token provider is an optional external
+service and is not bundled; see
 [YouTube downloads](docs/troubleshooting.md#youtube-downloads).
 
 ### Windows first launch

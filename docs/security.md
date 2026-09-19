@@ -60,6 +60,17 @@ The Flask download endpoint must never accept an arbitrary filesystem path from 
 
 Resolve downloads through an internal job ID and known output filename.
 
+## Add to Media Player
+
+The action only ever hands over the playlist SpotM3U itself generated for the
+current job, and it never regenerates or accepts a browser-supplied path. On
+macOS the resolved local files are passed to `osascript` as data inside a
+fixed AppleScript — never as a shell command — with every value quoted. On
+Windows the playlist is opened through its default file association
+(`os.startfile`) with one path argument, so no shell parses it and no user
+input reaches a command line. Failures are reported to the UI; they never
+block the manual M3U download.
+
 ## Credentials
 
 Spotify authentication happens externally through Exportify. The application

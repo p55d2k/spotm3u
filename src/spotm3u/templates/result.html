@@ -18,24 +18,17 @@
       {% if state.error %}
       <p class="error" role="alert">Processing failed: {{ state.error }}</p>
       {% endif %}
-      {% if state.apple_music_error %}
-      <p class="error" role="alert">Apple Music import failed: {{ state.apple_music_error }}</p>
-      {% elif state.apple_music %}
-        {% if state.apple_music.cancelled %}
-        <p role="status">Import to Apple Music was cancelled. A playlist named "{{ state.playlist.name }}" already exists. To see it, open Apple Music and look in your Library sidebar.</p>
+      {% if state.media_player_error %}
+      <p class="error" role="alert">Add to Media Player failed: {{ state.media_player_error }}</p>
+      {% elif state.media_player %}
+        {% if state.media_player.cancelled %}
+        <p role="status">{{ state.media_player.message }}</p>
         {% else %}
         <p role="status">
-          Apple Music imported {{ state.apple_music.imported }} track(s).
-          {% if state.apple_music.skipped %}
-          {{ state.apple_music.skipped }} already-present track(s) were skipped.
+          {{ state.media_player.message }}
+          {% if state.media_player.unresolved %}
+          {{ state.media_player.unresolved }} unresolved track(s) were not sent.
           {% endif %}
-          {% if state.apple_music.failed %}
-          {{ state.apple_music.failed }} track(s) could not be imported.
-          {% endif %}
-          {% if state.apple_music.unresolved %}
-          {{ state.apple_music.unresolved }} unresolved track(s) were not sent.
-          {% endif %}
-          To see the playlist, open Apple Music and look for "{{ state.playlist.name }}" in your Library sidebar.
         </p>
         {% endif %}
       {% endif %}
@@ -53,9 +46,10 @@
           <button class="button-secondary" type="submit">Retry {{ unresolved | length }} unresolved track{{ '' if unresolved | length == 1 else 's' }}</button>
         </form>
         {% endif %}
-        {% if state.m3u_path and apple_music_available %}
-        <form method="post" action="{{ url_for('add_playlist_to_apple_music', job_id=job_id, playlist_id=playlist_id) }}">
-          <button class="button-secondary" type="submit">Add to Apple Music</button>
+        {# Only offered when the generated playlist really has tracks to import. #}
+        {% if state.m3u_path and state.counts.successful and media_player_available %}
+        <form method="post" action="{{ url_for('add_playlist_to_media_player', job_id=job_id, playlist_id=playlist_id) }}">
+          <button class="button-secondary" type="submit">Add to Media Player</button>
         </form>
         {% endif %}
         {% if not state.m3u_path %}

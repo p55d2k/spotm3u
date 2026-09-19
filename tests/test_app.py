@@ -1,9 +1,11 @@
 """Tests for the Flask application scaffold."""
 
 from io import BytesIO
+from pathlib import Path
 from zipfile import ZipFile
 
 from spotm3u.app import create_app
+from spotm3u.media_player import MediaPlayerError, MediaPlayerResult
 
 
 def export_zip() -> bytes:
@@ -638,3 +640,100 @@ def test_result_page_shows_placeholder_without_artwork(tmp_path, monkeypatch) ->
     assert response.status_code == 200
     assert b'class="track-art-img"' not in response.data
     assert b'class="track-artwork"' in response.data
+
+
+def test_result_page_offers_add_to_media_player(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    response = client.get(f"/processing/{job.job_id}/1/result")
+
+    assert response.status_code == 200
+    assert b"Add to Media Player" in response.data
+    assert b"Add to Apple Music" not in response.data
+    assert f"/processing/{job.job_id}/1/media-player".encode() in response.data
+
+
+def test_result_page_hides_add_to_media_player_without_platform_support(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: False)
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    response = client.get(f"/processing/{job.job_id}/1/result")
+
+    assert b"Add to Media Player" not in response.data
+    # The manual playlist export is never gated on media-player integration.
+    assert f"/processing/{job.job_id}/1/playlist.m3u".encode() in response.data
+
+
+def test_result_page_hides_add_to_media_player_without_resolved_tracks(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/result")
+
+    assert response.status_code == 200
+    assert b"Add to Media Player" not in response.data
+
+
+def test_add_to_media_player_reuses_the_generated_playlist(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
+    client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_add(playlist_name, playlist_path, paths):
+        captured["playlist_name"] = playlist_name
+        captured["playlist_path"] = playlist_path
+        captured["paths"] = list(paths)
+        return MediaPlayerResult(
+            action="created",
+            imported=1,
+            message="Added to Media Player. 1 track(s) were imported into Apple Music.",
+        )
+
+    monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+
+    response = client.post(f"/processing/{job.job_id}/1/media-player")
+
+    assert response.status_code == 200
+    assert b"Added to Media Player. 1 track(s) were imported into Apple Music." in response.data
+    assert captured["playlist_name"] == job.playlist_name
+    assert Path(captured["playlist_path"]) == download_dir / "playlist.m3u"
+    assert Path(captured["playlist_path"]).is_file()
+    assert [Path(path).name for path in captured["paths"]] == ["Artist - Second.mp3"]
+    # The imported playlist stays available for the normal M3U download.
+    assert client.get(f"/processing/{job.job_id}/1/playlist.m3u").status_code == 200
+
+
+def test_add_to_media_player_reports_failures(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    def failing_add(*_args, **_kwargs):
+        raise MediaPlayerError("Apple Music import failed: boom")
+
+    monkeypatch.setattr("spotm3u.app.add_to_media_player", failing_add)
+
+    response = client.post(f"/processing/{job.job_id}/1/media-player")
+
+    assert response.status_code == 502
+    assert b"Add to Media Player failed: Apple Music import failed: boom" in response.data
+
+
+def test_add_to_media_player_is_unavailable_without_platform_support(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: False)
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+
+    response = client.post(f"/processing/{job.job_id}/1/media-player")
+
+    assert response.status_code == 404
+    assert "only available on macOS and Windows" in response.get_json()["error"]

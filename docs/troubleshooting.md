@@ -54,7 +54,11 @@ conservative about wrong artists, covers, and non-music audio, while incomplete
 metadata can remain uncertain. Retry unresolved tracks after correcting the
 local library or online configuration.
 
-## Apple Music import is unavailable
+## Add to Media Player is unavailable
 
-The integration is shown only on macOS and requires the system Music app.
+**Add to Media Player** is shown only on macOS (Apple Music) and Windows (the
+generated M3U is opened with its default associated player). The button is
+also hidden when no track resolved, because there would be nothing to import.
+On Windows, a missing M3U file association fails with a message suggesting the
+manual download; install or associate a player that supports M3U and retry.
 The M3U download remains available on every supported platform.
