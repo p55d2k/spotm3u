@@ -114,6 +114,7 @@ def smoke_test(bundle: Path) -> None:
 
 
 def _bundle_root(target: Path) -> Path:
+    target = target.expanduser().resolve()
     if target.is_dir():
         if any(
             p.is_file() and p.name.lower() in {"spotm3u", "spotm3u.exe"} for p in target.iterdir()
