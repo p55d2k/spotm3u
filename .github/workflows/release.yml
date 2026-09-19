@@ -46,21 +46,35 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group build
 
-      - name: Install FFmpeg (Windows, Linux)
-        if: matrix.platform != 'macos'
-        uses: FedericoCarboni/setup-ffmpeg@v3
+      - name: Install FFmpeg (Windows, static)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          curl.exe -fsSL --retry 5 --retry-all-errors -o "$env:RUNNER_TEMP\ffmpeg.zip" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP" -Force
+          $bin = Get-ChildItem "$env:RUNNER_TEMP" -Recurse -Directory -Filter bin | Where-Object { $_.FullName -match 'win64-gpl' } | Select-Object -First 1
+          Add-Content -Path $env:GITHUB_PATH -Value $bin.FullName
+
+      - name: Install FFmpeg (Linux, static)
+        if: matrix.platform == 'linux'
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors -o /tmp/ffmpeg.tar.xz "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+          tar -xJf /tmp/ffmpeg.tar.xz -C /tmp
+          BIN=$(find /tmp -maxdepth 3 -type d -name bin -path '*gpl*' | head -1)
+          test -n "$BIN" || { echo "ffmpeg bin dir not found"; exit 1; }
+          echo "$BIN" >> "$GITHUB_PATH"
+
+      - name: Install FFmpeg (macOS arm64, static)
+        if: matrix.platform == 'macos'
+        run: |
+          mkdir -p ffmpeg-stage
+          curl -fsSL --retry 5 --retry-all-errors -o ffmpeg-stage/ffmpeg "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64"
+          curl -fsSL --retry 5 --retry-all-errors -o ffmpeg-stage/ffprobe "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-darwin-arm64"
+          chmod +x ffmpeg-stage/ffmpeg ffmpeg-stage/ffprobe
 
       - name: Stage FFmpeg for bundling (Windows, Linux)
         if: matrix.platform != 'macos'
         run: uv run -q python packaging/stage_ffmpeg.py ffmpeg-stage
-
-      - name: Install FFmpeg (Homebrew, macOS arm64)
-        if: matrix.platform == 'macos'
-        run: brew install ffmpeg
-
-      - name: Stage self-contained FFmpeg (macOS arm64)
-        if: matrix.platform == 'macos'
-        run: uv run -q python packaging/bundle_darwin_ffmpeg.py ffmpeg-stage
 
       - name: Compute release version
         shell: bash

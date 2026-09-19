@@ -143,8 +143,9 @@ uv sync --group build
 # of $SPOTM3U_FFMPEG_DIR there, so it must hold ffmpeg + ffprobe directly.
 # Windows/Linux: stage real (un-symlinked) static binaries, e.g.
 #   packaging/stage_ffmpeg.py ffmpeg-stage
-# macOS arm64: Homebrew FFmpeg is dynamic, so bundle its dylib closure and
-# rewrite load commands to @loader_path (requires ffmpeg/ffprobe on PATH):
+# macOS arm64: the Release workflow downloads static darwin-arm64 builds from
+# ffmpeg-static directly. Locally, Homebrew FFmpeg is dynamic, so its dylibs
+# can be bundled instead (requires ffmpeg/ffprobe on PATH):
 #   brew install ffmpeg
 #   packaging/bundle_darwin_ffmpeg.py ffmpeg-stage
 SPOTM3U_FFMPEG_DIR=/abs/path/ffmpeg-stage uv run --group build pyinstaller \
