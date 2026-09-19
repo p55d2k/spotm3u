@@ -43,5 +43,17 @@ testpaths = ["tests"]
 target-version = "py313"
 line-length = 100
 
+# Ruff is configured as both the linter and formatter for this project.
+#
+# Lint rules (selected below):
+#   E  – pycodestyle errors
+#   F  – pyflakes (unused imports, undefined names, etc.)
+#   I  – isort (import ordering)
+#   UP – pyupgrade (modernize syntax for the target Python version)
+#   B  – flake8-bugbear (common bug patterns)
+#
+# Formatting is handled by `ruff format` and configured in `.pre-commit-config.yaml`
+# alongside the lint hook.
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

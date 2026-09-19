@@ -145,7 +145,20 @@ prepare one provider before PO tokens can be used. spotm3u never generates,
 caches, logs, stores, or exposes PO tokens — they stay entirely inside
 yt-dlp/bgutil.
 
-The simplest cross-platform provider is Docker:
+There are three supported providers. Installing the plugin does **not** start
+any of them; choose and prepare exactly one first. The provider does **not** need
+Docker; the HTTP server runs natively on Node.js 22+ or Deno 2.0.0+.
+
+- **HTTP server** — an always-running process that answers `GET /ping`.
+- **Script** — a command yt-dlp spawns per download; simpler but slower under
+  concurrency and not recommended for it.
+- **Docker image** — the prebuilt HTTP server, which is convenient but
+  **optional**.
+
+Loopback-only binding is recommended for all three because the provider is an
+unauthenticated token service.
+
+#### Docker HTTP server (optional)
 
 ```bash
 docker run --name bgutil-provider -d --init \
@@ -153,17 +166,37 @@ docker run --name bgutil-provider -d --init \
   brainicism/bgutil-ytdlp-pot-provider:2.0.0
 ```
 
-The loopback-only binding is intentional: the provider is an unauthenticated
-token service, so do not publish it to the network. If it runs on another URL,
-set it in your private `config.toml`:
+If it runs on another URL, configure it in your private `config.toml`:
 
 ```toml
 [download]
 pot_provider_url = "http://127.0.0.1:8080"
 ```
 
-Alternatively, point to a native provider checkout built with Node.js 22+ or
-Deno 2.4.3+ (`npm ci && npx tsc` for Node):
+#### Native HTTP server (no Docker)
+
+```bash
+git clone --single-branch --branch 2.0.0 \
+  https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
+cd bgutil-ytdlp-pot-provider/server
+npm ci
+npx tsc
+node build/main.js
+```
+
+This listens on `127.0.0.1:4416` by default, so no configuration is required
+unless you change the port.
+
+#### Script provider
+
+```bash
+git clone --single-branch --branch 2.0.0 \
+  https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
+cd bgutil-ytdlp-pot-provider/server
+# Node: `npm ci` then skip `npx tsc`; Deno: `deno install --allow-scripts=npm:canvas --frozen`
+```
+
+Point `config.toml` at the checkout:
 
 ```toml
 [download]
@@ -298,14 +331,44 @@ uv run pre-commit install
 uv run pytest
 ```
 
-`pre-commit install` is a one-time step per clone; it wires the Git `pre-commit`
-hook so every commit runs [Ruff](https://docs.astral.sh/ruff/) lint/format and
-the full `pytest` suite. Ruff is configured in `pyproject.toml`; the hook list
-lives in `.pre-commit-config.yaml`. Run the checks against the whole tree at any
-time with `uv run pre-commit run --all-files`.
+Ruff is the code quality tool for this project. It handles both linting and
+formatting. Configuration lives in `pyproject.toml` under `[tool.ruff]` and
+`[tool.ruff.lint]`; the hook definitions live in `.pre-commit-config.yaml`.
 
-The same test suite runs in GitHub Actions. The reusable services live under
-`src/spotm3u/`; tests are under `tests/`; architecture details are in `docs/`.
+### Quick commands
+
+```bash
+# Lint only
+uv run ruff check src tests
+
+# Auto-fix lint issues
+uv run ruff check --fix src tests
+
+# Check formatting
+uv run ruff format --check src tests
+
+# Apply formatting
+uv run ruff format src tests
+
+# Run the pre-commit hooks against the whole tree
+uv run pre-commit run --all-files
+```
+
+### Pre-commit
+
+`uv run pre-commit install` is a one-time step per clone. It wires the Git
+`pre-commit` hook so every commit runs Ruff (lint with `--fix` + format) and the
+full `pytest` suite. This catches style and correctness issues before they land
+in the commit history.
+
+### CI
+
+The same checks run in GitHub Actions on every push and pull request. The CI
+workflow runs Ruff lint and format checks, then the test suite. See
+`.github/workflows/ci.yml` for the exact steps.
+
+The reusable services live under `src/spotm3u/`; tests are under `tests/`;
+architecture details are in `docs/`.
 
 ## License and acknowledgments
 
