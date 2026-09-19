@@ -71,9 +71,62 @@ jobs:
           path: dist-artifacts/*.zip
           if-no-files-found: error
 
+  verify:
+    name: Verify ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+          - os: macos-14
+            platform: macos
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Compute release version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Download release archive
+        uses: actions/download-artifact@v4
+        with:
+          name: spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Assert archive naming
+        shell: bash
+        run: |
+          expected="spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          actual=$(ls spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}/)
+          test "$actual" = "$expected" || { echo "unexpected asset: $actual"; exit 1; }
+
+      - name: Extract and smoke test packaged application
+        run: uv run -q python packaging/smoke_test.py "spotm3u-${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}"
+
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, verify]
     runs-on: ubuntu-latest
     permissions:
       contents: write

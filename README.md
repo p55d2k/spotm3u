@@ -16,6 +16,7 @@
 - [Quick start](#quick-start)
 - [Usage](#usage)
 - [Configuration](#configuration)
+- [Distribution](#distribution)
 - [Architecture](#architecture)
 - [Security](#security)
 - [Development](#development)
@@ -61,6 +62,11 @@ Exportify; spotm3u receives only the resulting ZIP.
 > Spotify authentication.
 
 ## Requirements
+
+Standalone releases (see [Distribution](#distribution)) do **not** require
+Python, `uv`, or a manually installed FFmpeg — the executable ships with a
+bundled Python runtime, all dependencies, and FFmpeg/ffprobe. Running from
+source does:
 
 - Python 3.13 or newer
 - [`uv`](https://docs.astral.sh/uv/)
@@ -281,6 +287,74 @@ Configuration is optional TOML, loaded from `./config.toml` or the path in
 `SPOTM3U_LOG_LEVEL` overrides the configured log level. See `config.toml` for
 the complete commented example.
 
+## Distribution
+
+Tagged releases (e.g. `v1.0.0`) are built automatically by GitHub Actions into
+standalone platform archives and published as GitHub Release assets. Each
+archive contains the executable, the bundled Python runtime and dependencies,
+templates/static assets, and the FFmpeg/ffprobe binaries — no Python, `uv`, or
+system FFmpeg is needed.
+
+### Supported platforms
+
+Only the combinations below are CI-tested (the smoke test boots each archived
+build, verifies the web server, a rendered template, static assets, and the
+bundled FFmpeg). Other combinations are not claimed as supported:
+
+| Platform    | Architecture | CI runner              | Archive suffix   |
+| ----------- | ------------ | ---------------------- | ---------------- |
+| Windows     | x86_64       | `windows-latest`       | `windows-x86_64` |
+| macOS       | arm64        | `macos-14`             | `macos-arm64`    |
+| Linux       | x86_64       | `ubuntu-latest`        | `linux-x86_64`   |
+
+### Installation
+
+1. Download the archive for your platform from the
+   [Releases](https://github.com/p55d2k/spotm3u/releases) page.
+2. Extract it anywhere.
+3. Run the `spotm3u` (`spotm3u.exe` on Windows) executable inside the `spotm3u`
+   folder.
+4. Open <http://127.0.0.1:5001/>.
+
+Optional configuration: place a `config.toml` next to the executable (or set
+`SPOTM3U_CONFIG`); see [Configuration](#configuration). A console window shows
+logs while the app runs; closing it stops the server.
+
+### Platform limitations
+
+- The executables are **not signed or notarized**. macOS shows a Gatekeeper
+  prompt (right-click → Open, or `xattr -d com.apple.quarantine`) and Windows
+  may show a SmartScreen warning on first run.
+- FFmpeg is bundled per-architecture; installing one manually is optional but
+  an `ffmpeg/` directory placed next to the executable takes precedence if you
+  want to override the bundled copy.
+- Apple Music import is macOS-only and needs the macOS Music app.
+- The PO token provider (`download.pot_provider_url` /
+  `download.pot_provider_home`) is *not* bundled; see
+  [YouTube authentication](#youtube-authentication).
+
+### Creating a release (maintainers)
+
+`docs/release.md` covers the packaging architecture and build process in
+detail. To ship a release:
+
+1. Update the version in `pyproject.toml` and `uv lock` if needed.
+2. Tag and push the tag:
+
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+3. The `Release` workflow builds, packages, and smoke-tests the application on
+   every supported platform. If all builds and checks pass, it creates the
+   GitHub Release for the tag (auto-generated release notes) and uploads an
+   archive per platform with the name
+   `spotm3u-<version>-<platform>-<arch>.zip`.
+4. Normal commits and PRs never create releases; only `v*` tag pushes do. The
+   release is published only after every platform build and smoke test
+   succeeds.
+
 ## Architecture
 
 ```mermaid
@@ -365,7 +439,9 @@ in the commit history.
 
 The same checks run in GitHub Actions on every push and pull request. The CI
 workflow runs Ruff lint and format checks, then the test suite. See
-`.github/workflows/ci.yml` for the exact steps.
+`.github/workflows/ci.yml` for the exact steps. Tag pushes additionally trigger
+the release pipeline in `.github/workflows/release.yml` (build → package →
+smoke test → publish).
 
 The reusable services live under `src/spotm3u/`; tests are under `tests/`;
 architecture details are in `docs/`.
