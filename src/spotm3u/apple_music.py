@@ -89,7 +89,7 @@ def _apple_script(playlist_name: str, paths: list[Path]) -> str:
     set importedCount to 0
     set failedCount to 0
 {additions}
-    view targetPlaylist
+    reveal targetPlaylist
     return (importedCount as text) & "|" & (failedCount as text)
 end tell'''
 

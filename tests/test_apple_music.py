@@ -40,8 +40,8 @@ def test_add_to_apple_music_preserves_order_and_duplicates(tmp_path, monkeypatch
     assert script.count(str(first)) == 2
     assert captured["options"]["timeout"] == 120
     assert captured["arguments"][:2] == ["osascript", "-e"]
-    assert "view targetPlaylist" in script
-    assert script.index("view targetPlaylist") > script.index(str(first))
+    assert "reveal targetPlaylist" in script
+    assert script.index("reveal targetPlaylist") > script.index(str(first))
 
 
 def test_add_to_apple_music_reports_script_failures(tmp_path, monkeypatch) -> None:
