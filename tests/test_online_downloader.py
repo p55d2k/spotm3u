@@ -38,6 +38,10 @@ def _noop_validate_provider(_url, _home):
     return None
 
 
+def _valid_audio(_track, _path):
+    return types.SimpleNamespace(status="valid", reasons=())
+
+
 def install_fake_yt_dlp(monkeypatch, fake=FakeYoutubeDL, *, validate_provider=None):
     monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=fake))
     validate_provider = validate_provider or _noop_validate_provider
@@ -181,6 +185,148 @@ def test_hung_download_is_abandoned_after_wall_clock_timeout(tmp_path, monkeypat
 
     with pytest.raises(DownloadError, match="timed out"):
         download_track(TRACK, "https://example.com/source", tmp_path, timeout=0.2)
+
+
+# --- Concurrent deduplication -------------------------------------------------
+
+
+def test_concurrent_downloads_download_shared_output_once(tmp_path, monkeypatch):
+    """Parallel jobs needing the same file wait for it instead of re-downloading."""
+    import threading
+
+    gate = threading.Event()
+    first_started = threading.Event()
+    waiter_entered = threading.Event()
+    calls: list[Path] = []
+
+    def fake_perform(track, source_url, destination, output_path, **kwargs):
+        calls.append(output_path)
+        first_started.set()
+        gate.wait(timeout=5)
+        output_path.write_bytes(b"mp3")
+        return output_path
+
+    real_await_peer = downloader._await_peer
+
+    def wrapped_await_peer(in_flight, track, timeout):
+        waiter_entered.set()
+        return real_await_peer(in_flight, track, timeout)
+
+    monkeypatch.setattr(downloader, "_perform_download", fake_perform)
+    monkeypatch.setattr(downloader, "validate_downloaded_audio", _valid_audio)
+    monkeypatch.setattr(downloader, "_await_peer", wrapped_await_peer)
+
+    results: list[Path] = []
+    errors: list[BaseException] = []
+
+    def run():
+        try:
+            results.append(download_track(TRACK, YOUTUBE_URL, tmp_path))
+        except BaseException as exc:  # noqa: BLE001 - collected for the assertion
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    assert first_started.wait(timeout=5)
+    assert waiter_entered.wait(timeout=5), "the second caller must wait for the owner"
+    gate.set()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not errors
+    assert len(calls) == 1, "a shared output must be downloaded only once"
+    assert len(results) == 2
+    assert results[0] == results[1]
+
+
+def test_waiting_caller_downloads_itself_after_owner_fails(tmp_path, monkeypatch):
+    import threading
+
+    first = True
+
+    def fake_perform(track, source_url, destination, output_path, **kwargs):
+        nonlocal first
+        if first:
+            first = False
+            raise DownloadError("peer failed")
+        output_path.write_bytes(b"mp3")
+        return output_path
+
+    monkeypatch.setattr(downloader, "_perform_download", fake_perform)
+    monkeypatch.setattr(downloader, "validate_downloaded_audio", _valid_audio)
+
+    results: list[Path] = []
+    errors: list[BaseException] = []
+
+    def run():
+        try:
+            results.append(download_track(TRACK, YOUTUBE_URL, tmp_path))
+        except BaseException as exc:  # noqa: BLE001 - collected for the assertion
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(errors) == 1
+    assert "peer failed" in str(errors[0])
+    assert len(results) == 1
+    assert results[0].is_file()
+
+
+def test_peer_result_is_not_reused_when_it_is_invalid_for_the_waiting_track(tmp_path, monkeypatch):
+    """A different recording sharing an output name must not inherit a peer's file."""
+    import threading
+
+    gate = threading.Event()
+    first_started = threading.Event()
+    calls: list[str] = []
+
+    def fake_perform(track, source_url, destination, output_path, **kwargs):
+        calls.append(track.spotify_id)
+        first_started.set()
+        gate.wait(timeout=5)
+        output_path.write_bytes(b"mp3")
+        return output_path
+
+    def fake_validate(track, path):
+        return types.SimpleNamespace(
+            status="valid" if track.spotify_id == "shared-good" else "invalid",
+            reasons=(),
+        )
+
+    monkeypatch.setattr(downloader, "_perform_download", fake_perform)
+    monkeypatch.setattr(downloader, "validate_downloaded_audio", fake_validate)
+
+    good = Track(title="Shared Song", artists=["Artist"], spotify_id="shared-good")
+    other = Track(title="Shared Song", artists=["Artist"], spotify_id="shared-other")
+    results: list[Path] = []
+    errors: list[BaseException] = []
+
+    def run(track):
+        try:
+            results.append(download_track(track, YOUTUBE_URL, tmp_path))
+        except BaseException as exc:  # noqa: BLE001 - collected for the assertion
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=run, args=(good,)),
+        threading.Thread(target=run, args=(other,)),
+    ]
+    for thread in threads:
+        thread.start()
+    assert first_started.wait(timeout=5)
+    time.sleep(0.1)
+    gate.set()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not errors
+    assert set(calls) == {"shared-good", "shared-other"}
+    assert len(results) == 2
 
 
 # --- YouTube configuration --------------------------------------------------

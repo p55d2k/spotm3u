@@ -115,3 +115,10 @@ validation and triggers candidate retry.
 Successful downloads may be cached and reused when their association with the requested recording is sufficiently strong.
 
 Cache reuse must not rely solely on filenames.
+
+Concurrent downloaders that target the same output file (for example two
+batch playlists that share a song) are single-flighted: the first caller
+downloads, and the others wait and reuse that validated file instead of
+downloading it again. Reuse only happens when the file passes audio
+validation against the waiting recording; otherwise the caller downloads its
+own copy.

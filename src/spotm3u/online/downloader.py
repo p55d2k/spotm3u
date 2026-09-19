@@ -115,6 +115,25 @@ _OUTPUT_LOCKS: dict[str, threading.Lock] = {}
 _OUTPUT_LOCKS_GUARD = threading.Lock()
 
 
+class _InFlightDownload:
+    """Ownership record for one in-progress download of an output path."""
+
+    __slots__ = ("condition", "done", "path", "error")
+
+    def __init__(self) -> None:
+        self.condition = threading.Condition()
+        self.done = False
+        self.path: Path | None = None
+        self.error: BaseException | None = None
+
+
+# Single-flight registry: parallel jobs that share a recording (for example two
+# batch playlists, or a playlist that lists the same track twice) wait for the
+# first download of an output path instead of each downloading it again.
+_OUTPUT_IN_FLIGHT: dict[str, _InFlightDownload] = {}
+_OUTPUT_IN_FLIGHT_GUARD = threading.Lock()
+
+
 class DownloadError(RuntimeError):
     """Raised when a source cannot be downloaded into a complete MP3 file."""
 
@@ -151,6 +170,152 @@ def download_track(
         raise DownloadError(f"cannot create download directory: {destination}") from exc
 
     output_path = destination / _output_name(track, source_url)
+    return _download_single_flight(
+        track,
+        source_url,
+        destination,
+        output_path,
+        quality=quality,
+        retries=retries,
+        fragment_retries=fragment_retries,
+        socket_timeout=socket_timeout,
+        timeout=timeout,
+        cookies_from_browser=cookies_from_browser,
+        pot_provider_url=pot_provider_url,
+        pot_provider_home=pot_provider_home,
+    )
+
+
+def _download_single_flight(
+    track: Track,
+    source_url: str,
+    destination: Path,
+    output_path: Path,
+    *,
+    quality: str,
+    retries: int,
+    fragment_retries: int,
+    socket_timeout: int,
+    timeout: float | None,
+    cookies_from_browser: str | None,
+    pot_provider_url: str | None,
+    pot_provider_home: str | None,
+) -> Path:
+    """Download ``output_path`` exactly once no matter how many callers race.
+
+    The first caller for a path becomes its owner and performs the download;
+    every concurrent caller targeting the same path waits for the owner and
+    reuses the validated file instead of downloading it again. A peer's file
+    is only reused when it still passes audio validation against the waiting
+    track. If the owner failed (or its file is unusable for this track), the
+    next caller acquires ownership and downloads itself.
+    """
+    key = str(output_path.resolve())
+    while True:
+        with _OUTPUT_IN_FLIGHT_GUARD:
+            in_flight = _OUTPUT_IN_FLIGHT.get(key)
+            if in_flight is None:
+                in_flight = _InFlightDownload()
+                _OUTPUT_IN_FLIGHT[key] = in_flight
+                owner = True
+            else:
+                owner = False
+
+        if owner:
+            return _finish_in_flight(
+                key,
+                in_flight,
+                lambda: _perform_download(
+                    track,
+                    source_url,
+                    destination,
+                    output_path,
+                    quality=quality,
+                    retries=retries,
+                    fragment_retries=fragment_retries,
+                    socket_timeout=socket_timeout,
+                    timeout=timeout,
+                    cookies_from_browser=cookies_from_browser,
+                    pot_provider_url=pot_provider_url,
+                    pot_provider_home=pot_provider_home,
+                ),
+            )
+
+        reused = _await_peer(in_flight, track, timeout)
+        if reused is not None:
+            logger.info(
+                "download track=%s url=%s status=reused from concurrent peer path=%s",
+                track_identifier(track),
+                _redact_url(source_url) or source_url,
+                reused,
+            )
+            return reused
+
+
+def _finish_in_flight(
+    key: str,
+    in_flight: _InFlightDownload,
+    download: Callable[[], Path],
+) -> Path:
+    """Run ``download`` as the owner and publish its outcome to waiting peers."""
+    try:
+        path = download()
+    except BaseException as exc:  # noqa: BLE001 - peers must always be released
+        with in_flight.condition:
+            in_flight.done = True
+            in_flight.error = exc
+            in_flight.condition.notify_all()
+        with _OUTPUT_IN_FLIGHT_GUARD:
+            _OUTPUT_IN_FLIGHT.pop(key, None)
+        raise
+    with in_flight.condition:
+        in_flight.done = True
+        in_flight.path = path
+        in_flight.condition.notify_all()
+    with _OUTPUT_IN_FLIGHT_GUARD:
+        _OUTPUT_IN_FLIGHT.pop(key, None)
+    return path
+
+
+def _await_peer(
+    in_flight: _InFlightDownload,
+    track: Track,
+    timeout: float | None,
+) -> Path | None:
+    """Wait for the owner of ``in_flight`` and reuse a validated result.
+
+    Returns the owner's path when it produced a file that still passes audio
+    validation against ``track``; ``None`` means the caller must download the
+    file itself.
+    """
+    with in_flight.condition:
+        in_flight.condition.wait_for(lambda: in_flight.done, timeout=timeout)
+        if (
+            in_flight.done
+            and in_flight.path is not None
+            and in_flight.path.is_file()
+            and validate_downloaded_audio(track, in_flight.path).status == "valid"
+        ):
+            return in_flight.path
+    return None
+
+
+def _perform_download(
+    track: Track,
+    source_url: str,
+    destination: Path,
+    output_path: Path,
+    *,
+    quality: str,
+    retries: int,
+    fragment_retries: int,
+    socket_timeout: int,
+    timeout: float | None,
+    cookies_from_browser: str | None,
+    pot_provider_url: str | None,
+    pot_provider_home: str | None,
+) -> Path:
+    """Run the actual yt-dlp/ffmpeg download under the per-path lock."""
     if timeout is not None and timeout > 0:
         try:
             return _run_with_timeout(
