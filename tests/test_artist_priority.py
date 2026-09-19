@@ -2,7 +2,7 @@
 
 Regression: for Joker Xue's ``演员`` the pipeline downloaded Hebe Tien's cover
 because both share the title. Artist identity must outweigh title similarity
-for common titles, while keeping the Task 21A permissive philosophy.
+for common titles, while keeping the permissive matching philosophy.
 """
 
 from spotm3u.models import Track

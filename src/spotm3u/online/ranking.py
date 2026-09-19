@@ -9,7 +9,7 @@ B. Is this upload a good source for the song audio?
 
 A wrong artist outranks every title/source-quality advantage. The source-quality
 preference only operates strongly among candidates that already appear to be
-the correct recording. Discovery stays permissive (Task 21A): missing metadata
+the correct recording. Discovery stays permissive: missing metadata
 is not proof of a wrong candidate.
 """
 

@@ -11,7 +11,7 @@ There are two resolution paths:
 
 ## Local Matching
 
-Task 10 handles matching Spotify/Exportify metadata against existing local audio files.
+The local resolver handles matching Spotify/Exportify metadata against existing local audio files.
 
 The local resolver should remain independent from online source selection.
 

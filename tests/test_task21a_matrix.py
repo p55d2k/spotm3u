@@ -1,4 +1,4 @@
-"""Task 21A test matrix: permissive online source matching.
+"""Permissive online source matching test matrix.
 
 Every legitimate candidate below must reach download/audio validation instead
 of being rejected for imperfect metadata. Obvious wrong recordings are still

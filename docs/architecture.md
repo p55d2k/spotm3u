@@ -61,9 +61,7 @@ This prevents harmless metadata differences from causing large numbers of false 
 
 ## Local Audio Resolver
 
-Task 10 is the existing local resolver.
-
-It searches existing MP3/FLAC/etc. files and attempts to match them to Tracks.
+The local resolver searches existing MP3/FLAC/etc. files and attempts to match them to Tracks.
 
 It remains a separate resolution strategy.
 
@@ -193,7 +191,7 @@ The generated M3U references local audio files.
 
 Those files may be:
 
-- existing local files from Task 10
+- existing local files
 - successfully downloaded MP3 files
 
 ## Diagnostics

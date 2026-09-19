@@ -1,4 +1,4 @@
-"""End-to-end web flow test (task 30).
+"""End-to-end web flow test.
 
 Exercises the complete user journey—upload → select → start → poll → result
 → M3U download—with both local audio matching and online source resolution

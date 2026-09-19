@@ -37,7 +37,7 @@ Exportify; spotm3u receives only the resulting ZIP.
 
 - 📦 **Exportify ZIP ingestion** — safely parses playlists, Unicode metadata,
   order, and intentional duplicate entries.
-- 💾 **Task 10 local matching** — reuses existing audio before any network
+- 💾 **Local matching** — reuses existing audio before any network
   search or download.
 - 🎯 **Artist-aware identity matching** — a title match cannot make a
   wrong-artist cover win.
@@ -288,7 +288,7 @@ flowchart TD
     A[Exportify] --> B[Upload playlist ZIP]
     B --> C[ZIP parser]
     C --> D[Playlist selection]
-    D --> E[Task 10 local audio resolver]
+    D --> E[Local audio resolver]
     E -->|unresolved| F[Artist-aware online search]
     F --> G[Candidate aggregation and deduplication]
     G --> H[Recording identity matching]

@@ -10,7 +10,7 @@ The M3U writer receives an ordered sequence of resolved local audio paths.
 
 A resolved path may originate from:
 
-1. an existing local audio file found by Task 10, or
+1. an existing local audio file, or
 2. an MP3 downloaded through yt-dlp.
 
 ## Output
