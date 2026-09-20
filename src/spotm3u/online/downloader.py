@@ -768,7 +768,7 @@ def _po_token_plugin_message() -> str:
     return (
         "The bgutil yt-dlp PO Token plugin is not installed, so YouTube PO "
         "Tokens cannot be generated. Install bgutil-ytdlp-pot-provider and "
-        "restart spotm3u; installing the plugin does not start the separate "
+        "restart SpotM3U; installing the plugin does not start the separate "
         "provider server."
     )
 

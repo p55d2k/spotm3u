@@ -77,7 +77,7 @@ def test_main_reports_an_unexpected_startup_error(monkeypatch) -> None:
 
     assert exit_info.value.code == 1
     assert reported == [
-        {"message": "spotm3u could not start: webview unavailable", "exception": True}
+        {"message": "SpotM3U could not start: webview unavailable", "exception": True}
     ]
 
 

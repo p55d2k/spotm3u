@@ -130,16 +130,16 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            bundle="dist/spotm3u.app"
+            bundle="dist/SpotM3U.app"
           else
-            bundle="dist/spotm3u"
+            bundle="dist/SpotM3U"
           fi
-          uv run -q python packaging/make_archive.py "$bundle" "dist-artifacts/spotm3u-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          uv run -q python packaging/make_archive.py "$bundle" "dist-artifacts/SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
 
       - name: Upload build archive
         uses: actions/upload-artifact@v4
         with:
-          name: spotm3u-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
+          name: SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist-artifacts/*.zip
           if-no-files-found: error
 
@@ -190,13 +190,13 @@ jobs:
       - name: Download release archive
         uses: actions/download-artifact@v4
         with:
-          name: spotm3u-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
+          name: SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist-artifacts
 
       - name: Assert archive naming
         shell: bash
         run: |
-          expected="spotm3u-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          expected="SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
           find dist-artifacts -type f -name "$expected" -print -quit | grep -q . || {
             echo "expected release archive missing: $expected"
             find dist-artifacts -maxdepth 3 -print
@@ -207,7 +207,7 @@ jobs:
         if: matrix.platform != 'windows'
         shell: bash
         run: |
-          archive=$(find dist-artifacts -type f -name "spotm3u-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip" -print -quit)
+          archive=$(find dist-artifacts -type f -name "SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip" -print -quit)
           test -n "$archive"
           extract_dir="${archive%.zip}-extracted"
           mkdir -p "$extract_dir"
@@ -217,7 +217,7 @@ jobs:
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          archive=$(find dist-artifacts -type f -name "spotm3u-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip" -print -quit)
+          archive=$(find dist-artifacts -type f -name "SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip" -print -quit)
           test -n "$archive"
           uv run -q python packaging/verify_macos_bundle.py "$archive"
 
@@ -246,7 +246,7 @@ jobs:
       - name: Download platform archives
         uses: actions/download-artifact@v4
         with:
-          pattern: "spotm3u-*"
+          pattern: "SpotM3U-*"
           path: release-artifacts
           merge-multiple: true
 

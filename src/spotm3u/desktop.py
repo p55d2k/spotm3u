@@ -1,7 +1,7 @@
 """Native desktop application shell.
 
 ``run_desktop()`` starts the existing Flask application on a free loopback port
-and presents it inside a native ``spotm3u`` WebView window (pywebview) instead
+and presents it inside a native ``SpotM3U`` WebView window (pywebview) instead
 of an external browser. Flask keeps serving the UI and handling application
 logic; this module only supplies the window around it, waits for the server
 before loading the page, and shuts the server down when the window closes.
@@ -39,7 +39,7 @@ from .runtime import bundle_roots, is_frozen
 
 _LOGGER = logging.getLogger(PACKAGE_LOGGER)
 
-WINDOW_TITLE = "spotm3u"
+WINDOW_TITLE = "SpotM3U"
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
 WINDOW_MIN_SIZE = (800, 560)
@@ -48,7 +48,7 @@ _ICON_RELATIVE = Path("assets") / "icon.png"
 
 
 def webview_icon_path() -> Path | None:
-    """The canonical spotm3u icon for the WebView window, when available.
+    """The canonical SpotM3U icon for the WebView window, when available.
 
     The same ``assets/icon.png`` is used in development and by the packaged
     build (the spec collects it for the Linux GTK backend, which applies it as
@@ -91,7 +91,7 @@ def start_server(app, host: str, port: int) -> tuple[object, threading.Thread]:
 
 
 def show_window(url: str) -> None:
-    """Show ``url`` in the native spotm3u window and block until it closes.
+    """Show ``url`` in the native SpotM3U window and block until it closes.
 
     pywebview is imported lazily so tests and the headless server path never
     touch the desktop GUI stack. Only the windowing capability is used: no
@@ -129,7 +129,7 @@ def run_desktop(*, open_window: bool | None = None) -> None:
         app.logger.info("port %d is in use; listening on port %d instead", preferred_port, port)
     server, server_thread = start_server(app, host, port)
     url = webview_url(host, port)
-    app.logger.info("spotm3u listening on %s", url)
+    app.logger.info("SpotM3U listening on %s", url)
     try:
         if not wait_for_server(host, port, timeout=READINESS_TIMEOUT):
             raise RuntimeError("server did not become ready")

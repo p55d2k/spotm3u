@@ -194,7 +194,7 @@ directory so the playlist continues to reference real local files.
 ## Download Directory
 
 Downloads are stored persistently under `DOWNLOAD_DIR` config, defaulting to
-`<MUSIC_LIBRARY>/spotm3u-downloads/`. This keeps files so the M3U can load
+`<MUSIC_LIBRARY>/SpotM3U-downloads/`. This keeps files so the M3U can load
 them and lets later runs match them locally instead of re-downloading.
 
 ## Important

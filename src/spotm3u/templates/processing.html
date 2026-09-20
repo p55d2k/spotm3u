@@ -13,7 +13,7 @@
     <main class="card">
       <p class="eyebrow">Step 3 · Processing playlist</p>
       <h1>Convert "{{ playlist_name }}"</h1>
-      <p class="intro">{{ total_tracks }} tracks · You can leave this tab open while spotm3u works.</p>
+      <p class="intro">{{ total_tracks }} tracks · You can leave this tab open while SpotM3U works.</p>
 
       <form id="start-form" method="post" action="{{ url_for('start_processing', job_id=job_id, playlist_id=playlist_id) }}">
         <button type="submit">Start converting playlist</button>

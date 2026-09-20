@@ -19,5 +19,5 @@ def main() -> None:
     port = select_port(preferred_port, DEFAULT_HOST)
     if port != preferred_port:
         app.logger.info("port %d is in use; listening on port %d instead", preferred_port, port)
-    app.logger.info("spotm3u dev server: http://%s:%d/", DEFAULT_HOST, port)
+    app.logger.info("SpotM3U dev server: http://%s:%d/", DEFAULT_HOST, port)
     app.run(host=DEFAULT_HOST, port=port, debug=True, use_reloader=True)

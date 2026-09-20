@@ -20,10 +20,10 @@ requests run CI but do not publish a release.
    artifacts to a GitHub Release with generated release notes.
 
 Archives are named
-`spotm3u-<version>-<platform>-<arch>.zip`. The tag's `v` prefix is removed from
+`SpotM3U-<version>-<platform>-<arch>.zip`. The tag's `v` prefix is removed from
 the filename and release name. The Windows and Linux archives contain the
-one-folder bundle directory (`spotm3u/`); the macOS archive contains the
-application bundle itself (`spotm3u.app/`). A failed build or verification job
+one-folder bundle directory (`SpotM3U/`); the macOS archive contains the
+application bundle itself (`SpotM3U.app/`). A failed build or verification job
 prevents publishing.
 
 Releases are intentionally unsigned and un-notarized: the workflow does not use

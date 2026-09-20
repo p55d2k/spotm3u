@@ -1,4 +1,4 @@
-"""Flask application for the spotm3u web interface."""
+"""Flask application for the SpotM3U web interface."""
 
 import json
 import logging
@@ -656,7 +656,7 @@ def _download_dir(app: Flask) -> Path:
     configured = app.config.get("DOWNLOAD_DIR")
     if configured:
         return Path(configured).expanduser()
-    return Path(app.config["MUSIC_LIBRARY"]).expanduser() / "spotm3u-downloads"
+    return Path(app.config["MUSIC_LIBRARY"]).expanduser() / "SpotM3U-downloads"
 
 
 def _build_processing_job(

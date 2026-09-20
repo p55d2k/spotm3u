@@ -1,9 +1,9 @@
-"""End-to-end smoke test for a packaged spotm3u bundle or release archive.
+"""End-to-end smoke test for a packaged SpotM3U bundle or release archive.
 
 Starts the bundled executable directly -- no system Python, uv, or FFmpeg is
 used -- then exercises the web server, a rendered template, static assets, and
 the bundled FFmpeg binaries. Understands both the onedir layout (executable and
-``_internal`` beside each other) and the macOS ``spotm3u.app`` bundle layout.
+``_internal`` beside each other) and the macOS ``SpotM3U.app`` bundle layout.
 Exits non-zero on any failure so CI treats the run as a failed build.
 
 The application opens its UI in a native WebView on start; that is disabled
@@ -63,11 +63,11 @@ def find_executable(bundle: Path) -> Path:
         for candidate in directory.iterdir()
         if candidate.is_file()
     }
-    for name in ("spotm3u.exe", "spotm3u"):
-        candidate = candidates.get(name)
+    for name in ("SpotM3U.exe", "SpotM3U"):
+        candidate = candidates.get(name.lower())
         if candidate is not None:
             return candidate
-    raise SystemExit(f"no spotm3u executable found in {bundle}")
+    raise SystemExit(f"no SpotM3U executable found in {bundle}")
 
 
 def _ffmpeg_directories(bundle: Path) -> tuple[Path, ...]:
@@ -187,7 +187,7 @@ def smoke_test(bundle: Path) -> None:
 
 
 def _has_executable(directory: Path) -> bool:
-    return any((directory / name).is_file() for name in ("spotm3u", "spotm3u.exe"))
+    return any((directory / name).is_file() for name in ("SpotM3U", "SpotM3U.exe"))
 
 
 def _app_root(start: Path) -> Path | None:
@@ -209,7 +209,7 @@ def _bundle_root(target: Path) -> Path:
         if len(apps) > 1:
             raise SystemExit(f"multiple .app bundles found in {target}")
         # Onedir layout whose bundle root is nested one level down, e.g. an
-        # already-extracted release ZIP (``<dir>/spotm3u/spotm3u``). Detect it
+        # already-extracted release ZIP (``<dir>/SpotM3U/SpotM3U``). Detect it
         # before the single-ZIP fallback, which would otherwise mistake
         # PyInstaller's own ``_internal/base_library.zip`` for the archive.
         bundles = sorted(p for p in target.iterdir() if p.is_dir() and _has_executable(p))
@@ -257,7 +257,7 @@ def _unpack(archive: Path, into: Path) -> Path:
                 for name in ("ffmpeg", "ffprobe", "ffmpeg.exe", "ffprobe.exe"):
                     _make_executable(ffmpeg_dir / name)
             return bundle
-    raise SystemExit(f"no spotm3u executable found in extracted archive {archive}")
+    raise SystemExit(f"no SpotM3U executable found in extracted archive {archive}")
 
 
 def _make_executable(path: Path) -> None:

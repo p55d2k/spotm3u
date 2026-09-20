@@ -31,7 +31,7 @@ def test_build_command_requires_uv(monkeypatch) -> None:
 
 
 def test_report_success_points_at_existing_artifacts(tmp_path, capsys) -> None:
-    produced = [tmp_path / "dist" / "spotm3u"]
+    produced = [tmp_path / "dist" / "SpotM3U"]
     produced[0].mkdir(parents=True)
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(build, "artifact_paths", lambda: produced)
@@ -42,11 +42,11 @@ def test_report_success_points_at_existing_artifacts(tmp_path, capsys) -> None:
 
     out = capsys.readouterr().out
     assert "Build complete." in out
-    assert "dist/spotm3u" in out
+    assert "dist/SpotM3U" in out
 
 
 def test_report_success_mentions_macos_app_bundle(tmp_path, capsys) -> None:
-    produced = [tmp_path / "dist" / "spotm3u", tmp_path / "dist" / "spotm3u.app"]
+    produced = [tmp_path / "dist" / "SpotM3U", tmp_path / "dist" / "SpotM3U.app"]
     for path in produced:
         path.mkdir(parents=True)
     monkeypatch = pytest.MonkeyPatch()
@@ -56,7 +56,7 @@ def test_report_success_mentions_macos_app_bundle(tmp_path, capsys) -> None:
     finally:
         monkeypatch.undo()
 
-    assert "dist/spotm3u.app" in capsys.readouterr().out
+    assert "dist/SpotM3U.app" in capsys.readouterr().out
 
 
 def _install_fake_build(monkeypatch, tmp_path: Path, result: int) -> dict[str, object]:

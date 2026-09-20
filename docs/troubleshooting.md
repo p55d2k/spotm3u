@@ -5,7 +5,7 @@
 Configuration errors are reported in the terminal for source runs. A packaged
 Windows build has no console, so it shows a dialog instead.
 
-spotm3u prefers the `web.port` from `config.toml` (default 5001) and falls back
+SpotM3U prefers the `web.port` from `config.toml` (default 5001) and falls back
 to a free port when that port is already taken, so another program using 5001
 does not stop it from starting. The port actually in use is the one opened in
 the native window; the startup log names it for source runs.
@@ -15,7 +15,7 @@ be exposed directly to the network.
 
 ## The native window does not open
 
-The packaged application opens its interface in a native `spotm3u` window, not
+The packaged application opens its interface in a native `SpotM3U` window, not
 a browser. Set `SPOTM3U_NO_WEBVIEW=1` to disable that window for headless or
 scripted runs; the startup log still reports it as
 `listening on http://127.0.0.1:<port>` so the server can be reached manually.

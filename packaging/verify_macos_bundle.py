@@ -1,4 +1,4 @@
-"""Validate the structure of a packaged macOS ``spotm3u.app`` release artifact.
+"""Validate the structure of a packaged macOS ``SpotM3U.app`` release artifact.
 
 Catches malformed or flattened macOS bundles -- loose PyInstaller output, a
 missing executable, missing FFmpeg, or missing application resources -- without
@@ -6,7 +6,7 @@ downgrading the release to unsigned internals. The project intentionally
 distributes an unsigned, un-notarized application, so signature and Gatekeeper
 status are never checked here; only structural problems fail the build.
 
-Accepts a release ZIP, an extracted ``spotm3u.app``, or a directory containing
+Accepts a release ZIP, an extracted ``SpotM3U.app``, or a directory containing
 either.
 """
 
@@ -17,10 +17,10 @@ import zipfile
 from pathlib import Path
 from typing import NoReturn
 
-APP_NAME = "spotm3u.app"
+APP_NAME = "SpotM3U.app"
 _SYMLINK_MODE = 0o120777
 CONTENTS = f"{APP_NAME}/Contents"
-EXECUTABLE = f"{CONTENTS}/MacOS/spotm3u"
+EXECUTABLE = f"{CONTENTS}/MacOS/SpotM3U"
 INFO_PLIST = f"{CONTENTS}/Info.plist"
 # PyInstaller relocates collected files between Contents/Frameworks and
 # Contents/Resources while cross-linking the other side, so a required path may
@@ -57,12 +57,12 @@ def _find_ffmpeg_directory(app: Path) -> Path | None:
 
 
 def validate_app(app: Path) -> None:
-    """Validate an extracted ``spotm3u.app`` application bundle."""
+    """Validate an extracted ``SpotM3U.app`` application bundle."""
     app = app.expanduser().resolve()
     if not app.is_dir() or app.name != APP_NAME:
         _fail(f"expected an extracted {APP_NAME} directory, got {app}")
 
-    executable = app / "Contents" / "MacOS" / "spotm3u"
+    executable = app / "Contents" / "MacOS" / "SpotM3U"
     if not executable.is_file():
         _fail(f"application executable missing: {executable}")
     if not executable.stat().st_mode & 0o111:

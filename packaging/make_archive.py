@@ -1,7 +1,7 @@
 """Zip a PyInstaller build output for release upload.
 
-Archives `spotm3u/<exe> + _internal/...` so the unpacked ZIP contains the
-standalone bundle root, and archives `spotm3u.app/...` on macOS so the unpacked
+Archives `SpotM3U/<exe> + _internal/...` so the unpacked ZIP contains the
+standalone bundle root, and archives `SpotM3U.app/...` on macOS so the unpacked
 ZIP contains the application bundle itself (never its loose internal files).
 
 PyInstaller's macOS .app and POSIX onedir builds use symbolic links to share

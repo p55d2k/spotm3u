@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller specification for the spotm3u standalone application.
+"""PyInstaller specification for the SpotM3U standalone application.
 
 Build a one-folder (onedir) bundle so the executable starts quickly and the
 bundled FFmpeg directory can sit next to it. Everything the Flask app, yt-dlp,
@@ -8,12 +8,12 @@ in the git-ignored ``build/`` and ``dist/`` directories at the repository
 root.
 
 On macOS the COLLECT output is additionally wrapped into a normal
-``dist/spotm3u.app`` application bundle so users can launch it through
+``dist/SpotM3U.app`` application bundle so users can launch it through
 Finder/Gatekeeper's one-time Right-click -> Open flow. The same onedir layout
 is kept on every platform; only macOS gains the ``.app`` wrapper.
 
 The Windows executable is built windowed (no console) so double-clicking
-``spotm3u.exe`` never flashes a terminal; the launcher opens the native spotm3u
+``SpotM3U.exe`` never flashes a terminal; the launcher opens the native SpotM3U
 WebView window and reports startup failures through a native message box. Other
 platforms keep their console so developers and release verification can read
 the logs.
@@ -28,7 +28,7 @@ or, equivalently, the shortcut provided in ``pyproject.toml``:
     uv run build
 
 ``SPOTM3U_FFMPEG_DIR`` is optional; when set, the directory's contents are
-copied into ``dist/spotm3u/ffmpeg/`` so the packaged app provides its own
+copied into ``dist/SpotM3U/ffmpeg/`` so the packaged app provides its own
 FFmpeg. When unset the build succeeds but FFmpeg must come from the system.
 """
 
@@ -125,14 +125,14 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="spotm3u",
+    name="SpotM3U",
     debug=False,
     strip=False,
     upx=False,
     # The window and taskbar icon on Windows; ignored on other platforms,
     # where the macOS bundle (.icns) or the collected icon.png supply it.
     icon=str(_require_icon(ICON_ICO, "Windows .ico")) if sys.platform == "win32" else None,
-    # Windowed on Windows only: a double-clicked ``spotm3u.exe`` must not open a
+    # Windowed on Windows only: a double-clicked ``SpotM3U.exe`` must not open a
     # console window. Other platforms keep the console for logs, and a
     # windowed build has no standard streams to log to.
     console=sys.platform != "win32",
@@ -144,7 +144,7 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="spotm3u",
+    name="SpotM3U",
 )
 
 # macOS ships a real application bundle. BUNDLE relocates the collected files
@@ -155,7 +155,7 @@ coll = COLLECT(
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="spotm3u.app",
+        name="SpotM3U.app",
         icon=str(_require_icon(ICON_ICNS, "macOS .icns")),
         bundle_identifier="com.github.p55d2k.spotm3u",
         version=os.environ.get("SPOTM3U_APP_VERSION", "0.0.0"),

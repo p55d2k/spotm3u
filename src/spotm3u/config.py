@@ -1,4 +1,4 @@
-"""Optional TOML configuration for the spotm3u app.
+"""Optional TOML configuration for the SpotM3U app.
 
 A ``config.toml`` file is never required. Every setting has a built-in
 default, so the app works without one. When a file exists it is loaded from

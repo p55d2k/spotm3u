@@ -33,7 +33,7 @@ def build_command(argv: list[str] | None = None) -> list[str]:
     """
     uv = shutil.which("uv")
     if uv is None:
-        print("uv is required to build spotm3u", file=sys.stderr)
+        print("uv is required to build SpotM3U", file=sys.stderr)
         raise SystemExit(1)
     return [
         uv,
@@ -51,9 +51,9 @@ def build_command(argv: list[str] | None = None) -> list[str]:
 
 def artifact_paths() -> list[Path]:
     """The distributable path(s) PyInstaller writes into ``dist/``."""
-    paths = [_ROOT / "dist" / "spotm3u"]
+    paths = [_ROOT / "dist" / "SpotM3U"]
     if sys.platform == "darwin":
-        paths.append(_ROOT / "dist" / "spotm3u.app")
+        paths.append(_ROOT / "dist" / "SpotM3U.app")
     return paths
 
 

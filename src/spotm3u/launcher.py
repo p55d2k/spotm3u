@@ -1,4 +1,4 @@
-"""Production entry point for the spotm3u desktop application.
+"""Production entry point for the SpotM3U desktop application.
 
 ``main()`` is the console-script and PyInstaller target behind ``uv run app``
 and the packaged executable. It delegates to :mod:`spotm3u.desktop`, which
@@ -105,7 +105,7 @@ def wait_for_server(host: str, port: int, *, timeout: float = READINESS_TIMEOUT)
             time.sleep(READINESS_INTERVAL)
 
 
-def show_message_box(message: str, *, title: str = "spotm3u") -> bool:
+def show_message_box(message: str, *, title: str = "SpotM3U") -> bool:
     """Show a native error dialog and report whether it was available.
 
     Used for a packaged, windowed application where printing a traceback would
@@ -158,10 +158,10 @@ def main(*, open_window: bool | None = None) -> None:
     except SystemExit as error:
         if not error.code:
             raise
-        report_startup_error("spotm3u could not start. Please try launching the application again.")
+        report_startup_error("SpotM3U could not start. Please try launching the application again.")
         raise SystemExit(1) from error
     except Exception as error:
-        report_startup_error(f"spotm3u could not start: {error}", exception=True)
+        report_startup_error(f"SpotM3U could not start: {error}", exception=True)
         raise SystemExit(1) from error
 
 

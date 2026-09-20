@@ -1,6 +1,6 @@
 """Generate platform icon formats from the canonical ``assets/icon.png``.
 
-`assets/icon.png` is the single source of truth for the spotm3u icon. PyInstaller
+`assets/icon.png` is the single source of truth for the SpotM3U icon. PyInstaller
 needs ICO/ICNS rather than PNG, so the build (``uv run build``) regenerates:
 
     assets/generated/icon.ico    Windows executable icon

@@ -9,7 +9,7 @@ Downloaded audio becomes local MP3 files that can be referenced by the generated
 ## Download Directory
 
 Downloads and the generated M3U are written to `DOWNLOAD_DIR`, which defaults
-to `<MUSIC_LIBRARY>/spotm3u-downloads/`.
+to `<MUSIC_LIBRARY>/SpotM3U-downloads/`.
 
 This is a persistent location, not a temporary job folder, so the M3U keeps
 working and downloaded files can be matched by the local resolver on later

@@ -21,7 +21,7 @@ Security reports are especially useful for:
 - credential or cookie exposure
 - denial of service through uploads, decompression, downloads, or retries
 
-spotm3u is a local application. Do not expose its development server to an
+SpotM3U is a local application. Do not expose its development server to an
 untrusted network.
 
 ## Supported versions

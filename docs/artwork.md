@@ -16,7 +16,7 @@ versions and remixes.
 
 ## External artwork sources
 
-spotm3u queries established metadata services only; it does not scrape
+SpotM3U queries established metadata services only; it does not scrape
 arbitrary websites:
 
 - **MusicBrainz** (`musicbrainz.org/ws/2`, release-group search) — finds the

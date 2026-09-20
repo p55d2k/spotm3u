@@ -25,14 +25,14 @@ smoke_test = _load("smoke_test")
 
 
 def test_find_executable_win_prefers_exe(tmp_path) -> None:
-    (tmp_path / "spotm3u.exe").write_bytes(b"exe")
-    (tmp_path / "spotm3u").write_bytes(b"exe")
+    (tmp_path / "SpotM3U.exe").write_bytes(b"exe")
+    (tmp_path / "SpotM3U").write_bytes(b"exe")
 
-    assert smoke_test.find_executable(tmp_path) == tmp_path / "spotm3u.exe"
+    assert smoke_test.find_executable(tmp_path) == tmp_path / "SpotM3U.exe"
 
 
 def test_find_executable_missing_raises(tmp_path) -> None:
-    with pytest.raises(SystemExit, match="spotm3u"):
+    with pytest.raises(SystemExit, match="SpotM3U"):
         smoke_test.find_executable(tmp_path)
 
 
@@ -51,10 +51,10 @@ def test_check_bundled_ffmpeg_rejects_missing_dir(tmp_path) -> None:
 
 
 def _fake_app(tmp_path) -> Path:
-    app = tmp_path / "spotm3u.app"
+    app = tmp_path / "SpotM3U.app"
     macos = app / "Contents" / "MacOS"
     macos.mkdir(parents=True)
-    (macos / "spotm3u").write_bytes(b"exe")
+    (macos / "SpotM3U").write_bytes(b"exe")
     ffmpeg_dir = app / "Contents" / "Frameworks" / "ffmpeg"
     ffmpeg_dir.mkdir(parents=True)
     (ffmpeg_dir / "ffmpeg").write_bytes(b"a")
@@ -66,7 +66,7 @@ def test_find_executable_inside_app_bundle(tmp_path) -> None:
     app = _fake_app(tmp_path)
 
     assert smoke_test.is_app_bundle(app)
-    assert smoke_test.find_executable(app) == app / "Contents" / "MacOS" / "spotm3u"
+    assert smoke_test.find_executable(app) == app / "Contents" / "MacOS" / "SpotM3U"
 
 
 def test_check_bundled_ffmpeg_accepts_app_bundle(tmp_path) -> None:
@@ -83,19 +83,19 @@ def test_bundle_root_finds_app_in_extraction_directory(tmp_path) -> None:
     app = _fake_app(tmp_path)
     container = tmp_path / "extracted"
     container.mkdir()
-    app.rename(container / "spotm3u.app")
+    app.rename(container / "SpotM3U.app")
 
-    assert smoke_test._bundle_root(container) == container / "spotm3u.app"
+    assert smoke_test._bundle_root(container) == container / "SpotM3U.app"
 
 
 def test_bundle_root_finds_onedir_in_extraction_directory(tmp_path) -> None:
     # Mirrors the Linux verify flow: a release ZIP already extracted into a
     # container directory, with the bundle root one level down.
-    container = tmp_path / "spotm3u-test-extracted"
-    bundle = container / "spotm3u"
+    container = tmp_path / "SpotM3U-test-extracted"
+    bundle = container / "SpotM3U"
     internal = bundle / "_internal"
     internal.mkdir(parents=True)
-    (bundle / "spotm3u").write_bytes(b"exe")
+    (bundle / "SpotM3U").write_bytes(b"exe")
     # PyInstaller ships its own zip; it must not be mistaken for the archive.
     (internal / "base_library.zip").write_bytes(b"not the release archive")
 
@@ -107,28 +107,28 @@ def test_bundle_root_rejects_multiple_nested_bundles(tmp_path) -> None:
     for name in ("one", "two"):
         bundle = container / name
         bundle.mkdir(parents=True)
-        (bundle / "spotm3u").write_bytes(b"exe")
+        (bundle / "SpotM3U").write_bytes(b"exe")
 
     with pytest.raises(SystemExit, match="multiple bundles"):
         smoke_test._bundle_root(container)
 
 
 def test_bundle_root_unpacks_single_zip(tmp_path) -> None:
-    bundle = tmp_path / "spotm3u"
+    bundle = tmp_path / "SpotM3U"
     bundle.mkdir(parents=True)
-    (bundle / "spotm3u").write_bytes(b"exe")
-    archive = tmp_path / "spotm3u-test.zip"
+    (bundle / "SpotM3U").write_bytes(b"exe")
+    archive = tmp_path / "SpotM3U-test.zip"
     with zipfile.ZipFile(archive, "w") as zf:
-        zf.write(bundle / "spotm3u", "spotm3u/spotm3u")
+        zf.write(bundle / "SpotM3U", "SpotM3U/SpotM3U")
     wrapper = tmp_path / "artifact"
     wrapper.mkdir()
-    nested = wrapper / "spotm3u-test"
+    nested = wrapper / "SpotM3U-test"
     nested.mkdir()
     (nested / archive.name).write_bytes(archive.read_bytes())
 
     root = smoke_test._bundle_root(wrapper)
 
-    assert (root / "spotm3u").is_file()
+    assert (root / "SpotM3U").is_file()
 
 
 class _FakeProc:
@@ -212,7 +212,7 @@ def test_wait_for_home_times_out_with_the_captured_log(tmp_path) -> None:
 
 
 def _dist_bundle() -> Path | None:
-    candidate = Path(__file__).resolve().parent.parent / "dist" / "spotm3u"
+    candidate = Path(__file__).resolve().parent.parent / "dist" / "SpotM3U"
     return candidate if candidate.is_dir() else None
 
 

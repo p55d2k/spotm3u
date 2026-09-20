@@ -33,7 +33,7 @@ uv run app
 ```
 
 `uv run app` starts the same Flask app on a free loopback port, waits for it to
-become ready, and then presents the UI inside a native `spotm3u` window
+become ready, and then presents the UI inside a native `SpotM3U` window
 (pywebview) instead of an external browser; closing the window shuts Flask down
 and exits the process. `SPOTM3U_NO_WEBVIEW=1` skips the window and only serves,
 which is what the release smoke test uses. Developers are not required to use

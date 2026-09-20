@@ -157,8 +157,8 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
     assert len(status["playlists"]) == 2
     assert all(track["artwork"] for playlist in status["playlists"] for track in playlist["tracks"])
     assert client.get(f"/processing/{job_id}/batch/result").status_code == 200
-    assert (music / "spotm3u-downloads" / "playlist-0.m3u").is_file()
-    assert (music / "spotm3u-downloads" / "playlist-1.m3u").is_file()
+    assert (music / "SpotM3U-downloads" / "playlist-0.m3u").is_file()
+    assert (music / "SpotM3U-downloads" / "playlist-1.m3u").is_file()
 
 
 def test_batch_processing_page_renders_full_start_state(tmp_path) -> None:
@@ -243,7 +243,7 @@ def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> N
     assert state["playlist"]["id"] == "1"
     assert state["playlist"]["total_tracks"] == 1
     assert state["status"] in {"running", "completed"}
-    assert state["output_dir"] == str(tmp_path / "music" / "spotm3u-downloads")
+    assert state["output_dir"] == str(tmp_path / "music" / "SpotM3U-downloads")
 
     client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
     status = client.get(f"/processing/{job_id}/1/status")
@@ -253,7 +253,7 @@ def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> N
     assert final["completed"] == 1
     assert final["failed"] == 1
     assert final["tracks"][0]["status"] == "failed"
-    assert final["m3u_path"] == str(tmp_path / "music" / "spotm3u-downloads" / "playlist.m3u")
+    assert final["m3u_path"] == str(tmp_path / "music" / "SpotM3U-downloads" / "playlist.m3u")
 
 
 def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
@@ -271,7 +271,7 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     assert final["status"] == "completed"
     assert final["successful"] == 1
     assert final["failed"] == 0
-    m3u_path = tmp_path / "music" / "spotm3u-downloads" / "playlist.m3u"
+    m3u_path = tmp_path / "music" / "SpotM3U-downloads" / "playlist.m3u"
     assert str(music / "Artist - First.mp3") in m3u_path.read_text(encoding="utf-8")
 
 
@@ -417,7 +417,7 @@ def test_result_page_offers_retry_for_unresolved_tracks(tmp_path, monkeypatch) -
     job = app.config["JOB_MANAGER"].get(job_id)
     job.wait(timeout=10)
     assert job.status == "completed"
-    assert (music / "spotm3u-downloads" / "playlist.m3u").is_file()
+    assert (music / "SpotM3U-downloads" / "playlist.m3u").is_file()
 
 
 class AmbiguousResolver:
@@ -536,7 +536,7 @@ def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
         playlist_id="1",
         playlist_name="two",
         tracks=[Track("First", ["Artist"], duration_ms=200_000)],
-        output_dir=music / "spotm3u-downloads",
+        output_dir=music / "SpotM3U-downloads",
         resolver_factory=lambda: BlockingResolver(),
     )
     playlist.submit(job)
@@ -582,7 +582,7 @@ def _run_local_match_job(tmp_path, monkeypatch):
     client.post(f"/processing/{job_id}/1/start")
     job = client.application.config["JOB_MANAGER"].get(job_id)
     job.wait(timeout=10)
-    return client, job, music / "spotm3u-downloads"
+    return client, job, music / "SpotM3U-downloads"
 
 
 def test_artwork_route_returns_cached_image(tmp_path, monkeypatch) -> None:

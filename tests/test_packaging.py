@@ -27,16 +27,16 @@ verify_macos_bundle = _load("verify_macos_bundle")
 
 
 def test_build_archive_roots_at_parent_directory(tmp_path) -> None:
-    bundle = tmp_path / "spotm3u"
+    bundle = tmp_path / "SpotM3U"
     (bundle / "_internal").mkdir(parents=True)
-    (bundle / "spotm3u").write_bytes(b"exe")
+    (bundle / "SpotM3U").write_bytes(b"exe")
     (bundle / "_internal" / "data.bin").write_bytes(b"data")
 
     dest = make_archive.build_archive(bundle, tmp_path / "out" / "app.zip")
 
     with zipfile.ZipFile(dest) as archive:
         names = sorted(archive.namelist())
-    assert names == ["spotm3u/_internal/data.bin", "spotm3u/spotm3u"]
+    assert names == ["SpotM3U/SpotM3U", "SpotM3U/_internal/data.bin"]
     assert (tmp_path / "out" / "app.zip").exists()
 
 
@@ -46,19 +46,19 @@ def test_build_archive_fails_when_source_missing(tmp_path) -> None:
 
 
 def test_build_archive_roots_app_bundle_at_parent(tmp_path) -> None:
-    app = tmp_path / "spotm3u.app"
+    app = tmp_path / "SpotM3U.app"
     (app / "Contents" / "MacOS").mkdir(parents=True)
-    (app / "Contents" / "MacOS" / "spotm3u").write_bytes(b"exe")
+    (app / "Contents" / "MacOS" / "SpotM3U").write_bytes(b"exe")
 
     dest = make_archive.build_archive(app, tmp_path / "out" / "app.zip")
 
     with zipfile.ZipFile(dest) as archive:
-        assert archive.namelist() == ["spotm3u.app/Contents/MacOS/spotm3u"]
+        assert archive.namelist() == ["SpotM3U.app/Contents/MacOS/SpotM3U"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
 def test_build_archive_preserves_symlinks(tmp_path) -> None:
-    app = tmp_path / "spotm3u.app"
+    app = tmp_path / "SpotM3U.app"
     target = app / "Contents" / "Resources" / "ffmpeg"
     target.mkdir(parents=True)
     (target / "ffmpeg").write_bytes(b"ffmpeg")
@@ -69,10 +69,10 @@ def test_build_archive_preserves_symlinks(tmp_path) -> None:
     dest = make_archive.build_archive(app, tmp_path / "app.zip")
 
     with zipfile.ZipFile(dest) as archive:
-        info = archive.getinfo("spotm3u.app/Contents/Frameworks/ffmpeg")
+        info = archive.getinfo("SpotM3U.app/Contents/Frameworks/ffmpeg")
         assert info.external_attr >> 16 == 0o120777
         assert archive.read(info) == b"../Resources/ffmpeg"
-        assert "spotm3u.app/Contents/Resources/ffmpeg/ffmpeg" in archive.namelist()
+        assert "SpotM3U.app/Contents/Resources/ffmpeg/ffmpeg" in archive.namelist()
 
 
 def test_stage_ffmpeg_copies_real_binaries(tmp_path, monkeypatch) -> None:
@@ -103,10 +103,10 @@ def test_stage_ffmpeg_errors_when_binary_missing(tmp_path, monkeypatch) -> None:
 
 
 def _fake_app(tmp_path: Path) -> Path:
-    app = tmp_path / "spotm3u.app"
+    app = tmp_path / "SpotM3U.app"
     macos = app / "Contents" / "MacOS"
     macos.mkdir(parents=True)
-    exe = macos / "spotm3u"
+    exe = macos / "SpotM3U"
     exe.write_bytes(b"exe")
     exe.chmod(0o755)
     (app / "Contents" / "Info.plist").write_bytes(b"plist")
@@ -129,7 +129,7 @@ def test_validate_app_accepts_complete_bundle(tmp_path) -> None:
 
 def test_validate_app_rejects_missing_executable(tmp_path) -> None:
     app = _fake_app(tmp_path)
-    (app / "Contents" / "MacOS" / "spotm3u").unlink()
+    (app / "Contents" / "MacOS" / "SpotM3U").unlink()
 
     with pytest.raises(SystemExit, match="executable"):
         verify_macos_bundle.validate_app(app)
