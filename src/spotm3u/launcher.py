@@ -23,7 +23,11 @@ import logging
 import os
 import socket
 import sys
+import tempfile
 import time
+import traceback
+from datetime import datetime
+from pathlib import Path
 
 from .log import PACKAGE_LOGGER
 from .runtime import bundle_roots, has_console, is_frozen
@@ -125,13 +129,46 @@ def show_message_box(message: str, *, title: str = "SpotM3U") -> bool:
     return True
 
 
+def error_log_path() -> Path:
+    """The default startup-error log location for a packaged launch.
+
+    ``spotm3u-error.log`` sits beside the executable so the folder the user is
+    working from shows the file after a failed launch.
+    """
+    return Path(sys.executable).resolve().parent / "spotm3u-error.log"
+
+
+def write_error_log(message: str, *, exception: bool = False, path: Path | None = None) -> Path:
+    """Append a timestamped startup failure to a file and return its path.
+
+    The ``path`` (default :func:`error_log_path`) is tried first; when it
+    cannot be opened the per-user temporary directory is used instead so the
+    failure is never lost to unwritable locations.
+    """
+    target = path or error_log_path()
+    lines = [f"{datetime.now():%Y-%m-%d %H:%M:%S} {message}"]
+    if exception:
+        lines.append(traceback.format_exc().rstrip())
+    if target.is_dir():
+        target = target / "spotm3u-error.log"
+    try:
+        with target.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    except OSError:
+        target = Path(tempfile.gettempdir()) / "spotm3u-error.log"
+        with target.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    return target
+
+
 def report_startup_error(message: str, *, exception: bool = False) -> None:
     """Report a fatal startup failure where the user can actually see it.
 
     Logging serves the development workflow; a windowed Windows build has no
-    standard streams, so the same message is shown in a native dialog instead
-    of disappearing. The message stays free of technical detail because normal
-    users are the audience for the dialog.
+    standard streams, so the same message is shown in a native dialog and, as a
+    safety net, appended to a startup-error log file. The dialog message stays
+    free of technical detail because normal users are the audience; the log
+    file carries the diagnostic traceback.
     """
     if exception:
         _LOGGER.exception(message)
@@ -139,6 +176,7 @@ def report_startup_error(message: str, *, exception: bool = False) -> None:
         _LOGGER.error(message)
     if has_console():
         return
+    write_error_log(message, exception=exception)
     show_message_box(message)
 
 

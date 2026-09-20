@@ -122,6 +122,7 @@ def test_wait_for_server_times_out_when_nothing_listens() -> None:
 def test_report_startup_error_shows_a_dialog_without_a_console(monkeypatch) -> None:
     dialogs: list[str] = []
     monkeypatch.setattr(launcher, "has_console", lambda: False)
+    monkeypatch.setattr(launcher, "write_error_log", lambda *args, **kwargs: Path("error.log"))
     monkeypatch.setattr(
         launcher, "show_message_box", lambda message, **kwargs: dialogs.append(message) or True
     )
@@ -129,6 +130,17 @@ def test_report_startup_error_shows_a_dialog_without_a_console(monkeypatch) -> N
     launcher.report_startup_error("spotm3u could not start.")
 
     assert dialogs == ["spotm3u could not start."]
+
+
+def test_write_error_log_appends_startup_details(tmp_path) -> None:
+    log_path = tmp_path / "spotm3u-error.log"
+
+    result = launcher.write_error_log("spotm3u could not start.", path=log_path)
+
+    assert result == log_path
+    contents = log_path.read_text(encoding="utf-8")
+    assert "spotm3u could not start." in contents
+    assert contents.endswith("\n")
 
 
 def test_report_startup_error_logs_for_the_console(monkeypatch, caplog) -> None:

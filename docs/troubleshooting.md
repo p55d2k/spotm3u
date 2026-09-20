@@ -3,7 +3,10 @@
 ## The server does not start
 
 Configuration errors are reported in the terminal for source runs. A packaged
-Windows build has no console, so it shows a dialog instead.
+Windows build has no console, so it shows a dialog instead. If the packaged
+launcher exits before the window appears, inspect `spotm3u-error.log` beside
+`SpotM3U.exe`; if that folder is not writable, the same file is written to
+Windows' temporary directory (`%TEMP%`).
 
 SpotM3U prefers the `web.port` from `config.toml` (default 5001) and falls back
 to a free port when that port is already taken, so another program using 5001
@@ -23,6 +26,12 @@ scripted runs; the startup log still reports it as
 If no window appears, the application may still be running: open the printed
 URL in a browser or check the startup log. A machine without a windowing system
 cannot display a native window.
+
+On Windows, pywebview uses the Microsoft Edge WebView2 Runtime. If the error
+log mentions WebView2 or the app exits with code 1, install the Evergreen
+WebView2 Runtime, then launch `SpotM3U.exe` again. To run without the native
+window while diagnosing the bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell;
+the app will serve at `http://127.0.0.1:5001/` (or the port shown in the log).
 
 ## The macOS app runs but never shows a window
 
