@@ -28,13 +28,13 @@ cannot display a native window.
 
 The reliable macOS install path is the `.pkg` release: the installer writes
 `SpotM3U.app` to `/Applications` fresh, so it carries no quarantine attribute
-and launches normally. If instead you launched a ZIP-extracted, directly
-downloaded, or DMG-dragged copy, macOS marks the unsigned app as quarantined,
-and on recent macOS versions the app stops inside the dynamic loader before it
-can finish launching: the process shows up in Activity Monitor, never opens its
-window, never starts the Flask server, and cannot be quit or removed in the
-normal way. macOS 26 in particular also re-stamps quarantine onto files copied
-out of a quarantined disk image, so the DMG is not exempt.
+and launches normally. If instead you launched a ZIP-extracted or directly
+downloaded copy, macOS marks the unsigned app as quarantined, and on recent
+macOS versions the app stops inside the dynamic loader before it can finish
+launching: the process shows up in Activity Monitor, never opens its window,
+never starts the Flask server, and cannot be quit or removed in the normal way.
+macOS 26 in particular also re-stamps quarantine onto files copied out of a
+quarantined disk image, so no unsigned copy can dodge it.
 
 To tell this apart from a still-starting app: the log line
 `SpotM3U listening on http://127.0.0.1:<port>` is never printed, and nothing

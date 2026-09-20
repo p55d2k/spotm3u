@@ -24,7 +24,6 @@ _SPEC = _ROOT / "packaging" / "spotm3u.spec"
 _FFMPEG_STAGE = _ROOT / "ffmpeg-stage"
 _ICON_GENERATOR = _ROOT / "packaging" / "generate_icons.py"
 _ICON_PNG = _ROOT / "assets" / "icon.png"
-_MAKE_DMG = _ROOT / "packaging" / "make_dmg.py"
 _MAKE_PKG = _ROOT / "packaging" / "make_pkg.py"
 # Mirrors the SPOTM3U_APP_VERSION default in packaging/spotm3u.spec.
 _VERSION_DEFAULT = "0.0.0"
@@ -63,11 +62,11 @@ def artifact_paths() -> list[Path]:
 
 
 def _package_macos(version: str) -> list[Path]:
-    """Wrap the fresh ``dist/SpotM3U.app`` in a DMG and an installer package.
+    """Wrap the fresh ``dist/SpotM3U.app`` in an installer package.
 
-    Runs the same packaging scripts the release workflow uses, so a local
-    ``uv run build`` on macOS produces release-identical install artifacts.
-    Both are written next to the app in ``dist/``.
+    Runs the same packaging script the release workflow uses, so a local
+    ``uv run build`` on macOS produces a release-identical install artifact.
+    It is written next to the app in ``dist/``.
     """
     app = _ROOT / "dist" / "SpotM3U.app"
     if not app.is_dir():
@@ -75,17 +74,14 @@ def _package_macos(version: str) -> list[Path]:
     if sys.platform != "darwin":
         return []
     stem = _ROOT / "dist" / f"SpotM3U-v{version}-macos-{platform.machine()}"
-    artifacts: list[Path] = []
-    for script, dest, extra in (
-        (_MAKE_DMG, stem.with_suffix(".dmg"), []),
-        (_MAKE_PKG, stem.with_suffix(".pkg"), ["--version", version]),
-    ):
-        status = subprocess.call([sys.executable, str(script), str(app), str(dest), *extra])
-        if status != 0:
-            print(f"Packaging failed (exit status {status}) for {script.name}.", file=sys.stderr)
-            raise SystemExit(status)
-        artifacts.append(dest)
-    return artifacts
+    dest = stem.with_suffix(".pkg")
+    status = subprocess.call(
+        [sys.executable, str(_MAKE_PKG), str(app), str(dest), "--version", version]
+    )
+    if status != 0:
+        print(f"Packaging failed (exit status {status}) for {_MAKE_PKG.name}.", file=sys.stderr)
+        raise SystemExit(status)
+    return [dest]
 
 
 def _display(path: Path) -> str:

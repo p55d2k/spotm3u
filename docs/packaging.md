@@ -55,18 +55,14 @@ for the current platform only; cross-compilation is not supported. Build
 intermediates go to `build/` and the distributable to `dist/`, both git-ignored.
 The command prints where the artifact was written, for example `dist/SpotM3U/`
 plus `dist/SpotM3U.app/` on macOS. On macOS it then wraps the same `.app` into a
-release-identical DMG and installer package, naming them
-`dist/SpotM3U-<version>-macos-<arch>.dmg` and
+release-identical installer package, naming it
 `dist/SpotM3U-<version>-macos-<arch>.pkg` (version from
-`SPOTM3U_APP_VERSION`, defaulting to `0.0.0`). The two packaging scripts can
-also be run on their own:
+`SPOTM3U_APP_VERSION`, defaulting to `0.0.0`). The packaging script can also be
+run on its own:
 
 ```bash
-uv run -q python packaging/make_dmg.py \
-  dist/SpotM3U.app \
-  dist/SpotM3U-0.1.0-macos-arm64.dmg
-
 uv run -q python packaging/make_pkg.py \
+  --version 0.1.0 \
   dist/SpotM3U.app \
   dist/SpotM3U-0.1.0-macos-arm64.pkg
 ```
@@ -146,19 +142,17 @@ payload files fresh, so the installed app carries no `com.apple.quarantine`
 attribute and launches normally on modern macOS. A browser-downloaded ZIP sets
 that attribute, and a quarantined, unsigned PyInstaller app hangs in the loader
 on modern macOS (the process runs with no window and no server); macOS 26 also
-re-stamps quarantine onto files copied out of a quarantined disk image, so the
-`SpotM3U-<version>-macos-<arch>.dmg` (built with `packaging/make_dmg.py`) is
-published only as a convenience for users who clear quarantine explicitly. The
-macOS ZIP is still built and verified in CI so the smoke test exercises the
-exact bundle layout users would get, but it is not attached to the published
-release.
+re-stamps quarantine onto files copied out of a quarantined disk image, so
+there is no unsigned archive format that dodges it. The macOS ZIP is still
+built and verified in CI so the smoke test exercises the exact bundle layout
+users would get, but it is not attached to the published release.
 
 The release workflow then verifies each archive:
 
 - `packaging/verify_macos_bundle.py` checks the macOS ZIP for a valid
   `SpotM3U.app` (`Contents/MacOS/SpotM3U`, `Info.plist`, bundled FFmpeg, and
-  application resources). The macOS DMG is mounted and the PKG is expanded with
-  `pkgutil --expand-full`, and both are passed through the same
+  application resources). The macOS PKG is expanded with
+  `pkgutil --expand-full` and passed through the same
   check before upload. Signature and Gatekeeper status are intentionally
   not checked.
 - `packaging/smoke_test.py` launches the packaged executable, renders the home

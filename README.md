@@ -87,9 +87,8 @@ notarization service. macOS therefore ships as an installer package (`.pkg`)
 rather than a ZIP: the installer writes the app files fresh during
 installation, so `/Applications/SpotM3U.app` is never marked quarantined and
 launches normally on modern macOS, where a downloaded unsigned app would
-otherwise hang before its window can open. A `macos-arm64.dmg` is also provided
-for users who prefer a drag-to-Applications copy and clear quarantine
-explicitly. Windows may still show a security prompt on first launch.
+otherwise hang before its window can open. Windows may still show a security
+prompt on first launch.
 **Add to Media Player** is offered on macOS, where it adds to Apple
 Music, and on Windows, where the generated M3U opens with its default
 associated media player. A YouTube PO-token provider is an optional external
@@ -115,8 +114,8 @@ windowed application has no console to print a traceback to.
 ### macOS first launch
 
 macOS is distributed as an installer package (`SpotM3U-<version>-macos-arm64.pkg`)
-because the release is not Apple-signed or notarized. A ZIP (or anything dragged
-out of a DMG) carries macOS's quarantine attribute, and on modern macOS a
+because the release is not Apple-signed or notarized. A ZIP downloaded from the
+browser carries macOS's quarantine attribute, and on modern macOS a
 quarantined unsigned app hangs in the loader before its window can open — the
 process runs with no window and no way to quit. The installer instead writes a
 fresh, unquarantined copy of the app to the Applications folder:
@@ -132,8 +131,8 @@ fresh, unquarantined copy of the app to the Applications folder:
 The release does not disable Gatekeeper, and installing the package needs no
 `xattr` workaround.
 
-A `macos-arm64.dmg` is also published. If you copy the app out of the DMG and
-the window never opens, quit the stuck process (Activity Monitor → SpotM3U →
+If you instead kept an older ZIP-extracted `SpotM3U.app` and no window opens,
+quit the stuck process (Activity Monitor → SpotM3U →
 Quit, or `killall SpotM3U` in Terminal), then run
 `xattr -cr /path/to/SpotM3U.app` once to clear the quarantine attribute before
 launching it again. See

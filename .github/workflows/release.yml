@@ -136,38 +136,17 @@ jobs:
           fi
           uv run -q python packaging/make_archive.py "$bundle" "dist-artifacts/SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
 
-      - name: Build macOS DMG
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          # Secondary artifact: the DMG is convenient for drag-to-Applications,
-          # but on macOS 26 a drag-out copy may still inherit the browser's
-          # quarantine attribute, so it is not the primary install path.
-          uv run -q python packaging/make_dmg.py \
-            "dist/SpotM3U.app" \
-            "dist-artifacts/SpotM3U-v${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg"
-
       - name: Build macOS PKG
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          # Primary macOS artifact: the installer writes the payload files
-          # fresh, so /Applications/SpotM3U.app is never quarantined and the
-          # unsigned app launches normally on modern macOS.
+          # The installer writes the payload files fresh, so
+          # /Applications/SpotM3U.app is never quarantined and the unsigned app
+          # launches normally on modern macOS.
           uv run -q python packaging/make_pkg.py \
             --version "${{ env.VERSION }}" \
             "dist/SpotM3U.app" \
             "dist-artifacts/SpotM3U-v${{ env.VERSION }}-macos-${{ matrix.arch }}.pkg"
-
-      - name: Verify DMG contains the application
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          dmg=$(find dist-artifacts -maxdepth 1 -name 'SpotM3U-v*.dmg' -print -quit)
-          test -n "$dmg"
-          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmg-verify
-          uv run -q python packaging/verify_macos_bundle.py /tmp/dmg-verify
-          hdiutil detach /tmp/dmg-verify
 
       - name: Verify PKG contains the application
         if: matrix.platform == 'macos'
@@ -303,11 +282,9 @@ jobs:
           # The ZIP is kept only for CI verification. A browser-downloaded ZIP
           # makes the unsigned app hang on modern macOS. The PKG -- whose
           # installed files are written fresh and therefore never quarantined --
-          # is the reliable install path; the DMG is published for users who
-          # clear quarantine explicitly.
+          # is the reliable macOS install path.
           rm -f release-artifacts/*-macos-*.zip
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*-macos-*.pkg' -print -quit)"
-          test -n "$(find release-artifacts -maxdepth 1 -type f -name '*-macos-*.dmg' -print -quit)"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

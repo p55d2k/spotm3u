@@ -18,14 +18,14 @@ requests run CI but do not publish a release.
 4. `.github/workflows/release.yml` builds one archive for each supported
    platform, verifies each archive with the smoke test, and publishes the
    artifacts to a GitHub Release with generated release notes. On macOS the
-   published artifacts are a `.pkg` and a `.dmg` rather than the ZIP.
+   published artifact is a `.pkg` rather than the ZIP.
 
 Archives are named `SpotM3U-<version>-<platform>-<arch>.zip`. The tag's `v`
 prefix is removed from the filename and release name. The Windows and Linux
 archives contain the one-folder bundle directory (`SpotM3U/`); the macOS
 archive contains the application bundle itself (`SpotM3U.app/`) and is built
 only so CI can verify the same layout users get from the
-`SpotM3U-<version>-macos-<arch>.pkg` and `.dmg` release assets. A failed build
+`SpotM3U-<version>-macos-<arch>.pkg` release asset. A failed build
 or verification job prevents publishing.
 
 Releases are intentionally unsigned and un-notarized: the workflow does not use

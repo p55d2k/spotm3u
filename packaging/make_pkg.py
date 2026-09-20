@@ -4,8 +4,8 @@ A browser-downloaded file always carries the ``com.apple.quarantine``
 attribute. On recent macOS a quarantined, unsigned (ad-hoc signed) PyInstaller
 app hangs in ``dyld`` on first launch instead of opening: the process stays
 alive with no window and no server. macOS 26 also re-stamps quarantine onto any
-file copied out of a quarantined disk image, so the packaging/DMG route cannot
-avoid it without signing or notarization.
+file copied out of a quarantined disk image, so ZIP and disk-image routes
+cannot avoid it without signing or notarization.
 
 A package is different: the installer writes the payload files fresh during
 installation, so the installed ``/Applications/SpotM3U.app`` carries no
