@@ -119,6 +119,7 @@ def _fake_app(tmp_path: Path) -> Path:
     (resources / "templates" / "index.html").write_bytes(b"<html>")
     (resources / "static").mkdir(parents=True)
     (resources / "static" / "style.css").write_bytes(b"body{}")
+    (app / "Contents" / "Resources" / "icon.icns").write_bytes(b"\x69\x63\x6e\x73")
     return app
 
 
@@ -147,6 +148,14 @@ def test_validate_app_rejects_missing_resource(tmp_path) -> None:
     (app / "Contents" / "Resources" / "spotm3u" / "templates" / "index.html").unlink()
 
     with pytest.raises(SystemExit, match="resource"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_rejects_missing_icon(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    (app / "Contents" / "Resources" / "icon.icns").unlink()
+
+    with pytest.raises(SystemExit, match="icon"):
         verify_macos_bundle.validate_app(app)
 
 

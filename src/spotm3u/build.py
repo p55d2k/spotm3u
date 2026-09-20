@@ -21,6 +21,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 _SPEC = _ROOT / "packaging" / "spotm3u.spec"
 _FFMPEG_STAGE = _ROOT / "ffmpeg-stage"
+_ICON_GENERATOR = _ROOT / "packaging" / "generate_icons.py"
+_ICON_PNG = _ROOT / "assets" / "icon.png"
 
 
 def build_command(argv: list[str] | None = None) -> list[str]:
@@ -76,11 +78,28 @@ def report_success() -> None:
         print(_display(_ROOT / "dist"))
 
 
+def generate_icons() -> None:
+    """Regenerate platform icon formats from ``assets/icon.png``.
+
+    `assets/icon.png` is the canonical icon; Windows (.ico) and macOS (.icns)
+    packaging formats are derived from it before PyInstaller runs so the spec
+    never needs a manually maintained icon source. The generator is pure
+    standard library, so it behaves identically locally and in GitHub Actions.
+    """
+    if not _ICON_PNG.is_file():
+        raise SystemExit(f"missing application icon: {_ICON_PNG}")
+    status = subprocess.call([sys.executable, str(_ICON_GENERATOR)])
+    if status != 0:
+        print(f"Icon generation failed (exit status {status}).", file=sys.stderr)
+        raise SystemExit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the PyInstaller build, forwarding any extra arguments to it."""
     env = dict(os.environ)
     if _FFMPEG_STAGE.is_dir():
         env.setdefault("SPOTM3U_FFMPEG_DIR", str(_FFMPEG_STAGE))
+    generate_icons()
     status = subprocess.call(build_command(argv), cwd=str(_ROOT), env=env)
     if status != 0:
         print(f"Build failed (exit status {status}).", file=sys.stderr)

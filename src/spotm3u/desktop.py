@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from pathlib import Path
 
 from werkzeug.serving import make_server
 
@@ -34,6 +35,7 @@ from .launcher import (
     wait_for_server,
 )
 from .log import PACKAGE_LOGGER
+from .runtime import bundle_roots, is_frozen
 
 _LOGGER = logging.getLogger(PACKAGE_LOGGER)
 
@@ -42,6 +44,26 @@ WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
 WINDOW_MIN_SIZE = (800, 560)
 NO_WEBVIEW_ENV = "SPOTM3U_NO_WEBVIEW"
+_ICON_RELATIVE = Path("assets") / "icon.png"
+
+
+def webview_icon_path() -> Path | None:
+    """The canonical spotm3u icon for the WebView window, when available.
+
+    The same ``assets/icon.png`` is used in development and by the packaged
+    build (the spec collects it for the Linux GTK backend, which applies it as
+    the window icon). Other backends ignore the icon; their Dock/taskbar
+    identities come from the packaged .app/.exe instead.
+    """
+    if is_frozen():
+        for candidate in bundle_roots():
+            bundled = candidate / "icon.png"
+            if bundled.is_file():
+                return bundled
+        return None
+    root = Path(__file__).resolve().parents[2]
+    icon = root / _ICON_RELATIVE
+    return icon if icon.is_file() else None
 
 
 def webview_url(host: str, port: int) -> str:
@@ -85,7 +107,9 @@ def show_window(url: str) -> None:
         height=WINDOW_HEIGHT,
         min_size=WINDOW_MIN_SIZE,
     )
-    webview.start()
+    icon = webview_icon_path()
+    start_kwargs = {"icon": str(icon)} if icon else {}
+    webview.start(**start_kwargs)
 
 
 def run_desktop(*, open_window: bool | None = None) -> None:

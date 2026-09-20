@@ -40,6 +40,34 @@ def test_webview_url_uses_localhost_and_selected_port() -> None:
     assert desktop.webview_url("127.0.0.1", 5123) == "http://127.0.0.1:5123/"
 
 
+def test_webview_icon_path_points_at_the_canonical_icon_in_development(monkeypatch) -> None:
+    monkeypatch.setattr(desktop, "is_frozen", lambda: False)
+
+    icon = desktop.webview_icon_path()
+
+    assert icon is not None
+    assert icon.is_file()
+    assert icon.name == "icon.png"
+    assert "assets" in icon.parts
+
+
+def test_webview_icon_path_checks_bundled_icon_when_frozen(monkeypatch, tmp_path) -> None:
+    bundled = tmp_path / "_internal"
+    bundled.mkdir()
+    (bundled / "icon.png").write_bytes(b"png")
+    monkeypatch.setattr(desktop, "is_frozen", lambda: True)
+    monkeypatch.setattr(desktop, "bundle_roots", lambda: (bundled,))
+
+    assert desktop.webview_icon_path() == bundled / "icon.png"
+
+
+def test_webview_icon_path_is_none_when_no_bundled_icon(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(desktop, "is_frozen", lambda: True)
+    monkeypatch.setattr(desktop, "bundle_roots", lambda: (tmp_path / "missing",))
+
+    assert desktop.webview_icon_path() is None
+
+
 def test_webview_enabled_defaults_to_true(monkeypatch) -> None:
     monkeypatch.delenv(desktop.NO_WEBVIEW_ENV, raising=False)
 

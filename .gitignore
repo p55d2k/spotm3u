@@ -36,6 +36,9 @@ ffmpeg-stage/
 *.pyz
 *.pyd
 
+# Generated build icon formats (derived from tracked assets/icon.png)
+assets/generated/
+
 # IDE / editors
 .vscode/
 .idea/

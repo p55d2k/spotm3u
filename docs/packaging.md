@@ -20,6 +20,25 @@ double-click never flashes a terminal; that build has no standard streams, so a
 startup failure is reported through a native message box and the process exits
 non-zero. macOS and Linux keep their console for logs.
 
+## Application icon
+
+`assets/icon.png` is the single source of truth for the spotm3u icon and is
+tracked by Git. `uv run build` (via `src/spotm3u/build.py`) regenerates the
+platform formats the packaging tools need from it before PyInstaller runs:
+
+- `assets/generated/icon.ico` – embedded in the Windows executable (taskbar,
+  File Explorer, and shortcuts).
+- `assets/generated/icon.icns` – embedded in the macOS `spotm3u.app` bundle
+  (Finder, Dock, Applications folder).
+
+Generation is handled by `packaging/generate_icons.py`, which uses only the
+Python standard library, so no icon tool needs to be installed and local and
+GitHub Actions builds produce identical assets. The generated directory
+`assets/generated/` is git-ignored; `assets/icon.png` remains tracked. The
+canonical PNG is also collected into the bundle so the desktop window can apply
+it at runtime on Linux (the only pywebview backend that supports a window
+icon).
+
 ## Build locally
 
 Run the project shortcut; the build command in `pyproject.toml`
@@ -67,7 +86,10 @@ platform backends. `packaging/run_app.py` is the
 PyInstaller entry point; do not replace it with a bare package module. On
 macOS a `BUNDLE` target wraps the one-folder output as `spotm3u.app`; the
 PyInstaller bootloader uses the `.app/Contents/MacOS` location to find
-`sys._MEIPASS` in `Contents/Frameworks`.
+`sys._MEIPASS` in `Contents/Frameworks`. The `BUNDLE` embeds
+`assets/generated/icon.icns`, and the Windows executable embeds
+`assets/generated/icon.ico`; both are derived from `assets/icon.png` before the
+build (see "Application icon").
 
 ## Linux desktop dependencies
 

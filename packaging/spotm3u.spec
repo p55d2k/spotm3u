@@ -41,6 +41,20 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 HERE = Path(SPECPATH) if "SPECPATH" in globals() else Path(__file__).resolve().parent
 ROOT = HERE.parent
 SRC = ROOT / "src"
+ICON_PNG = ROOT / "assets" / "icon.png"
+ICON_ICO = ROOT / "assets" / "generated" / "icon.ico"
+ICON_ICNS = ROOT / "assets" / "generated" / "icon.icns"
+
+
+def _require_icon(path: Path, purpose: str) -> Path:
+    """Fail the build with a clear hint instead of a PyInstaller traceback."""
+    if not path.is_file():
+        raise SystemExit(
+            f"missing {purpose} icon at {path}; run `uv run build` or "
+            "`python packaging/generate_icons.py` first"
+        )
+    return path
+
 
 # Let hook helpers locate the ``spotm3u`` package during spec evaluation.
 sys.path.insert(0, str(SRC))
@@ -48,6 +62,12 @@ sys.path.insert(0, str(SRC))
 datas = []
 binaries = []
 hiddenimports = []
+
+# The canonical PNG is bundled so the desktop window can load it at runtime
+# (pywebview's GTK backend applies it as the window icon on Linux). On Windows
+# and macOS the shell icon comes from the embedded .ico/.icns instead.
+if ICON_PNG.is_file():
+    datas.append((str(ICON_PNG), "."))
 
 # spotm3u package data: templates and static assets live inside the package.
 datas += collect_data_files("spotm3u")
@@ -109,6 +129,9 @@ exe = EXE(
     debug=False,
     strip=False,
     upx=False,
+    # The window and taskbar icon on Windows; ignored on other platforms,
+    # where the macOS bundle (.icns) or the collected icon.png supply it.
+    icon=str(_require_icon(ICON_ICO, "Windows .ico")) if sys.platform == "win32" else None,
     # Windowed on Windows only: a double-clicked ``spotm3u.exe`` must not open a
     # console window. Other platforms keep the console for logs, and a
     # windowed build has no standard streams to log to.
@@ -133,7 +156,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="spotm3u.app",
-        icon=None,
+        icon=str(_require_icon(ICON_ICNS, "macOS .icns")),
         bundle_identifier="com.github.p55d2k.spotm3u",
         version=os.environ.get("SPOTM3U_APP_VERSION", "0.0.0"),
     )

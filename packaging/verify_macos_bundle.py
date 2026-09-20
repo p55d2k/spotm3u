@@ -30,6 +30,9 @@ _REQUIRED_RESOURCES = (
     "spotm3u/templates/index.html",
     "spotm3u/static/style.css",
 )
+# The .icns derived from assets/icon.png; PyInstaller copies it into
+# Contents/Resources and references it from Info.plist.
+_REQUIRED_ICON = "icon.icns"
 _FFMPEG_BINARIES = ("ffmpeg", "ffprobe")
 
 
@@ -73,6 +76,9 @@ def validate_app(app: Path) -> None:
         trees = "/".join(_CONTENT_TREES)
         _fail(f"bundled ffmpeg/ffprobe missing from Contents/{{{trees}}}/ffmpeg")
 
+    if _find_resource(app, _REQUIRED_ICON) is None:
+        _fail(f"bundled application icon missing: {_REQUIRED_ICON}")
+
     for relative in _REQUIRED_RESOURCES:
         if _find_resource(app, relative) is None:
             _fail(f"bundled resource missing: {relative}")
@@ -108,6 +114,8 @@ def _validate_archive(archive: Path) -> None:
     for relative in _REQUIRED_RESOURCES:
         if not has_suffix(f"/{relative}"):
             _fail(f"archive is missing bundled resource: {relative}")
+    if not has_suffix(f"/{_REQUIRED_ICON}"):
+        _fail(f"archive is missing bundled application icon: {_REQUIRED_ICON}")
 
 
 def _find_app(target: Path) -> Path:
