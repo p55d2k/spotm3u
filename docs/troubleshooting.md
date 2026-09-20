@@ -26,13 +26,15 @@ cannot display a native window.
 
 ## The macOS app runs but never shows a window
 
-Release builds for macOS are DMGs, and dragging `SpotM3U.app` out of the DMG
-installs a copy without the macOS quarantine attribute. If instead you launched
-a ZIP-extracted or directly downloaded copy, macOS marks the unsigned app as
-quarantined, and on recent macOS versions the app stops inside the dynamic
-loader before it can finish launching: the process shows up in Activity
-Monitor, never opens its window, never starts the Flask server, and cannot be
-quit or removed in the normal way.
+The reliable macOS install path is the `.pkg` release: the installer writes
+`SpotM3U.app` to `/Applications` fresh, so it carries no quarantine attribute
+and launches normally. If instead you launched a ZIP-extracted, directly
+downloaded, or DMG-dragged copy, macOS marks the unsigned app as quarantined,
+and on recent macOS versions the app stops inside the dynamic loader before it
+can finish launching: the process shows up in Activity Monitor, never opens its
+window, never starts the Flask server, and cannot be quit or removed in the
+normal way. macOS 26 in particular also re-stamps quarantine onto files copied
+out of a quarantined disk image, so the DMG is not exempt.
 
 To tell this apart from a still-starting app: the log line
 `SpotM3U listening on http://127.0.0.1:<port>` is never printed, and nothing
@@ -41,7 +43,8 @@ listens on the port.
 Fix:
 
 1. Quit the stuck process: Activity Monitor → select SpotM3U → **Quit**, or
-   run `killall SpotM3U` in Terminal.
+   run `killall SpotM3U` in Terminal. The app must stop before you can delete
+   it — the hung process keeps the bundle locked.
 2. Clear the quarantine attribute once:
 
    ```bash
@@ -50,9 +53,9 @@ Fix:
 
 3. Launch `SpotM3U.app` again; it opens its window normally.
 
-Installing from the DMG never needs these steps. The project does not disable
-Gatekeeper; the DMG simply avoids marking the unsigned app as quarantined in
-the first place.
+Installing the `.pkg` never needs these steps: the installer's files carry no
+quarantine attribute in the first place. The project does not disable
+Gatekeeper; the package simply avoids marking the unsigned app as quarantined.
 
 ## Online downloads fail because FFmpeg is missing
 

@@ -140,12 +140,24 @@ jobs:
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          # Dragging the app out of a DMG copies it without the quarantine
-          # attribute that makes a downloaded unsigned app hang on modern macOS,
-          # so the DMG is the user-facing macOS artifact.
+          # Secondary artifact: the DMG is convenient for drag-to-Applications,
+          # but on macOS 26 a drag-out copy may still inherit the browser's
+          # quarantine attribute, so it is not the primary install path.
           uv run -q python packaging/make_dmg.py \
             "dist/SpotM3U.app" \
             "dist-artifacts/SpotM3U-v${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg"
+
+      - name: Build macOS PKG
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          # Primary macOS artifact: the installer writes the payload files
+          # fresh, so /Applications/SpotM3U.app is never quarantined and the
+          # unsigned app launches normally on modern macOS.
+          uv run -q python packaging/make_pkg.py \
+            --version "${{ env.VERSION }}" \
+            "dist/SpotM3U.app" \
+            "dist-artifacts/SpotM3U-v${{ env.VERSION }}-macos-${{ matrix.arch }}.pkg"
 
       - name: Verify DMG contains the application
         if: matrix.platform == 'macos'
@@ -156,6 +168,16 @@ jobs:
           hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmg-verify
           uv run -q python packaging/verify_macos_bundle.py /tmp/dmg-verify
           hdiutil detach /tmp/dmg-verify
+
+      - name: Verify PKG contains the application
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          pkg=$(find dist-artifacts -maxdepth 1 -name 'SpotM3U-v*.pkg' -print -quit)
+          test -n "$pkg"
+          rm -rf /tmp/pkg-verify
+          pkgutil --expand-full "$pkg" /tmp/pkg-verify
+          uv run -q python packaging/verify_macos_bundle.py /tmp/pkg-verify
 
       - name: Upload build archive
         uses: actions/upload-artifact@v4
@@ -275,13 +297,16 @@ jobs:
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      - name: Publish the macOS DMG instead of the macOS ZIP
+      - name: Publish macOS assets instead of the macOS ZIP
         shell: bash
         run: |
           # The ZIP is kept only for CI verification. A browser-downloaded ZIP
-          # makes the unsigned app hang on modern macOS; the DMG does not carry
-          # the quarantine attribute, so it is the only macOS release asset.
+          # makes the unsigned app hang on modern macOS. The PKG -- whose
+          # installed files are written fresh and therefore never quarantined --
+          # is the reliable install path; the DMG is published for users who
+          # clear quarantine explicitly.
           rm -f release-artifacts/*-macos-*.zip
+          test -n "$(find release-artifacts -maxdepth 1 -type f -name '*-macos-*.pkg' -print -quit)"
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*-macos-*.dmg' -print -quit)"
 
       - name: Create GitHub Release

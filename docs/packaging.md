@@ -54,13 +54,21 @@ global PyInstaller install is never required) and produces a fresh application
 for the current platform only; cross-compilation is not supported. Build
 intermediates go to `build/` and the distributable to `dist/`, both git-ignored.
 The command prints where the artifact was written, for example `dist/SpotM3U/`
-plus `dist/SpotM3U.app/` on macOS. On macOS you can also package the release
-disk image with `packaging/make_dmg.py`:
+plus `dist/SpotM3U.app/` on macOS. On macOS it then wraps the same `.app` into a
+release-identical DMG and installer package, naming them
+`dist/SpotM3U-<version>-macos-<arch>.dmg` and
+`dist/SpotM3U-<version>-macos-<arch>.pkg` (version from
+`SPOTM3U_APP_VERSION`, defaulting to `0.0.0`). The two packaging scripts can
+also be run on their own:
 
 ```bash
 uv run -q python packaging/make_dmg.py \
   dist/SpotM3U.app \
   dist/SpotM3U-0.1.0-macos-arm64.dmg
+
+uv run -q python packaging/make_pkg.py \
+  dist/SpotM3U.app \
+  dist/SpotM3U-0.1.0-macos-arm64.pkg
 ```
 
 When `ffmpeg-stage/` exists at the repository root, the shortcut supplies it as
@@ -130,22 +138,27 @@ PyInstaller writes intermediate files to `build/` and the bundle to `dist/`.
 share files between `Contents/Frameworks` and `Contents/Resources`. Archives
 are named `SpotM3U-<version>-<platform>-<arch>.zip`.
 
-On macOS the release workflow additionally builds
-`SpotM3U-<version>-macos-<arch>.dmg` with `packaging/make_dmg.py`, which wraps
-the same `.app` into a compressed read-only disk image using Apple's
-`hdiutil`. The DMG, not the ZIP, is the published macOS asset: a
-browser-downloaded ZIP sets the macOS quarantine attribute, and a quarantined,
-unsigned PyInstaller app hangs in the loader on modern macOS (the process runs
-with no window and no server), whereas an app dragged out of a DMG is never
-quarantined and launches normally. The macOS ZIP is still built and verified in
-CI so the smoke test exercises the exact bundle layout users would get, but it
-is not attached to the published release.
+On macOS the release workflow additionally publishes
+`SpotM3U-<version>-macos-<arch>.pkg`, built with `packaging/make_pkg.py`.
+`pkgbuild` packages the `.app` so it installs to `/Applications`; a `.pkg` is
+the reliable artifact for an unsigned app because the installer writes the
+payload files fresh, so the installed app carries no `com.apple.quarantine`
+attribute and launches normally on modern macOS. A browser-downloaded ZIP sets
+that attribute, and a quarantined, unsigned PyInstaller app hangs in the loader
+on modern macOS (the process runs with no window and no server); macOS 26 also
+re-stamps quarantine onto files copied out of a quarantined disk image, so the
+`SpotM3U-<version>-macos-<arch>.dmg` (built with `packaging/make_dmg.py`) is
+published only as a convenience for users who clear quarantine explicitly. The
+macOS ZIP is still built and verified in CI so the smoke test exercises the
+exact bundle layout users would get, but it is not attached to the published
+release.
 
 The release workflow then verifies each archive:
 
 - `packaging/verify_macos_bundle.py` checks the macOS ZIP for a valid
   `SpotM3U.app` (`Contents/MacOS/SpotM3U`, `Info.plist`, bundled FFmpeg, and
-  application resources). The macOS DMG is mounted and passed through the same
+  application resources). The macOS DMG is mounted and the PKG is expanded with
+  `pkgutil --expand-full`, and both are passed through the same
   check before upload. Signature and Gatekeeper status are intentionally
   not checked.
 - `packaging/smoke_test.py` launches the packaged executable, renders the home

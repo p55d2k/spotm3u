@@ -157,6 +157,6 @@ if sys.platform == "darwin":
         coll,
         name="SpotM3U.app",
         icon=str(_require_icon(ICON_ICNS, "macOS .icns")),
-        bundle_identifier="com.github.p55d2k.spotm3u",
+        bundle_identifier="com.p55d2k.spotm3u",
         version=os.environ.get("SPOTM3U_APP_VERSION", "0.0.0"),
     )

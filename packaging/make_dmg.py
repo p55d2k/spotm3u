@@ -1,14 +1,12 @@
 """Create a macOS application image (DMG) from the packaged ``SpotM3U.app``.
 
-A ZIP downloaded from the browser carries the ``com.apple.quarantine``
-attribute, which is copied onto the extracted ``SpotM3U.app``. On recent macOS
-versions a quarantined, unsigned (ad-hoc signed) PyInstaller app then hangs in
-``dyld`` on first launch instead of opening: the process stays alive with no
-window and no Flask port, invisible in the UI except in Activity Monitor.
-
-The quarry of this script avoids that without signing or notarization: an app
-inside a DMG has no quarantine attribute, so dragging it out of the mounted
-image produces a copy that launches normally. ``hdiutil`` is the only tool
+Note: a DMG is a convenience ``drag-to-Applications`` distribution. It does NOT
+clear the macOS quarantine problem by itself -- macOS 26 additionally re-stamps
+``com.apple.quarantine`` onto files copied out of a quarantined image, so a
+browser-downloaded DMG still delivers a quarantined, hanging unsigned app. The
+reliable install path is ``packaging/make_pkg.py`` (installed files are written
+fresh by the installer and are never quarantined). This script keeps shipping a
+DMG for users who explicitly clear quarantine; ``hdiutil`` is the only tool
 used, so local and GitHub Actions builds behave identically.
 """
 

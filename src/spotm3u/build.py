@@ -13,6 +13,7 @@ always builds for the current platform; cross-compilation is not supported.
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,10 @@ _SPEC = _ROOT / "packaging" / "spotm3u.spec"
 _FFMPEG_STAGE = _ROOT / "ffmpeg-stage"
 _ICON_GENERATOR = _ROOT / "packaging" / "generate_icons.py"
 _ICON_PNG = _ROOT / "assets" / "icon.png"
+_MAKE_DMG = _ROOT / "packaging" / "make_dmg.py"
+_MAKE_PKG = _ROOT / "packaging" / "make_pkg.py"
+# Mirrors the SPOTM3U_APP_VERSION default in packaging/spotm3u.spec.
+_VERSION_DEFAULT = "0.0.0"
 
 
 def build_command(argv: list[str] | None = None) -> list[str]:
@@ -57,6 +62,32 @@ def artifact_paths() -> list[Path]:
     return paths
 
 
+def _package_macos(version: str) -> list[Path]:
+    """Wrap the fresh ``dist/SpotM3U.app`` in a DMG and an installer package.
+
+    Runs the same packaging scripts the release workflow uses, so a local
+    ``uv run build`` on macOS produces release-identical install artifacts.
+    Both are written next to the app in ``dist/``.
+    """
+    app = _ROOT / "dist" / "SpotM3U.app"
+    if not app.is_dir():
+        return []
+    if sys.platform != "darwin":
+        return []
+    stem = _ROOT / "dist" / f"SpotM3U-v{version}-macos-{platform.machine()}"
+    artifacts: list[Path] = []
+    for script, dest, extra in (
+        (_MAKE_DMG, stem.with_suffix(".dmg"), []),
+        (_MAKE_PKG, stem.with_suffix(".pkg"), ["--version", version]),
+    ):
+        status = subprocess.call([sys.executable, str(script), str(app), str(dest), *extra])
+        if status != 0:
+            print(f"Packaging failed (exit status {status}) for {script.name}.", file=sys.stderr)
+            raise SystemExit(status)
+        artifacts.append(dest)
+    return artifacts
+
+
 def _display(path: Path) -> str:
     """The user-facing location of an artifact, relative to the repo root."""
     try:
@@ -65,9 +96,9 @@ def _display(path: Path) -> str:
         return str(path)
 
 
-def report_success() -> None:
-    """Print a concise pointer to the produced artifact."""
-    built = [path for path in artifact_paths() if path.exists()]
+def report_success(extra: list[Path] | None = None) -> None:
+    """Print a concise pointer to the produced artifacts."""
+    built = [path for path in artifact_paths() if path.exists()] + (extra or [])
     print("Build complete.")
     print()
     print("Artifact:")
@@ -104,4 +135,5 @@ def main(argv: list[str] | None = None) -> None:
     if status != 0:
         print(f"Build failed (exit status {status}).", file=sys.stderr)
         raise SystemExit(status)
-    report_success()
+    packaged = _package_macos(os.environ.get("SPOTM3U_APP_VERSION", _VERSION_DEFAULT))
+    report_success(packaged)
