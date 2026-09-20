@@ -22,7 +22,29 @@ non-zero. macOS and Linux keep their console for logs.
 
 ## Build locally
 
-Build dependencies are separate from runtime and development dependencies:
+Run the project shortcut; the build command in `pyproject.toml`
+(`spotm3u.build`) wraps PyInstaller, so developers never need to invoke the
+packaging tool directly:
+
+```bash
+uv run build
+```
+
+`uv run build` installs the locked `build` dependency group on first use (a
+global PyInstaller install is never required) and produces a fresh application
+for the current platform only; cross-compilation is not supported. Build
+intermediates go to `build/` and the distributable to `dist/`, both git-ignored.
+The command prints where the artifact was written, for example `dist/spotm3u/`
+plus `dist/spotm3u.app/` on macOS.
+
+When `ffmpeg-stage/` exists at the repository root, the shortcut supplies it as
+`SPOTM3U_FFMPEG_DIR` automatically. The same command is what the GitHub Actions
+release workflow runs, so a local build matches a release build for your
+platform.
+
+Build dependencies are separate from runtime and development dependencies
+(`dependency-groups.build` in `pyproject.toml`). The equivalent explicit
+invocation is:
 
 ```bash
 uv sync --locked --group build
@@ -30,17 +52,9 @@ SPOTM3U_FFMPEG_DIR=/absolute/path/to/ffmpeg-stage \
   uv run --group build pyinstaller --noconfirm --clean packaging/spotm3u.spec
 ```
 
-The same build can be run through the project shortcut:
-
-```bash
-uv run build
-```
-
-When `ffmpeg-stage/` exists at the repository root, the shortcut supplies it as
-`SPOTM3U_FFMPEG_DIR` automatically.
-
 `SPOTM3U_FFMPEG_DIR` is optional for a local build, but a bundle made without
-it needs FFmpeg from the system. When supplied, the directory must contain
+it needs FFmpeg from the system; the shortcut only supplies it when
+`ffmpeg-stage/` exists. When supplied, the directory must contain
 `ffmpeg` and `ffprobe` (with `.exe` on Windows); the files are copied into the
 bundle's `ffmpeg/` directory. The resulting one-folder application is
 `dist/spotm3u/` on every platform. On macOS the same build also produces

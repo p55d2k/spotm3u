@@ -124,7 +124,7 @@ jobs:
         env:
           SPOTM3U_FFMPEG_DIR: ${{ github.workspace }}/ffmpeg-stage
           SPOTM3U_APP_VERSION: ${{ env.VERSION }}
-        run: uv run -q --group build pyinstaller --noconfirm --clean packaging/spotm3u.spec
+        run: uv run -q build
 
       - name: Package release archive
         shell: bash
