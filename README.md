@@ -60,10 +60,11 @@ ZIP only.
 ### Standalone release
 
 Download the archive for your platform from
-[GitHub Releases](https://github.com/p55d2k/spotm3u/releases), extract it, and
-start the application. SpotM3U starts a local server on a free loopback port
-and opens its interface in a native `SpotM3U` window, so there is no URL to
-type and no terminal to keep open.
+[GitHub Releases](https://github.com/p55d2k/spotm3u/releases)
+(on macOS, open the DMG and drag `SpotM3U.app` out of it; on Windows and Linux,
+extract the ZIP) and start the application. SpotM3U starts a local server on a
+free loopback port and opens its interface in a native `SpotM3U` window, so
+there is no URL to type and no terminal to keep open.
 
 The release archives built by CI include a Python runtime, application
 dependencies, and FFmpeg/ffprobe. They do not require Python, `uv`, or a
@@ -72,7 +73,7 @@ system FFmpeg installation. CI currently builds:
 | Platform | Architecture | Archive suffix | Launch |
 | --- | --- | --- | --- |
 | Windows | x86_64 | `windows-x86_64` | Double-click `SpotM3U.exe` |
-| macOS | arm64 | `macos-arm64` | Open `SpotM3U.app` (see below) |
+| macOS | arm64 | `macos-arm64.dmg` | Open the DMG, drag `SpotM3U.app` out |
 | Linux | x86_64 | `linux-x86_64` | Run `SpotM3U` |
 
 The server binds to `127.0.0.1` only, so the interface is not reachable from
@@ -82,8 +83,11 @@ use.
 
 None of the releases are signed or notarized. The project does not use Apple
 Developer Program membership, Developer ID certificates, or Apple's
-notarization service, so macOS and Windows may show a security prompt on first
-launch. **Add to Media Player** is offered on macOS, where it adds to Apple
+notarization service. macOS therefore ships as a DMG rather than a ZIP: an app
+dragged out of a DMG is not marked quarantined, so it launches normally on
+modern macOS, where a downloaded unsigned app would otherwise hang before its
+window can open. Windows may still show a security prompt on first launch.
+**Add to Media Player** is offered on macOS, where it adds to Apple
 Music, and on Windows, where the generated M3U opens with its default
 associated media player. A YouTube PO-token provider is an optional external
 service and is not bundled; see
@@ -107,26 +111,29 @@ windowed application has no console to print a traceback to.
 
 ### macOS first launch
 
-The macOS archive contains a normal application bundle, `SpotM3U.app`. Because
-the build is not Apple-signed or notarized, macOS may refuse to open it on the
-first double-click. Approve it once through Apple's standard flow:
+macOS is distributed as a disk image (`SpotM3U-<version>-macos-arm64.dmg`)
+rather than a ZIP because the release is not Apple-signed or notarized. A ZIP
+downloaded from the browser carries macOS's quarantine attribute, and on modern
+macOS a quarantined unsigned app hangs in the loader before its window can
+open — the process runs with no window and no way to quit. An app inside a DMG
+is not quarantined, so dragging it out installs a copy that launches normally:
 
-1. Download `SpotM3U-<version>-macos-arm64.zip` from
+1. Download `SpotM3U-<version>-macos-arm64.dmg` from
    [GitHub Releases](https://github.com/p55d2k/spotm3u/releases).
-2. Extract the ZIP. You get `SpotM3U.app`.
-3. Right-click (Control-click) `SpotM3U.app` and choose **Open**.
-4. If macOS shows a security warning, choose **Open** to confirm.
-5. SpotM3U starts and opens its interface in its native window.
+2. Open the DMG; Finder shows `SpotM3U.app`.
+3. Drag `SpotM3U.app` into the Applications folder (or anywhere you want to
+   keep it).
+4. Launch SpotM3U; it opens its interface in its native window.
 
-This approval is needed only once. Afterwards, launch `SpotM3U.app` with a
-normal double-click like any other app.
+The exact wording and appearance of any first-launch security prompt varies
+between macOS versions. The release does not disable Gatekeeper, and
+installing from the DMG needs no `xattr` workaround.
 
-The exact wording and appearance of the first-launch prompt varies between
-macOS versions, so the steps above describe the flow rather than one specific
-dialog. This is Apple's normal way to approve an unsigned app: do not disable
-Gatekeeper and do not run `xattr` to strip the quarantine attribute. Those
-steps are not part of the installation, and the release does not attempt to
-bypass Gatekeeper.
+If you instead kept an older ZIP-extracted `SpotM3U.app` and no window opens,
+quit the stuck process (Activity Monitor → SpotM3U → Quit, or `killall SpotM3U`
+in Terminal), then run `xattr -cr /path/to/SpotM3U.app` once to clear the
+quarantine attribute before launching it again. See
+[troubleshooting](docs/troubleshooting.md#the-macos-app-runs-but-never-shows-a-window).
 
 ### Run from source
 

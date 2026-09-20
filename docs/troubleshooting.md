@@ -24,6 +24,36 @@ If no window appears, the application may still be running: open the printed
 URL in a browser or check the startup log. A machine without a windowing system
 cannot display a native window.
 
+## The macOS app runs but never shows a window
+
+Release builds for macOS are DMGs, and dragging `SpotM3U.app` out of the DMG
+installs a copy without the macOS quarantine attribute. If instead you launched
+a ZIP-extracted or directly downloaded copy, macOS marks the unsigned app as
+quarantined, and on recent macOS versions the app stops inside the dynamic
+loader before it can finish launching: the process shows up in Activity
+Monitor, never opens its window, never starts the Flask server, and cannot be
+quit or removed in the normal way.
+
+To tell this apart from a still-starting app: the log line
+`SpotM3U listening on http://127.0.0.1:<port>` is never printed, and nothing
+listens on the port.
+
+Fix:
+
+1. Quit the stuck process: Activity Monitor → select SpotM3U → **Quit**, or
+   run `killall SpotM3U` in Terminal.
+2. Clear the quarantine attribute once:
+
+   ```bash
+   xattr -cr /path/to/SpotM3U.app
+   ```
+
+3. Launch `SpotM3U.app` again; it opens its window normally.
+
+Installing from the DMG never needs these steps. The project does not disable
+Gatekeeper; the DMG simply avoids marking the unsigned app as quarantined in
+the first place.
+
 ## Online downloads fail because FFmpeg is missing
 
 Source runs use yt-dlp's FFmpeg lookup. Install FFmpeg and make sure both

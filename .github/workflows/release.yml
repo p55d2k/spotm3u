@@ -136,11 +136,32 @@ jobs:
           fi
           uv run -q python packaging/make_archive.py "$bundle" "dist-artifacts/SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
 
+      - name: Build macOS DMG
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          # Dragging the app out of a DMG copies it without the quarantine
+          # attribute that makes a downloaded unsigned app hang on modern macOS,
+          # so the DMG is the user-facing macOS artifact.
+          uv run -q python packaging/make_dmg.py \
+            "dist/SpotM3U.app" \
+            "dist-artifacts/SpotM3U-v${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg"
+
+      - name: Verify DMG contains the application
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          dmg=$(find dist-artifacts -maxdepth 1 -name 'SpotM3U-v*.dmg' -print -quit)
+          test -n "$dmg"
+          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmg-verify
+          uv run -q python packaging/verify_macos_bundle.py /tmp/dmg-verify
+          hdiutil detach /tmp/dmg-verify
+
       - name: Upload build archive
         uses: actions/upload-artifact@v4
         with:
           name: SpotM3U-v${{ env.VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist-artifacts/*.zip
+          path: dist-artifacts/*
           if-no-files-found: error
 
   verify:
@@ -254,10 +275,19 @@ jobs:
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      - name: Publish the macOS DMG instead of the macOS ZIP
+        shell: bash
+        run: |
+          # The ZIP is kept only for CI verification. A browser-downloaded ZIP
+          # makes the unsigned app hang on modern macOS; the DMG does not carry
+          # the quarantine attribute, so it is the only macOS release asset.
+          rm -f release-artifacts/*-macos-*.zip
+          test -n "$(find release-artifacts -maxdepth 1 -type f -name '*-macos-*.dmg' -print -quit)"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: v${{ env.VERSION }}
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
-          files: release-artifacts/*.zip
+          files: release-artifacts/*

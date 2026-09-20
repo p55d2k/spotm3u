@@ -24,6 +24,7 @@ def _load(name: str) -> object:
 make_archive = _load("make_archive")
 stage_ffmpeg = _load("stage_ffmpeg")
 verify_macos_bundle = _load("verify_macos_bundle")
+make_dmg = _load("make_dmg")
 
 
 def test_build_archive_roots_at_parent_directory(tmp_path) -> None:
@@ -178,3 +179,55 @@ def test_find_app_detects_directory_containing_bundle(tmp_path) -> None:
 
     assert verify_macos_bundle._find_app(app) == app
     assert verify_macos_bundle._find_app(tmp_path) == app
+
+
+def test_dmg_command_builds_a_udzo_image() -> None:
+    src = Path("/tmp/SpotM3U.app")
+    dest = Path("/tmp/SpotM3U-v1.0.0-macos-arm64.dmg")
+
+    command = make_dmg.dmg_command(src, dest)
+
+    assert command[0] == "hdiutil"
+    assert command[1] == "create"
+    assert command[command.index("SpotM3U") - 1] == "-volname"
+    assert command[command.index(str(src)) - 1] == "-srcfolder"
+    assert command[command.index("UDZO") - 1] == "-format"
+    assert command[-1] == str(dest)
+
+
+def test_build_dmg_runs_hdiutil_and_creates_parent(tmp_path, monkeypatch) -> None:
+    app = tmp_path / "SpotM3U.app"
+    app.mkdir()
+    dest = tmp_path / "out" / "SpotM3U.dmg"
+    result = type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()  # type: ignore[misc]
+    monkeypatch.setattr(make_dmg.subprocess, "run", lambda _command, **_kw: result)
+
+    created = make_dmg.build_dmg(app, dest)
+
+    assert created == dest
+    assert dest.parent.is_dir()
+
+
+def test_build_dmg_fails_when_source_missing(tmp_path) -> None:
+    with pytest.raises(SystemExit, match="does not exist"):
+        make_dmg.build_dmg(tmp_path / "SpotM3U.app", tmp_path / "out.dmg")
+
+
+def test_build_dmg_rejects_a_non_app_source(tmp_path) -> None:
+    source = tmp_path / "SpotM3U"
+    source.mkdir()
+
+    with pytest.raises(SystemExit, match="\\.app bundle"):
+        make_dmg.build_dmg(source, tmp_path / "out.dmg")
+
+
+def test_build_dmg_fails_loudly_when_hdiutil_fails(tmp_path, monkeypatch) -> None:
+    app = tmp_path / "SpotM3U.app"
+    app.mkdir()
+    result = type(  # type: ignore[misc]
+        "Result", (), {"returncode": 1, "stdout": "", "stderr": "some error"}
+    )()
+    monkeypatch.setattr(make_dmg.subprocess, "run", lambda _command, **_kw: result)
+
+    with pytest.raises(SystemExit, match="hdiutil failed"):
+        make_dmg.build_dmg(app, tmp_path / "out.dmg")

@@ -54,7 +54,14 @@ global PyInstaller install is never required) and produces a fresh application
 for the current platform only; cross-compilation is not supported. Build
 intermediates go to `build/` and the distributable to `dist/`, both git-ignored.
 The command prints where the artifact was written, for example `dist/SpotM3U/`
-plus `dist/SpotM3U.app/` on macOS.
+plus `dist/SpotM3U.app/` on macOS. On macOS you can also package the release
+disk image with `packaging/make_dmg.py`:
+
+```bash
+uv run -q python packaging/make_dmg.py \
+  dist/SpotM3U.app \
+  dist/SpotM3U-0.1.0-macos-arm64.dmg
+```
 
 When `ffmpeg-stage/` exists at the repository root, the shortcut supplies it as
 `SPOTM3U_FFMPEG_DIR` automatically. The same command is what the GitHub Actions
@@ -123,11 +130,23 @@ PyInstaller writes intermediate files to `build/` and the bundle to `dist/`.
 share files between `Contents/Frameworks` and `Contents/Resources`. Archives
 are named `SpotM3U-<version>-<platform>-<arch>.zip`.
 
+On macOS the release workflow additionally builds
+`SpotM3U-<version>-macos-<arch>.dmg` with `packaging/make_dmg.py`, which wraps
+the same `.app` into a compressed read-only disk image using Apple's
+`hdiutil`. The DMG, not the ZIP, is the published macOS asset: a
+browser-downloaded ZIP sets the macOS quarantine attribute, and a quarantined,
+unsigned PyInstaller app hangs in the loader on modern macOS (the process runs
+with no window and no server), whereas an app dragged out of a DMG is never
+quarantined and launches normally. The macOS ZIP is still built and verified in
+CI so the smoke test exercises the exact bundle layout users would get, but it
+is not attached to the published release.
+
 The release workflow then verifies each archive:
 
 - `packaging/verify_macos_bundle.py` checks the macOS ZIP for a valid
   `SpotM3U.app` (`Contents/MacOS/SpotM3U`, `Info.plist`, bundled FFmpeg, and
-  application resources). Signature and Gatekeeper status are intentionally
+  application resources). The macOS DMG is mounted and passed through the same
+  check before upload. Signature and Gatekeeper status are intentionally
   not checked.
 - `packaging/smoke_test.py` launches the packaged executable, renders the home
   template, serves a static asset, and confirms the bundled FFmpeg. It accepts
