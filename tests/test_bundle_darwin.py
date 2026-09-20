@@ -80,6 +80,7 @@ def test_bundle_darwin_dylibs_rewrites_and_signs_copies(monkeypatch, tmp_path) -
     assert any(args[0] == "codesign" and args[1] == "--force" for args in calls)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     sys.platform != "darwin" or os.environ.get("SPOTM3U_SKIP_FFMPEG_INTEG"),
     reason="integration test requires macOS and Homebrew FFmpeg",

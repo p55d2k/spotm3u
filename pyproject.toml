@@ -38,6 +38,7 @@ build = "spotm3u.build:main"
 dev = [
     "pre-commit>=4.2",
     "pytest>=8.3",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.9",
 ]
 build = [
@@ -50,6 +51,9 @@ packages = ["src/spotm3u"]
 [tool.pytest.ini_options]
 addopts = ["-ra"]
 testpaths = ["tests"]
+markers = [
+    "slow: integration tests with real external tools, excluded from pre-commit",
+]
 
 [tool.ruff]
 target-version = "py313"

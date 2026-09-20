@@ -10,7 +10,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: uv run pytest
+        entry: uv run pytest -q -n auto -m "not slow"
         language: system
         pass_filenames: false
         always_run: true
