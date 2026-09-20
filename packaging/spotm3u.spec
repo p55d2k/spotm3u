@@ -13,15 +13,19 @@ Finder/Gatekeeper's one-time Right-click -> Open flow. The same onedir layout
 is kept on every platform; only macOS gains the ``.app`` wrapper.
 
 The Windows executable is built windowed (no console) so double-clicking
-``spotm3u.exe`` never flashes a terminal; the launcher opens the UI in the
-default browser and reports startup failures through a native message box.
-Other platforms keep their console so developers and release verification can
-read the logs.
+``spotm3u.exe`` never flashes a terminal; the launcher opens the native spotm3u
+WebView window and reports startup failures through a native message box. Other
+platforms keep their console so developers and release verification can read
+the logs.
 
 Usage (from the repository root):
 
     SPOTM3U_FFMPEG_DIR=<dir containing ffmpeg[.exe] and ffprobe[.exe]> \
     uv run --group build pyinstaller --noconfirm --clean packaging/spotm3u.spec
+
+or, equivalently, the shortcut provided in ``pyproject.toml``:
+
+    uv run build
 
 ``SPOTM3U_FFMPEG_DIR`` is optional; when set, the directory's contents are
 copied into ``dist/spotm3u/ffmpeg/`` so the packaged app provides its own
@@ -48,6 +52,12 @@ hiddenimports = []
 # spotm3u package data: templates and static assets live inside the package.
 datas += collect_data_files("spotm3u")
 hiddenimports += collect_submodules("spotm3u")
+
+# pywebview (the desktop WebView shell) loads its platform backend dynamically;
+# scouting every backend keeps the native window working in a frozen bundle.
+# PyInstaller's own hooks supply the platform GUI stacks they depend on
+# (pyobjc on macOS, pythonnet on Windows, gi on Linux).
+hiddenimports += collect_submodules("webview")
 
 # yt-dlp loads its extractors and runtime data dynamically.
 hiddenimports += collect_submodules("yt_dlp")

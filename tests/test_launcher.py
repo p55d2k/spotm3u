@@ -10,93 +10,75 @@ from pathlib import Path
 
 import pytest
 
-from spotm3u import launcher, runtime
+from spotm3u import desktop, launcher, runtime
 
 
-class _FakeApp:
-    """Attribute-based stand-in for the Flask app used by ``serve``."""
+def _stub_desktop(monkeypatch, *, fail: BaseException | None = None) -> list[dict[str, object]]:
+    """Replace the desktop shell so ``launcher.main`` is exercised in isolation."""
 
-    def __init__(self, *, fail: BaseException | None = None) -> None:
-        self.config = {"PORT": 5001}
-        self.logger = logging.getLogger("test-launcher")
-        self.run_calls: dict[str, object] = {}
-        self._fail = fail
+    def fake_run_desktop(**kwargs) -> None:
+        calls.append(kwargs)
+        if fail is not None:
+            raise fail
 
-    def run(self, **kwargs) -> None:
-        self.run_calls.update(kwargs)
-        if self._fail is not None:
-            raise self._fail
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(desktop, "run_desktop", fake_run_desktop)
+    return calls
 
 
-def _free_port() -> int:
-    """Return a loopback port that was free a moment ago."""
-    with closing(socket.socket()) as probe:
-        probe.bind((launcher.DEFAULT_HOST, 0))
-        return int(probe.getsockname()[1])
+def test_main_dispatches_to_the_desktop_shell(monkeypatch) -> None:
+    calls = _stub_desktop(monkeypatch)
+
+    launcher.main()
+
+    assert calls == [{"open_window": None}]
 
 
-def _launch(monkeypatch, *, app, port=5123, browser=False) -> list[dict[str, object]]:
-    """Run the launcher against a fake app without binding or opening anything."""
-    opened: list[dict[str, object]] = []
-    monkeypatch.setattr(launcher, "create_app", lambda: app)
-    monkeypatch.setattr(launcher, "select_port", lambda preferred, host: port)
+def test_main_passes_the_window_flag_through(monkeypatch) -> None:
+    calls = _stub_desktop(monkeypatch)
+
+    launcher.main(open_window=True)
+
+    assert calls == [{"open_window": True}]
+
+
+def test_main_ignores_keyboard_interrupt(monkeypatch) -> None:
+    _stub_desktop(monkeypatch, fail=KeyboardInterrupt())
+
+    launcher.main()
+
+
+def test_main_reports_a_bind_failure_instead_of_failing_silently(monkeypatch) -> None:
+    messages: list[str] = []
+    _stub_desktop(monkeypatch, fail=SystemExit(1))
+    monkeypatch.setattr(
+        launcher, "report_startup_error", lambda message, **kwargs: messages.append(message)
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        launcher.main()
+
+    assert exit_info.value.code == 1
+    assert len(messages) == 1
+    assert "could not start" in messages[0]
+
+
+def test_main_reports_an_unexpected_startup_error(monkeypatch) -> None:
+    reported: list[dict[str, object]] = []
+    _stub_desktop(monkeypatch, fail=RuntimeError("webview unavailable"))
     monkeypatch.setattr(
         launcher,
-        "start_browser_opener",
-        lambda url, *, host, port, timeout=launcher.READINESS_TIMEOUT: opened.append(
-            {"url": url, "host": host, "port": port}
-        ),
+        "report_startup_error",
+        lambda message, **kwargs: reported.append({"message": message, **kwargs}),
     )
-    launcher.main(open_browser=browser)
-    return opened
 
+    with pytest.raises(SystemExit) as exit_info:
+        launcher.main()
 
-def test_main_serves_flask_app_without_debug(monkeypatch) -> None:
-    # Don't actually bind a socket.
-    fake_app = _FakeApp()
-
-    _launch(monkeypatch, app=fake_app)
-
-    assert fake_app.run_calls["host"] == "127.0.0.1"
-    assert fake_app.run_calls["port"] == 5123
-    assert fake_app.run_calls["debug"] is False
-    assert fake_app.run_calls["use_reloader"] is False
-    assert fake_app.run_calls["threaded"] is True
-
-
-def test_main_serves_on_a_dynamically_selected_port(monkeypatch) -> None:
-    fake_app = _FakeApp()
-
-    _launch(monkeypatch, app=fake_app, port=5399)
-
-    assert fake_app.run_calls["port"] == 5399
-
-
-def test_main_opens_the_browser_once_on_the_served_port(monkeypatch) -> None:
-    fake_app = _FakeApp()
-
-    opened = _launch(monkeypatch, app=fake_app, port=5123, browser=True)
-
-    assert opened == [{"url": "http://127.0.0.1:5123/", "host": "127.0.0.1", "port": 5123}]
-    assert fake_app.run_calls["port"] == 5123
-
-
-def test_main_does_not_open_the_browser_when_disabled(monkeypatch) -> None:
-    fake_app = _FakeApp()
-
-    opened = _launch(monkeypatch, app=fake_app, browser=False)
-
-    assert opened == []
-
-
-def test_browser_env_var_disables_the_automatic_tab(monkeypatch) -> None:
-    monkeypatch.delenv(launcher.BROWSER_ENV, raising=False)
-    assert launcher.browser_enabled() is True
-
-    monkeypatch.setenv(launcher.BROWSER_ENV, "1")
-    assert launcher.browser_enabled() is False
-    # An explicit choice always wins over the environment.
-    assert launcher.browser_enabled(True) is True
+    assert exit_info.value.code == 1
+    assert reported == [
+        {"message": "spotm3u could not start: webview unavailable", "exception": True}
+    ]
 
 
 def test_select_port_keeps_a_free_preferred_port() -> None:
@@ -137,36 +119,6 @@ def test_wait_for_server_times_out_when_nothing_listens() -> None:
     assert launcher.wait_for_server(launcher.DEFAULT_HOST, _free_port(), timeout=0.2) is False
 
 
-def test_browser_opens_only_after_the_server_is_ready(monkeypatch) -> None:
-    opened: list[str] = []
-    monkeypatch.setattr(launcher.webbrowser, "open", lambda url: opened.append(url) or True)
-
-    with closing(socket.socket()) as server:
-        server.bind((launcher.DEFAULT_HOST, 0))
-        server.listen(1)
-        port = int(server.getsockname()[1])
-        thread = launcher.start_browser_opener(
-            f"http://127.0.0.1:{port}/", host=launcher.DEFAULT_HOST, port=port
-        )
-        thread.join(timeout=10)
-
-    assert opened == [f"http://127.0.0.1:{port}/"]
-
-
-def test_browser_stays_closed_when_the_server_never_starts(monkeypatch) -> None:
-    opened: list[str] = []
-    monkeypatch.setattr(launcher.webbrowser, "open", lambda url: opened.append(url) or True)
-    port = _free_port()
-
-    thread = launcher.start_browser_opener(
-        f"http://127.0.0.1:{port}/", host=launcher.DEFAULT_HOST, port=port, timeout=0.2
-    )
-    thread.join(timeout=10)
-
-    assert opened == []
-    assert not thread.is_alive()
-
-
 def test_report_startup_error_shows_a_dialog_without_a_console(monkeypatch) -> None:
     dialogs: list[str] = []
     monkeypatch.setattr(launcher, "has_console", lambda: False)
@@ -189,37 +141,6 @@ def test_report_startup_error_logs_for_the_console(monkeypatch, caplog) -> None:
         launcher.report_startup_error("spotm3u could not start.")
 
     assert "spotm3u could not start." in caplog.text
-
-
-def test_main_reports_a_bind_failure_instead_of_failing_silently(monkeypatch) -> None:
-    messages: list[str] = []
-    fake_app = _FakeApp(fail=SystemExit(1))
-    monkeypatch.setattr(
-        launcher, "report_startup_error", lambda message, **kwargs: messages.append(message)
-    )
-
-    with pytest.raises(SystemExit) as exit_info:
-        _launch(monkeypatch, app=fake_app)
-
-    assert exit_info.value.code == 1
-    assert len(messages) == 1
-    assert "could not start" in messages[0]
-
-
-def test_main_reports_an_unexpected_startup_error(monkeypatch) -> None:
-    reported: list[dict[str, object]] = []
-    fake_app = _FakeApp(fail=RuntimeError("no sockets left"))
-    monkeypatch.setattr(
-        launcher,
-        "report_startup_error",
-        lambda message, **kwargs: reported.append({"message": message, **kwargs}),
-    )
-
-    with pytest.raises(SystemExit) as exit_info:
-        _launch(monkeypatch, app=fake_app)
-
-    assert exit_info.value.code == 1
-    assert reported == [{"message": "spotm3u could not start: no sockets left", "exception": True}]
 
 
 def test_has_console_is_false_without_standard_streams(monkeypatch) -> None:
@@ -284,3 +205,10 @@ def test_bundle_config_prefers_executable_dir_over_internal(monkeypatch, tmp_pat
     launcher.configure_config_path_for_bundle()
 
     assert os.environ["SPOTM3U_CONFIG"] == str(user_config)
+
+
+def _free_port() -> int:
+    """Return a loopback port that was free a moment ago."""
+    with closing(socket.socket()) as probe:
+        probe.bind((launcher.DEFAULT_HOST, 0))
+        return int(probe.getsockname()[1])

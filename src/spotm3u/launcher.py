@@ -1,10 +1,19 @@
-"""Production entry point for the spotm3u Flask application.
+"""Production entry point for the spotm3u desktop application.
 
-``main()`` is the console-script and PyInstaller target. It starts the same
-Flask app served by the development entry point but without the debug reloader,
-binds to the loopback interface, picks a free local port, and opens the UI in
-the default browser once the server answers. A packaged Windows executable is
-built windowed (no console), so startup failures are reported through a native
+``main()`` is the console-script and PyInstaller target behind ``uv run app``
+and the packaged executable. It delegates to :mod:`spotm3u.desktop`, which
+starts the same Flask app served by the development workflow, picks a free
+loopback port, waits for the server, and presents the UI inside a native
+WebView window instead of an external browser. Closing the window shuts Flask
+down and the process exits.
+
+Developers never need the native window: ``uv run dev`` (``spotm3u.dev``)
+serves the same app in a normal browser with the debug reloader.
+
+The helpers here -- free-port selection, server readiness polling, bundle
+config discovery, and native error reporting -- are shared with the desktop
+shell and the packaging helpers. A packaged Windows executable is built
+windowed (no console), so startup failures are reported through a native
 message box rather than a traceback on a standard stream that does not exist.
 """
 
@@ -14,17 +23,13 @@ import logging
 import os
 import socket
 import sys
-import threading
 import time
-import webbrowser
 
-from .app import create_app
 from .log import PACKAGE_LOGGER
 from .runtime import bundle_roots, has_console, is_frozen
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5001
-BROWSER_ENV = "SPOTM3U_NO_BROWSER"
 MIN_PORT = 1
 MAX_PORT = 65535
 READINESS_TIMEOUT = 30.0
@@ -72,7 +77,7 @@ def select_port(preferred: int, host: str = DEFAULT_HOST) -> int:
     The configured port is a convention rather than a guarantee: another
     program may already be listening there, so fall back to whatever free port
     the operating system assigns. The returned port is the only port the
-    server is started on and the only one the browser is sent to.
+    server is started on and the only one the WebView is sent to.
     """
     if port_is_free(host, preferred):
         return preferred
@@ -87,7 +92,7 @@ def wait_for_server(host: str, port: int, *, timeout: float = READINESS_TIMEOUT)
 
     Connecting proves the server socket is listening, which is a far better
     readiness signal than sleeping for an arbitrary fixed time before opening
-    the browser.
+    the browser (or, in production, the WebView).
     """
     deadline = time.monotonic() + timeout
     while True:
@@ -98,41 +103,6 @@ def wait_for_server(host: str, port: int, *, timeout: float = READINESS_TIMEOUT)
             if time.monotonic() >= deadline:
                 return False
             time.sleep(READINESS_INTERVAL)
-
-
-def browser_enabled(explicit: bool | None = None) -> bool:
-    """Whether startup should open the UI in the default browser.
-
-    An explicit choice always wins; otherwise ``SPOTM3U_NO_BROWSER`` disables
-    the automatic tab for development, tests, and headless environments.
-    """
-    if explicit is not None:
-        return explicit
-    return not os.environ.get(BROWSER_ENV)
-
-
-def start_browser_opener(
-    url: str, *, host: str, port: int, timeout: float = READINESS_TIMEOUT
-) -> threading.Thread:
-    """Open ``url`` exactly once, as soon as the server is ready.
-
-    The wait runs on a daemon thread because the server owns the main thread.
-    Starting this helper once per launch, together with the disabled debug
-    reloader, is what keeps the browser from opening twice.
-    """
-
-    def _open_when_ready() -> None:
-        if not wait_for_server(host, port, timeout=timeout):
-            _LOGGER.warning("server was not ready; not opening the browser")
-            return
-        try:
-            webbrowser.open(url)
-        except (OSError, webbrowser.Error):
-            _LOGGER.warning("could not open the default browser for %s", url)
-
-    thread = threading.Thread(target=_open_when_ready, name="spotm3u-browser", daemon=True)
-    thread.start()
-    return thread
 
 
 def show_message_box(message: str, *, title: str = "spotm3u") -> bool:
@@ -172,38 +142,23 @@ def report_startup_error(message: str, *, exception: bool = False) -> None:
     show_message_box(message)
 
 
-def serve(*, open_browser: bool | None = None) -> None:
-    """Start the web server on a free loopback port and serve until stopped."""
-    configure_config_path_for_bundle()
-    app = create_app()
-    host = DEFAULT_HOST
-    preferred_port = int(app.config.get("PORT", DEFAULT_PORT))
-    port = select_port(preferred_port, host)
-    if port != preferred_port:
-        app.logger.info("port %d is in use; listening on port %d instead", preferred_port, port)
-    if browser_enabled(open_browser):
-        start_browser_opener(f"http://{host}:{port}/", host=host, port=port)
-    app.logger.info("spotm3u listening on http://%s:%d", host, port)
-    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
-
-
-def main(*, open_browser: bool | None = None) -> None:
-    """Run the application server until interrupted.
+def main(*, open_window: bool | None = None) -> None:
+    """Run the production desktop application until its window closes.
 
     A startup failure never fails silently: it is logged, shown in a native
     dialog when no console exists, and exits non-zero without leaving a
     half-started server process behind.
     """
+    from .desktop import run_desktop
+
     try:
-        serve(open_browser=open_browser)
+        run_desktop(open_window=open_window)
     except KeyboardInterrupt:  # pragma: no cover - interactive shutdown
         return
     except SystemExit as error:
         if not error.code:
             raise
-        report_startup_error(
-            "spotm3u could not start. Close other programs using its port and try again."
-        )
+        report_startup_error("spotm3u could not start. Please try launching the application again.")
         raise SystemExit(1) from error
     except Exception as error:
         report_startup_error(f"spotm3u could not start: {error}", exception=True)

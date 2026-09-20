@@ -28,6 +28,12 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install Linux GTK dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 libwebkit2gtk-4.1-0 gir1.2-webkit2-4.1
+
       - name: Install dependencies
         run: uv sync --locked --dev
 
@@ -52,6 +58,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
+      - name: Install Linux GTK dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 libwebkit2gtk-4.1-0 gir1.2-webkit2-4.1
 
       - name: Install dependencies
         run: uv sync --locked --dev

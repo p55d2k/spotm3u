@@ -18,7 +18,7 @@ Exportify → Download → Launch → Upload ZIP → Get M3U
 
 1. Exportify → export your Spotify playlists and download the ZIP.
 2. Download → get the spotm3u app for your platform.
-3. Launch → start the app; spotm3u opens in your default browser.
+3. Launch → start the app; spotm3u opens its interface in a native window.
 4. Upload ZIP → drag in the Exportify ZIP and choose playlists.
 5. Get M3U → review matches and download the generated playlist.
 
@@ -59,8 +59,8 @@ to the Music app.
 Download the archive for your platform from
 [GitHub Releases](https://github.com/p55d2k/spotm3u/releases), extract it, and
 start the application. spotm3u starts a local server on a free loopback port
-and opens its interface in your default browser, so there is no URL to type and
-no terminal to keep open.
+and opens its interface in a native `spotm3u` window, so there is no URL to
+type and no terminal to keep open.
 
 The release archives built by CI include a Python runtime, application
 dependencies, and FFmpeg/ffprobe. They do not require Python, `uv`, or a
@@ -74,7 +74,8 @@ system FFmpeg installation. CI currently builds:
 
 The server binds to `127.0.0.1` only, so the interface is not reachable from
 other machines. It prefers the port configured in `config.toml` and otherwise
-picks a free one; the browser always opens the port actually in use.
+picks a free one; the window always shows the UI bound to the port actually in
+use.
 
 None of the releases are signed or notarized. The project does not use Apple
 Developer Program membership, Developer ID certificates, or Apple's
@@ -88,14 +89,14 @@ service and is not bundled; see
 ### Windows first launch
 
 The Windows build has no console window: double-clicking the executable starts
-spotm3u silently and opens it in your browser.
+spotm3u silently and opens its native window.
 
 ```text
 Download spotm3u-<version>-windows-x86_64.zip
         ↓
 Extract it and double-click spotm3u.exe
         ↓
-SpotM3U opens in your default browser
+SpotM3U opens in its native window
 ```
 
 If spotm3u cannot start, it shows a dialog explaining the problem, since a
@@ -112,7 +113,7 @@ first double-click. Approve it once through Apple's standard flow:
 2. Extract the ZIP. You get `spotm3u.app`.
 3. Right-click (Control-click) `spotm3u.app` and choose **Open**.
 4. If macOS shows a security warning, choose **Open** to confirm.
-5. spotm3u starts and opens its interface in your default browser.
+5. spotm3u starts and opens its interface in its native window.
 
 This approval is needed only once. Afterwards, launch `spotm3u.app` with a
 normal double-click like any other app.
@@ -133,13 +134,20 @@ FFmpeg on `PATH` when online downloads need audio conversion:
 git clone https://github.com/p55d2k/spotm3u.git
 cd spotm3u
 uv sync
-uv run spotm3u
+uv run dev
 ```
 
-`uv run spotm3u` serves on <http://127.0.0.1:5001/> and opens it in your
-default browser once the server is ready. Set `SPOTM3U_NO_BROWSER=1` to keep
-the browser closed. No Spotify account credentials or API key are needed by
-spotm3u.
+`uv run dev` starts the Flask development server on
+<http://127.0.0.1:5001/> (binding to loopback only) with the debug reloader, so
+frontend and backend changes are picked up without rebuilding. The UI is used
+in a normal browser with full developer tools.
+
+Use `uv run app` to try the production desktop workflow from source: it starts
+the same Flask app on a free loopback port and shows it inside a native
+`spotm3u` window instead of a browser. `uv run build` produces the
+distributable application; see
+[Development](docs/development.md) and [Packaging](docs/packaging.md).
+No Spotify account credentials or API key are needed by spotm3u.
 
 ## Usage
 

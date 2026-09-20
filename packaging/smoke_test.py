@@ -6,11 +6,10 @@ the bundled FFmpeg binaries. Understands both the onedir layout (executable and
 ``_internal`` beside each other) and the macOS ``spotm3u.app`` bundle layout.
 Exits non-zero on any failure so CI treats the run as a failed build.
 
-The application opens its UI in the default browser on start; that is disabled
-here because a CI runner has no user to show it to and the test drives the
-server over HTTP itself. The Windows build is windowed, so the port is probed
-over HTTP instead of being read from the startup log, which that build does not
-have.
+The application opens its UI in a native WebView on start; that is disabled
+here because a CI runner has no display and the test drives the server over
+HTTP itself. The Windows build is windowed, so the port is probed over HTTP
+instead of being read from the startup log, which that build does not have.
 
 Accepts a bundle directory, an extracted ``.app``, a release ZIP, or a
 directory containing one ZIP.
@@ -158,7 +157,7 @@ def smoke_test(bundle: Path) -> None:
     log_path = work / "server.log"
     env = dict(os.environ)
     env["SPOTM3U_CONFIG"] = str(config)
-    env["SPOTM3U_NO_BROWSER"] = "1"
+    env["SPOTM3U_NO_WEBVIEW"] = "1"
     log_handle = log_path.open("wb")
     proc = subprocess.Popen(
         [str(exe)],

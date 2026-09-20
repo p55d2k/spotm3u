@@ -8,17 +8,17 @@ static image. UI screenshots belong to the
 Standalone builds are PyInstaller one-folder bundles, wrapped in a normal
 `spotm3u.app` application bundle on macOS. The source application and the
 packaged application use the same Flask app, but the packaged launcher starts
-without Flask's debug reloader and discovers configuration inside the bundle
-or beside the executable.
+the desktop WebView shell instead of Flask's debug reloader and discovers
+configuration inside the bundle or beside the executable.
 
-The launcher binds to `127.0.0.1`, prefers the configured `web.port`, and falls
-back to a free loopback port when it is taken. It then opens the UI in the
-default browser once the server accepts connections, and never opens it twice
-because no reloader process is spawned. On Windows the executable is built
-windowed (`console=False`) so a double-click never flashes a terminal; that
-build has no standard streams, so a startup failure is reported through a
-native message box and the process exits non-zero. macOS and Linux keep their
-console for logs.
+The desktop shell binds to `127.0.0.1`, prefers the configured `web.port`, and
+falls back to a free loopback port when it is taken. It then opens the UI in a
+native `spotm3u` window (pywebview) once the server accepts connections,
+instead of an external browser. Closing the window shuts Flask down and exits
+the process. On Windows the executable is built windowed (`console=False`) so a
+double-click never flashes a terminal; that build has no standard streams, so a
+startup failure is reported through a native message box and the process exits
+non-zero. macOS and Linux keep their console for logs.
 
 ## Build locally
 
@@ -30,6 +30,15 @@ SPOTM3U_FFMPEG_DIR=/absolute/path/to/ffmpeg-stage \
   uv run --group build pyinstaller --noconfirm --clean packaging/spotm3u.spec
 ```
 
+The same build can be run through the project shortcut:
+
+```bash
+uv run build
+```
+
+When `ffmpeg-stage/` exists at the repository root, the shortcut supplies it as
+`SPOTM3U_FFMPEG_DIR` automatically.
+
 `SPOTM3U_FFMPEG_DIR` is optional for a local build, but a bundle made without
 it needs FFmpeg from the system. When supplied, the directory must contain
 `ffmpeg` and `ffprobe` (with `.exe` on Windows); the files are copied into the
@@ -39,11 +48,21 @@ bundle's `ffmpeg/` directory. The resulting one-folder application is
 `Contents/MacOS/` and whose runtime files live under `Contents/Frameworks`.
 
 The spec collects package templates/static assets, yt-dlp dynamic modules,
-bgutil plugin modules, and zhconv data. `packaging/run_app.py` is the
+bgutil plugin modules, zhconv data, and the pywebview desktop shell and its
+platform backends. `packaging/run_app.py` is the
 PyInstaller entry point; do not replace it with a bare package module. On
 macOS a `BUNDLE` target wraps the one-folder output as `spotm3u.app`; the
 PyInstaller bootloader uses the `.app/Contents/MacOS` location to find
 `sys._MEIPASS` in `Contents/Frameworks`.
+
+## Linux desktop dependencies
+
+On Linux the pywebview window is served by GTK3 and WebKitGTK. The source build
+(`uv run app`) needs the PyGObject binding supplied by the `pywebview[gtk]`
+dependency plus the GTK3/WebKit system libraries, and the release runner
+installs the same packages before building so PyInstaller can collect the
+required GObject introspection data. The packaged Linux application in turn
+expects a GTK3 desktop, which normal desktop Linux systems provide.
 
 ## FFmpeg and external providers
 
@@ -79,4 +98,4 @@ The release workflow then verifies each archive:
   both the one-folder layout and the macOS `.app` bundle. Readiness is taken
   from the HTTP response on the configured port rather than from the startup
   log, so the windowed Windows build is verified the same way as the rest, and
-  `SPOTM3U_NO_BROWSER=1` keeps a browser tab from opening during the check.
+  `SPOTM3U_NO_WEBVIEW=1` keeps the native window from opening during the check.

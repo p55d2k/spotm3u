@@ -16,19 +16,33 @@ uv sync --locked --dev
 Start the development server with:
 
 ```bash
-uv run spotm3u
+uv run dev
 ```
 
 Configuration is optional and is read from `./config.toml`, or from the path
-in `SPOTM3U_CONFIG`. The server binds to loopback (`127.0.0.1`) and prefers the
-configured `web.port` (default 5001), falling back to a free port when that one
-is taken; the chosen port is printed on startup. The UI opens in the default
-browser as soon as the server accepts connections, and `SPOTM3U_NO_BROWSER=1`
-keeps that tab from opening.
+in `SPOTM3U_CONFIG`. The development server binds to loopback (`127.0.0.1`)
+and prefers the configured `web.port` (default 5001), falling back to a free
+port when that one is taken. Flask's debug reloader is enabled, so frontend and
+backend changes are picked up without rebuilding anything; the UI is used in a
+normal browser with full developer tools.
 
-The same launcher serves the packaged applications, where the reloader is
+The native desktop application is a separate, production-only workflow:
+
+```bash
+uv run app
+```
+
+`uv run app` starts the same Flask app on a free loopback port, waits for it to
+become ready, and then presents the UI inside a native `spotm3u` window
+(pywebview) instead of an external browser; closing the window shuts Flask down
+and exits the process. `SPOTM3U_NO_WEBVIEW=1` skips the window and only serves,
+which is what the release smoke test uses. Developers are not required to use
+the desktop window; it never replaces the plain browser workflow above.
+
+The packaged applications use the same desktop launcher, where the reloader is
 disabled and the Windows build is windowed instead of console-based; see
-[packaging.md](packaging.md).
+[packaging.md](packaging.md). Build a local distributable with
+`uv run build`.
 
 ## Checks
 
@@ -54,6 +68,9 @@ pre-commit configuration also runs the full test suite.
 src/spotm3u/
   app.py                 Flask routes and application setup
   config.py              optional TOML and environment configuration
+  desktop.py             native WebView shell used by the packaged application
+  dev.py                 ``uv run dev`` development server
+  build.py               ``uv run build`` PyInstaller shortcut
   jobs.py                upload/job lifecycle
   resolution.py          track resolution orchestration
   audio/                 local audio discovery and matching
