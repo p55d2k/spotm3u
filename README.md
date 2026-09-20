@@ -16,11 +16,13 @@ SpotM3U turns Spotify playlists exported from [Exportify](https://exportify.net/
 
 Exportify → Download → Launch → Upload ZIP → Get M3U
 
-1. Exportify → export your Spotify playlists and download the ZIP.
-2. Download → get the SpotM3U app for your platform.
-3. Launch → start the app; SpotM3U opens its interface in a native window.
-4. Upload ZIP → drag in the Exportify ZIP and choose playlists.
-5. Get M3U → review matches and download the generated playlist.
+1. **Exportify** → export your Spotify playlists and download the ZIP.
+2. **Download** → get the SpotM3U app for your platform.
+3. **Launch** → start the app; SpotM3U opens in its own native window, so
+   there is no URL to type and no browser tab to keep open.
+4. **Upload ZIP** → drag the Exportify ZIP into the window and choose your
+   playlists.
+5. **Get M3U** → review the match results and download the generated playlist.
 
 ## Overview
 
@@ -37,18 +39,19 @@ ZIP only.
 
 ## How it works
 
-1. **Export** your playlists with Exportify and download its ZIP.
-2. **Upload** the ZIP to SpotM3U. The playlists are parsed locally.
-3. **Choose** one or more playlists to process.
-4. **Resolve** tracks from your local library first. Unmatched tracks can be
-   searched, validated, and downloaded.
-5. **Review** matched, unresolved, rejected, failed, and ambiguous tracks.
-6. **Download** the generated M3U playlist.
-
-Playlist order and intentional duplicate entries are preserved. Missing,
-rejected, failed, and ambiguous tracks are reported instead of silently being
-written as successful entries. On macOS, a completed playlist can also be sent
-to the Music app.
+1. **Parse** — the uploaded ZIP is read locally and split into playlists.
+   Playlist order and intentional duplicate entries are preserved.
+2. **Resolve** — every track is matched against your local library first.
+3. **Search** — without a local match, SpotM3U searches online, ranks
+   candidates by identity first and source quality second, and validates
+   them before downloading.
+4. **Download** — a validated online candidate is downloaded as an MP3 (when
+   downloads are enabled) and cached, so later runs reuse it locally.
+5. **Review** — matched, unresolved, rejected, failed, and ambiguous tracks
+   are reported; an ambiguous match is never chosen silently.
+6. **Write** — the M3U is generated, referencing only real local files, in
+   playlist order. On macOS, a completed playlist can also be sent to the
+   Music app.
 
 ![SpotM3U result page](docs/images/result-page.png)
 
