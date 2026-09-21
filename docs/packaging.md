@@ -18,7 +18,10 @@ instead of an external browser. Closing the window shuts Flask down and exits
 the process. On Windows the executable is built windowed (`console=False`) so a
 double-click never flashes a terminal; that build has no standard streams, so a
 startup failure is reported through a native message box and the process exits
-non-zero. macOS and Linux keep their console for logs.
+non-zero. macOS and Linux keep their console for logs. The Windows bundle also
+ships `SpotM3U.exe.config` beside the executable so .NET Framework will load
+the bundled pythonnet assembly even when a browser-downloaded ZIP marked it with
+the Mark of the Web.
 
 ## Application icon
 

@@ -4,6 +4,7 @@ import importlib.util
 import os
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -25,6 +26,16 @@ make_archive = _load("make_archive")
 stage_ffmpeg = _load("stage_ffmpeg")
 verify_macos_bundle = _load("verify_macos_bundle")
 make_pkg = _load("make_pkg")
+
+
+def test_windows_app_config_enables_load_from_remote_sources() -> None:
+    # pythonnet loads its .NET assembly through Assembly.LoadFrom, which refuses
+    # browser-downloaded (Mark of the Web) files unless the host enables this.
+    root = ET.parse(_PACKAGING / "windows_app_config.xml").getroot()
+    setting = root.find("./runtime/loadFromRemoteSources")
+
+    assert setting is not None
+    assert setting.get("enabled") == "true"
 
 
 def test_build_archive_roots_at_parent_directory(tmp_path) -> None:

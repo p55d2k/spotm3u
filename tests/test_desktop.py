@@ -4,6 +4,7 @@ import logging
 import socket
 import urllib.request
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -66,6 +67,31 @@ def test_webview_icon_path_is_none_when_no_bundled_icon(monkeypatch, tmp_path) -
     monkeypatch.setattr(desktop, "bundle_roots", lambda: (tmp_path / "missing",))
 
     assert desktop.webview_icon_path() is None
+
+
+def test_webview_start_kwargs_omits_the_png_icon_on_windows(monkeypatch) -> None:
+    # pywebview's winforms backend hands the path to System.Drawing.Icon, which
+    # rejects the bundled PNG and kills the windowed process with an unhandled
+    # .NET exception. Windows must fall back to the executable's embedded icon.
+    monkeypatch.setattr(desktop, "webview_icon_path", lambda: Path("icon.png"))
+    monkeypatch.setattr(desktop.sys, "platform", "win32")
+
+    assert desktop.webview_start_kwargs() == {}
+
+
+def test_webview_start_kwargs_passes_the_icon_on_linux(monkeypatch) -> None:
+    icon = Path("icon.png")
+    monkeypatch.setattr(desktop, "webview_icon_path", lambda: icon)
+    monkeypatch.setattr(desktop.sys, "platform", "linux")
+
+    assert desktop.webview_start_kwargs() == {"icon": str(icon)}
+
+
+def test_webview_start_kwargs_omits_the_icon_when_absent(monkeypatch) -> None:
+    monkeypatch.setattr(desktop, "webview_icon_path", lambda: None)
+    monkeypatch.setattr(desktop.sys, "platform", "linux")
+
+    assert desktop.webview_start_kwargs() == {}
 
 
 def test_webview_enabled_defaults_to_true(monkeypatch) -> None:

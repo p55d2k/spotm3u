@@ -166,17 +166,21 @@ def report_startup_error(message: str, *, exception: bool = False) -> None:
 
     Logging serves the development workflow; a windowed Windows build has no
     standard streams, so the same message is shown in a native dialog and, as a
-    safety net, appended to a startup-error log file. The dialog message stays
-    free of technical detail because normal users are the audience; the log
-    file carries the diagnostic traceback.
+    safety net, appended to a startup-error log file. A packaged build always
+    writes that file -- even when a console or redirected stream is present --
+    so a failed launch leaves a diagnostic artifact behind no matter how the
+    process was started. The dialog message stays free of technical detail
+    because normal users are the audience; the log file carries the diagnostic
+    traceback.
     """
     if exception:
         _LOGGER.exception(message)
     else:
         _LOGGER.error(message)
+    if is_frozen():
+        write_error_log(message, exception=exception)
     if has_console():
         return
-    write_error_log(message, exception=exception)
     show_message_box(message)
 
 
@@ -185,11 +189,13 @@ def main(*, open_window: bool | None = None) -> None:
 
     A startup failure never fails silently: it is logged, shown in a native
     dialog when no console exists, and exits non-zero without leaving a
-    half-started server process behind.
+    half-started server process behind. The desktop import lives inside the
+    guard because importing the Flask app builds it at module load, so a bad
+    configuration file raises here before any window exists.
     """
-    from .desktop import run_desktop
-
     try:
+        from .desktop import run_desktop
+
         run_desktop(open_window=open_window)
     except KeyboardInterrupt:  # pragma: no cover - interactive shutdown
         return

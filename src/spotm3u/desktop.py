@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -51,9 +52,9 @@ def webview_icon_path() -> Path | None:
     """The canonical SpotM3U icon for the WebView window, when available.
 
     The same ``assets/icon.png`` is used in development and by the packaged
-    build (the spec collects it for the Linux GTK backend, which applies it as
-    the window icon). Other backends ignore the icon; their Dock/taskbar
-    identities come from the packaged .app/.exe instead.
+    build. Only the Linux GTK backend applies it as the window icon (see
+    :func:`webview_start_kwargs`); Windows and macOS take their Dock/taskbar
+    identity from the packaged .app/.exe instead.
     """
     if is_frozen():
         for candidate in bundle_roots():
@@ -90,6 +91,23 @@ def start_server(app, host: str, port: int) -> tuple[object, threading.Thread]:
     return server, thread
 
 
+def webview_start_kwargs() -> dict[str, str]:
+    """Keyword arguments for ``webview.start`` selecting the window icon.
+
+    pywebview only applies ``icon`` on its GTK/QT backends. Its Windows
+    (winforms/WebView2) backend passes the path straight to
+    ``System.Drawing.Icon``, which accepts only ``.ico`` files; handing it the
+    bundled PNG aborts window creation with an unhandled .NET exception that no
+    Python handler can catch, so the windowed process dies before the launcher
+    can report anything. Returning no icon on Windows and macOS falls back to
+    the icon already embedded in the executable or ``.app`` bundle.
+    """
+    icon = webview_icon_path()
+    if icon is None or not sys.platform.startswith("linux"):
+        return {}
+    return {"icon": str(icon)}
+
+
 def show_window(url: str) -> None:
     """Show ``url`` in the native SpotM3U window and block until it closes.
 
@@ -107,9 +125,7 @@ def show_window(url: str) -> None:
         height=WINDOW_HEIGHT,
         min_size=WINDOW_MIN_SIZE,
     )
-    icon = webview_icon_path()
-    start_kwargs = {"icon": str(icon)} if icon else {}
-    webview.start(**start_kwargs)
+    webview.start(**webview_start_kwargs())
 
 
 def run_desktop(*, open_window: bool | None = None) -> None:

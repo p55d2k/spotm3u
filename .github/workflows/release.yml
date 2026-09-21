@@ -126,6 +126,18 @@ jobs:
           SPOTM3U_APP_VERSION: ${{ env.VERSION }}
         run: uv run -q build
 
+      - name: Verify Windows app config is packaged
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          # The .config lets pythonnet load its assembly even when a
+          # browser-downloaded ZIP marked the bundle with the Mark of the Web.
+          $config = 'dist/SpotM3U/SpotM3U.exe.config'
+          if (-not (Test-Path $config)) { throw "missing $config next to the executable" }
+          if (-not (Select-String -Path $config -Pattern 'loadFromRemoteSources')) {
+            throw "$config does not enable loadFromRemoteSources"
+          }
+
       - name: Package release archive
         shell: bash
         run: |

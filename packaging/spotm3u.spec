@@ -18,6 +18,11 @@ WebView window and reports startup failures through a native message box. Other
 platforms keep their console so developers and release verification can read
 the logs.
 
+On Windows the spec also writes ``SpotM3U.exe.config`` beside the executable so
+.NET Framework will load the bundled pythonnet assembly even when a
+browser-downloaded ZIP marked it with the Mark of the Web (see
+``packaging/windows_app_config.xml``).
+
 Usage (from the repository root):
 
     SPOTM3U_FFMPEG_DIR=<dir containing ffmpeg[.exe] and ffprobe[.exe]> \
@@ -146,6 +151,19 @@ coll = COLLECT(
     upx=False,
     name="SpotM3U",
 )
+
+# Ship the .NET Framework app config beside the executable. A browser-downloaded
+# Windows ZIP marks every extracted file with the Mark of the Web, and .NET
+# Framework's Assembly.LoadFrom (used by pythonnet to load Python.Runtime.dll)
+# refuses such assemblies unless loadFromRemoteSources is enabled. The CLR only
+# looks for ``SpotM3U.exe.config`` next to the executable, never under
+# ``_internal``, so it is written directly into the collected bundle root.
+if sys.platform == "win32":
+    config_src = HERE / "windows_app_config.xml"
+    if not config_src.is_file():
+        raise SystemExit(f"missing Windows app config at {config_src}")
+    config_dest = Path(DISTPATH) / "SpotM3U" / "SpotM3U.exe.config"
+    config_dest.write_text(config_src.read_text(encoding="utf-8"), encoding="utf-8")
 
 # macOS ships a real application bundle. BUNDLE relocates the collected files
 # into Contents/Frameworks (with data cross-linked through Contents/Resources)

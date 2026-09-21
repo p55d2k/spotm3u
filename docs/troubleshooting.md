@@ -27,11 +27,34 @@ If no window appears, the application may still be running: open the printed
 URL in a browser or check the startup log. A machine without a windowing system
 cannot display a native window.
 
-On Windows, pywebview uses the Microsoft Edge WebView2 Runtime. If the error
-log mentions WebView2 or the app exits with code 1, install the Evergreen
-WebView2 Runtime, then launch `SpotM3U.exe` again. To run without the native
-window while diagnosing the bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell;
-the app will serve at `http://127.0.0.1:5001/` (or the port shown in the log).
+### Windows: double-clicking `SpotM3U.exe` appears to do nothing
+
+The Windows build is windowed (no console), so a failure to open the window can
+look like the application never started. Two causes are handled automatically by
+the packaged build:
+
+- **Mark of the Web.** A ZIP downloaded in a browser and extracted with File
+  Explorer marks every extracted file as coming from the internet. pywebview
+  reaches its native backend through pythonnet, and the .NET Framework refuses
+  to load an assembly carrying that mark unless the host allows it. The release
+  ships `SpotM3U.exe.config` beside `SpotM3U.exe` with `loadFromRemoteSources`
+  enabled, which lets the bundled assemblies load. If that file is missing (for
+  example because the bundle was built by hand), or your extraction tool dropped
+  it, unblock the folder once:
+
+  ```powershell
+  Get-ChildItem -Recurse | Unblock-File
+  ```
+
+- **WebView2 Runtime.** pywebview renders through the Microsoft Edge WebView2
+  Runtime. If it is missing, install the Evergreen WebView2 Runtime, then launch
+  `SpotM3U.exe` again.
+
+Every failed packaged launch now leaves `spotm3u-error.log` beside
+`SpotM3U.exe` (or in `%TEMP%` when that folder is not writable), even when the
+app was started from a terminal. To run without the native window while
+diagnosing a bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell; the server then
+listens at `http://127.0.0.1:5001/` (or the port shown in the startup log).
 
 ## The macOS app runs but never shows a window
 

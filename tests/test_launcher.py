@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import sys
+import types
 from contextlib import closing
 from pathlib import Path
 
@@ -46,6 +47,27 @@ def test_main_ignores_keyboard_interrupt(monkeypatch) -> None:
     _stub_desktop(monkeypatch, fail=KeyboardInterrupt())
 
     launcher.main()
+
+
+def test_main_reports_an_import_time_startup_failure(monkeypatch) -> None:
+    # ``app.py`` builds the Flask app at module import, so a bad configuration
+    # file raises while ``launcher.main`` is importing the desktop shell. That
+    # must be reported, not escape as an unhandled traceback.
+    reported: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        launcher,
+        "report_startup_error",
+        lambda message, **kwargs: reported.append({"message": message, **kwargs}),
+    )
+    monkeypatch.setitem(sys.modules, "spotm3u.desktop", types.ModuleType("spotm3u.desktop"))
+
+    with pytest.raises(SystemExit) as exit_info:
+        launcher.main()
+
+    assert exit_info.value.code == 1
+    assert len(reported) == 1
+    assert "could not start" in reported[0]["message"]
+    assert reported[0]["exception"] is True
 
 
 def test_main_reports_a_bind_failure_instead_of_failing_silently(monkeypatch) -> None:
@@ -130,6 +152,24 @@ def test_report_startup_error_shows_a_dialog_without_a_console(monkeypatch) -> N
     launcher.report_startup_error("spotm3u could not start.")
 
     assert dialogs == ["spotm3u could not start."]
+
+
+def test_report_startup_error_writes_a_log_for_packaged_builds(monkeypatch) -> None:
+    written: list[dict[str, object]] = []
+    monkeypatch.setattr(launcher, "is_frozen", lambda: True)
+    monkeypatch.setattr(launcher, "has_console", lambda: True)
+    monkeypatch.setattr(
+        launcher,
+        "write_error_log",
+        lambda message, **kwargs: written.append({"message": message, **kwargs}),
+    )
+    monkeypatch.setattr(
+        launcher, "show_message_box", lambda *args, **kwargs: pytest.fail("unexpected dialog")
+    )
+
+    launcher.report_startup_error("spotm3u could not start.")
+
+    assert written == [{"message": "spotm3u could not start.", "exception": False}]
 
 
 def test_write_error_log_appends_startup_details(tmp_path) -> None:

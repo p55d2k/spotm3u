@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shipped next to the Windows executable as ``SpotM3U.exe.config``.
+
+  A ZIP downloaded through a browser and extracted with File Explorer marks
+  every extracted file with the Mark of the Web. On Windows, pywebview loads
+  its native backend through pythonnet, which asks the .NET Framework to load
+  ``Python.Runtime.dll`` with ``Assembly.LoadFrom``. Since .NET Framework 4.5
+  that call refuses assemblies carrying the Mark of the Web unless the host
+  process enables ``loadFromRemoteSources``; without this file the window never
+  opens and the process exits before the launcher can report anything.
+
+  The executable is built windowed, so the CLR reads ``SpotM3U.exe.config``
+  from beside ``SpotM3U.exe``. Enabling this setting only affects this process
+  and only allows the bundled, locally extracted assemblies to load.
+-->
+<configuration>
+  <runtime>
+    <loadFromRemoteSources enabled="true" />
+  </runtime>
+</configuration>
