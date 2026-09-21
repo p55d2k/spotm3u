@@ -4,9 +4,9 @@
 
 Configuration errors are reported in the terminal for source runs. A packaged
 Windows build has no console, so it shows a dialog instead. If the packaged
-launcher exits before the window appears, inspect `spotm3u-error.log` beside
-`SpotM3U.exe`; if that folder is not writable, the same file is written to
-Windows' temporary directory (`%TEMP%`).
+launcher exits before the window appears, inspect `spotm3u-error.log` and
+`spotm3u-startup.log` beside `SpotM3U.exe`; if that folder is not writable, the
+same files are written to Windows' temporary directory (`%TEMP%`).
 
 SpotM3U prefers the `web.port` from `config.toml` (default 5001) and falls back
 to a free port when that port is already taken, so another program using 5001
@@ -50,11 +50,13 @@ the packaged build:
   Runtime. If it is missing, install the Evergreen WebView2 Runtime, then launch
   `SpotM3U.exe` again.
 
-Every failed packaged launch now leaves `spotm3u-error.log` beside
-`SpotM3U.exe` (or in `%TEMP%` when that folder is not writable), even when the
-app was started from a terminal. To run without the native window while
-diagnosing a bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell; the server then
-listens at `http://127.0.0.1:5001/` (or the port shown in the startup log).
+Every packaged launch writes `spotm3u-startup.log` beside `SpotM3U.exe` (or in
+`%TEMP%` when that folder is not writable), and a failed launch additionally
+leaves `spotm3u-error.log` with the fatal message and traceback. The startup log
+captures the full startup sequence, so a launch that dies before any dialog
+appears still records the real reason on disk. To run without the native window
+while diagnosing a bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell; the server
+then listens at `http://127.0.0.1:5001/` (or the port shown in the log).
 
 ## The macOS app runs but never shows a window
 

@@ -14,7 +14,8 @@ The helpers here -- free-port selection, server readiness polling, bundle
 config discovery, and native error reporting -- are shared with the desktop
 shell and the packaging helpers. A packaged Windows executable is built
 windowed (no console), so startup failures are reported through a native
-message box rather than a traceback on a standard stream that does not exist.
+message box and mirrored into ``spotm3u-startup.log`` beside the executable
+rather than a traceback on a standard stream that does not exist.
 """
 
 from __future__ import annotations
@@ -29,11 +30,12 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from .log import PACKAGE_LOGGER
+from .log import DEFAULT_DATE_FORMAT, DEFAULT_FORMAT, PACKAGE_LOGGER
 from .runtime import bundle_roots, has_console, is_frozen
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5001
+STARTUP_LOG_NAME = "spotm3u-startup.log"
 MIN_PORT = 1
 MAX_PORT = 65535
 READINESS_TIMEOUT = 30.0
@@ -161,6 +163,49 @@ def write_error_log(message: str, *, exception: bool = False, path: Path | None 
     return target
 
 
+def startup_log_path() -> Path:
+    """The default startup-log location for a packaged launch.
+
+    ``spotm3u-startup.log`` sits beside the executable so the folder the user is
+    working from shows the file after a launch.
+    """
+    return Path(sys.executable).resolve().parent / STARTUP_LOG_NAME
+
+
+def configure_startup_log(path: Path | None = None) -> Path | None:
+    """Mirror package logging into a startup-log file for a packaged launch.
+
+    A windowed Windows build has no standard streams, so the logger's stream
+    handler writes nowhere and the real reason for a startup failure is lost.
+    Attaching a file handler before the desktop shell (or its import) runs keeps
+    that reason on disk even when the process dies before any dialog appears.
+    No-op outside a PyInstaller bundle, where the console already shows the log.
+    Returns the log path, or ``None`` when nothing was configured.
+    """
+    if not is_frozen():
+        return None
+    logger = logging.getLogger(PACKAGE_LOGGER)
+    if getattr(logger, "_spotm3u_startup_log_configured", False):
+        return getattr(logger, "_spotm3u_startup_log_path", None)
+    target = path or startup_log_path()
+    if target.is_dir():
+        target = target / STARTUP_LOG_NAME
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(target, mode="a", encoding="utf-8")
+    except OSError:
+        target = Path(tempfile.gettempdir()) / STARTUP_LOG_NAME
+        handler = logging.FileHandler(target, mode="a", encoding="utf-8")
+    handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATE_FORMAT))
+    handler._spotm3u_startup = True  # type: ignore[attr-defined]
+    logger.addHandler(handler)
+    if logger.level == logging.NOTSET or logger.level > logging.INFO:
+        logger.setLevel(logging.INFO)
+    logger._spotm3u_startup_log_configured = True  # type: ignore[attr-defined]
+    logger._spotm3u_startup_log_path = target  # type: ignore[attr-defined]
+    return target
+
+
 def report_startup_error(message: str, *, exception: bool = False) -> None:
     """Report a fatal startup failure where the user can actually see it.
 
@@ -193,6 +238,9 @@ def main(*, open_window: bool | None = None) -> None:
     guard because importing the Flask app builds it at module load, so a bad
     configuration file raises here before any window exists.
     """
+    log_path = configure_startup_log()
+    if log_path is not None:
+        _LOGGER.info("startup log: %s", log_path)
     try:
         from .desktop import run_desktop
 

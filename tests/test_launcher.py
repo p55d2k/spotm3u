@@ -172,6 +172,74 @@ def test_report_startup_error_writes_a_log_for_packaged_builds(monkeypatch) -> N
     assert written == [{"message": "spotm3u could not start.", "exception": False}]
 
 
+def _reset_startup_log() -> None:
+    """Detach any startup-log handler the launcher attached."""
+    logger = logging.getLogger(launcher.PACKAGE_LOGGER)
+    for handler in list(logger.handlers):
+        if getattr(handler, "_spotm3u_startup", False):
+            logger.removeHandler(handler)
+            handler.close()
+    for attribute in ("_spotm3u_startup_log_configured", "_spotm3u_startup_log_path"):
+        if hasattr(logger, attribute):
+            delattr(logger, attribute)
+
+
+def test_configure_startup_log_is_skipped_outside_a_bundle(monkeypatch) -> None:
+    monkeypatch.setattr(launcher, "is_frozen", lambda: False)
+
+    assert launcher.configure_startup_log() is None
+
+
+def test_configure_startup_log_records_messages_beside_the_executable(
+    monkeypatch, tmp_path
+) -> None:
+    _reset_startup_log()
+    monkeypatch.setattr(launcher, "is_frozen", lambda: True)
+    target = tmp_path / "logs" / launcher.STARTUP_LOG_NAME
+    try:
+        configured = launcher.configure_startup_log(target)
+
+        logging.getLogger(launcher.PACKAGE_LOGGER).info("startup reason: boom")
+
+        assert configured == target
+        assert "startup reason: boom" in target.read_text(encoding="utf-8")
+    finally:
+        _reset_startup_log()
+
+
+def test_configure_startup_log_is_idempotent(monkeypatch, tmp_path) -> None:
+    _reset_startup_log()
+    monkeypatch.setattr(launcher, "is_frozen", lambda: True)
+    target = tmp_path / launcher.STARTUP_LOG_NAME
+    logger = logging.getLogger(launcher.PACKAGE_LOGGER)
+    try:
+        first = launcher.configure_startup_log(target)
+        handlers_after_first = len(logger.handlers)
+
+        second = launcher.configure_startup_log(target)
+
+        assert first == second == target
+        assert len(logger.handlers) == handlers_after_first
+    finally:
+        _reset_startup_log()
+
+
+def test_packaged_startup_failure_reaches_the_startup_log(monkeypatch, tmp_path) -> None:
+    _reset_startup_log()
+    monkeypatch.setattr(launcher, "is_frozen", lambda: True)
+    monkeypatch.setattr(launcher, "write_error_log", lambda *args, **kwargs: tmp_path / "error.log")
+    monkeypatch.setattr(launcher, "show_message_box", lambda *args, **kwargs: True)
+    target = tmp_path / launcher.STARTUP_LOG_NAME
+    try:
+        launcher.configure_startup_log(target)
+
+        launcher.report_startup_error("the real reason")
+
+        assert "the real reason" in target.read_text(encoding="utf-8")
+    finally:
+        _reset_startup_log()
+
+
 def test_write_error_log_appends_startup_details(tmp_path) -> None:
     log_path = tmp_path / "spotm3u-error.log"
 
