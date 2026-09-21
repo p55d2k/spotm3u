@@ -1,0 +1,120 @@
+{# Custom title bar for the frameless native window.
+
+   The bar stays hidden in a normal browser and is revealed only once pywebview
+   has injected its JavaScript bridge, so developer runs (``uv run dev``) and
+   the headless smoke test keep the normal page. The ``.pywebview-drag-region``
+   element is what pywebview uses to drag a frameless window. #}
+<div class="titlebar" data-titlebar hidden>
+  <div class="titlebar-drag pywebview-drag-region">
+    <span class="titlebar-brand">
+      <span class="titlebar-mark" aria-hidden="true">♪</span>
+      <span class="titlebar-name">SpotM3U</span>
+    </span>
+  </div>
+  <div class="titlebar-controls" role="group" aria-label="Window controls">
+    <button
+      class="titlebar-button"
+      type="button"
+      data-window-action="minimize"
+      aria-label="Minimize window"
+      title="Minimize"
+    >
+      <svg class="titlebar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14"/></svg>
+    </button>
+    <button
+      class="titlebar-button"
+      type="button"
+      data-window-action="maximize"
+      aria-label="Maximize window"
+      title="Maximize"
+    >
+      <svg class="titlebar-icon titlebar-icon-maximize" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="13" height="13" rx="1.5"/></svg>
+      <svg class="titlebar-icon titlebar-icon-restore" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="4.5" width="11.5" height="11.5" rx="1.5"/><path d="M16 16v2.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1V9"/></svg>
+    </button>
+    <button
+      class="titlebar-button titlebar-button-close"
+      type="button"
+      data-window-action="close"
+      aria-label="Close window"
+      title="Close"
+    >
+      <svg class="titlebar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+    </button>
+  </div>
+</div>
+<script>
+  (() => {
+    const titlebar = document.querySelector("[data-titlebar]");
+    if (!titlebar) return;
+
+    const bridge = () => (window.pywebview && window.pywebview.api) || null;
+    const platformName = () => {
+      const platform = (window.pywebview && window.pywebview.platform) || "";
+      if (platform === "cocoa") return "mac";
+      if (platform === "edgechromium" || platform === "mshtml") return "windows";
+      return "linux";
+    };
+
+    const setMaximized = (maximized) => {
+      titlebar.classList.toggle("is-maximized", Boolean(maximized));
+      const button = titlebar.querySelector('[data-window-action="maximize"]');
+      if (!button) return;
+      // macOS's green control is full screen, so label it the way other Mac
+      // apps do; Windows and Linux use maximize/restore wording.
+      const fullscreen = titlebar.dataset.platform === "mac";
+      const label = maximized
+        ? fullscreen ? "Exit Full Screen" : "Restore window"
+        : fullscreen ? "Enter Full Screen" : "Maximize window";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+    };
+
+    // Hook the Python bridge uses to push OS-driven maximize/restore changes
+    // (window snapping, native gestures) into the icon, not just our buttons.
+    window.spotm3uTitlebar = { setMaximized };
+
+    const wire = (api) => {
+      titlebar.querySelectorAll("[data-window-action]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const action = button.dataset.windowAction;
+          try {
+            if (action === "minimize") await api.minimize();
+            else if (action === "close") await api.close();
+            else if (action === "maximize") setMaximized(await api.toggle_maximize());
+          } catch (error) {
+            console.error("window action failed", action, error);
+          }
+        });
+      });
+
+      const dragRegion = titlebar.querySelector(".pywebview-drag-region");
+      if (dragRegion && typeof api.toggle_maximize === "function") {
+        dragRegion.addEventListener("dblclick", async () => {
+          try {
+            setMaximized(await api.toggle_maximize());
+          } catch (error) {
+            console.error("window action failed", "maximize", error);
+          }
+        });
+      }
+
+      if (typeof api.is_maximized === "function") {
+        api.is_maximized().then(setMaximized).catch(() => {});
+      }
+    };
+
+    const activate = () => {
+      const api = bridge();
+      if (!api || typeof api.minimize !== "function" || typeof api.close !== "function") return;
+      if (titlebar.dataset.active === "true") return;
+      titlebar.dataset.active = "true";
+      titlebar.dataset.platform = platformName();
+      titlebar.hidden = false;
+      document.body.classList.add("has-native-titlebar");
+      wire(api);
+    };
+
+    if (bridge()) activate();
+    window.addEventListener("pywebviewready", activate, { once: true });
+  })();
+</script>

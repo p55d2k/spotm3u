@@ -6,6 +6,12 @@ of an external browser. Flask keeps serving the UI and handling application
 logic; this module only supplies the window around it, waits for the server
 before loading the page, and shuts the server down when the window closes.
 
+The window is frameless and the page draws its own title bar (see
+``templates/_titlebar.html`` and the title bar rules in ``static/style.css``).
+:class:`WindowControls` is exposed to the page as ``pywebview.api`` so the HTML
+minimize, maximize and close buttons can drive the native window; that
+windowing capability is the only JavaScript bridge exposed to the page.
+
 The WebView is a production shell only. Developers use ``uv run dev``, which
 starts the same Flask app in a normal browser, and never need the native window
 or a packaged executable. ``SPOTM3U_NO_WEBVIEW=1`` (equivalently
@@ -46,6 +52,114 @@ WINDOW_HEIGHT = 800
 WINDOW_MIN_SIZE = (800, 560)
 NO_WEBVIEW_ENV = "SPOTM3U_NO_WEBVIEW"
 _ICON_RELATIVE = Path("assets") / "icon.png"
+# How long close() waits for the native window to actually go away before it
+# gives up and lets pywebview resolve the JS API call. See WindowControls.close.
+_CLOSE_TIMEOUT_SECONDS = 5.0
+
+
+def _fullscreen_maximize() -> bool:
+    """Whether the window's maximize control should toggle native full screen.
+
+    macOS runs full screen as a new Space, and that is what the green window
+    control does in every other Mac app. pywebview's ``maximize`` only resizes
+    the window to the screen size, so on macOS the control uses
+    ``toggle_fullscreen`` instead. Windows and Linux keep maximize/restore.
+    """
+    return sys.platform == "darwin"
+
+
+class WindowControls:
+    """JavaScript bridge backing the custom HTML title bar.
+
+    pywebview exposes every public method of this object on
+    ``window.pywebview.api``, so the page can call ``minimize``,
+    ``toggle_maximize`` and ``close`` to drive the frameless native window.
+    The :class:`webview.Window` reference is attached by :func:`show_window`
+    after ``create_window`` returns; the bridge must exist before the window,
+    but it can only control the window once the window exists.
+    """
+
+    def __init__(self) -> None:
+        self.window = None
+        self._maximized = False
+
+    def attach(self, window: object | None) -> None:
+        """Bind the native window and mirror its maximize/restore state to the page.
+
+        pywebview raises ``maximized`` and ``restored`` whenever the window's
+        state changes, including OS-driven changes such as window snapping or
+        a native maximize gesture, not only our own button. Subscribing here
+        keeps the HTML title bar icon correct no matter who changed the state.
+        """
+        self.window = window
+        if window is None:
+            return
+        window.events.maximized += self._on_maximized
+        window.events.restored += self._on_restored
+
+    def _on_maximized(self, *args: object) -> None:
+        self._apply_state(True)
+
+    def _on_restored(self, *args: object) -> None:
+        self._apply_state(False)
+
+    def _apply_state(self, maximized: bool) -> None:
+        """Record the state and push it to the title bar's JS hook."""
+        self._maximized = maximized
+        if self.window is None:
+            return
+        try:
+            self.window.evaluate_js(
+                "window.spotm3uTitlebar && "
+                f"window.spotm3uTitlebar.setMaximized({str(maximized).lower()})"
+            )
+        except Exception:  # pragma: no cover - defensive: the page may not be ready yet
+            _LOGGER.debug("could not sync the title bar maximize state", exc_info=True)
+
+    def minimize(self) -> None:
+        """Minimize the native window."""
+        if self.window is not None:
+            self.window.minimize()
+
+    def toggle_maximize(self) -> bool:
+        """Maximize, full-screen or restore the window, returning the new state.
+
+        The optimistic state is set before calling the native method so a
+        synchronous ``maximized``/``restored`` event agrees with the return
+        value instead of being flipped afterwards. macOS toggles native full
+        screen; other platforms maximize/restore within the current desktop.
+        """
+        if self.window is None:
+            return self._maximized
+        self._maximized = not self._maximized
+        if _fullscreen_maximize():
+            self.window.toggle_fullscreen()
+        elif self._maximized:
+            self.window.maximize()
+        else:
+            self.window.restore()
+        return self._maximized
+
+    def is_maximized(self) -> bool:
+        """Whether the window is maximized or full screen, for the page's icon."""
+        return self._maximized
+
+    def close(self) -> None:
+        """Close the native window, which shuts the server down through the caller.
+
+        The call blocks until the window has actually closed. pywebview resolves
+        this JS API call by evaluating JavaScript in the window right after the
+        method returns, and on macOS that evaluation runs against a webview that
+        is already being torn down and blocks forever; the bridge thread is not
+        a daemon, so the whole process then hangs with a closed window. Waiting
+        for ``closed`` means the follow-up evaluation finds no window and is a
+        harmless no-op.
+        """
+        if self.window is None:
+            return
+        window = self.window
+        window.destroy()
+        window.events.closed.wait(timeout=_CLOSE_TIMEOUT_SECONDS)
 
 
 def webview_icon_path() -> Path | None:
@@ -112,19 +226,26 @@ def show_window(url: str) -> None:
     """Show ``url`` in the native SpotM3U window and block until it closes.
 
     pywebview is imported lazily so tests and the headless server path never
-    touch the desktop GUI stack. Only the windowing capability is used: no
-    JavaScript bridge or extra API is exposed to the page, and the localhost
-    URL stays hidden from normal users.
+    touch the desktop GUI stack. The window is frameless and the page draws its
+    own title bar; :class:`WindowControls` is exposed as ``pywebview.api`` so
+    the HTML minimize/maximize/close buttons can drive the native window. Only
+    that windowing API is exposed to the page, and the localhost URL stays
+    hidden from normal users.
     """
     import webview
 
-    webview.create_window(
+    controls = WindowControls()
+    window = webview.create_window(
         WINDOW_TITLE,
         url,
         width=WINDOW_WIDTH,
         height=WINDOW_HEIGHT,
         min_size=WINDOW_MIN_SIZE,
+        frameless=True,
+        easy_drag=False,
+        js_api=controls,
     )
+    controls.attach(window)
     webview.start(**webview_start_kwargs())
 
 

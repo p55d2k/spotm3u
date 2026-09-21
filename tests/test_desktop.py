@@ -2,9 +2,12 @@
 
 import logging
 import socket
+import sys
 import urllib.request
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from flask import Flask
@@ -105,6 +108,158 @@ def test_webview_env_var_disables_the_native_window(monkeypatch) -> None:
 
     assert desktop.webview_enabled() is False
     assert desktop.webview_enabled(True) is True
+
+
+class _FakeEvent:
+    """Minimal stand-in for a pywebview Event supporting ``+=``, firing and waiting."""
+
+    def __init__(self) -> None:
+        self.handlers: list[Any] = []
+        self.waited = 0
+
+    def __iadd__(self, handler: Any):
+        self.handlers.append(handler)
+        return self
+
+    def fire(self, *args: Any) -> None:
+        for handler in self.handlers:
+            handler(*args)
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waited += 1
+        return True
+
+
+class _FakeWindow:
+    """Records native calls and evaluate_js scripts for assertions."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.scripts: list[str] = []
+        self.events = SimpleNamespace(
+            maximized=_FakeEvent(), restored=_FakeEvent(), closed=_FakeEvent()
+        )
+
+    def minimize(self) -> None:
+        self.calls.append("minimize")
+
+    def maximize(self) -> None:
+        self.calls.append("maximize")
+
+    def restore(self) -> None:
+        self.calls.append("restore")
+
+    def toggle_fullscreen(self) -> None:
+        self.calls.append("toggle_fullscreen")
+
+    def destroy(self) -> None:
+        self.calls.append("destroy")
+
+    def evaluate_js(self, script: str) -> None:
+        self.scripts.append(script)
+
+
+def test_window_controls_drive_the_native_window(monkeypatch) -> None:
+    monkeypatch.setattr(desktop, "_fullscreen_maximize", lambda: False)
+    controls = desktop.WindowControls()
+    window = _FakeWindow()
+    controls.attach(window)
+
+    controls.minimize()
+    assert controls.toggle_maximize() is True
+    assert controls.is_maximized() is True
+    assert controls.toggle_maximize() is False
+    controls.close()
+
+    assert window.calls == ["minimize", "maximize", "restore", "destroy"]
+    # close() must wait for the window to finish closing so pywebview's follow-up
+    # JS evaluation does not run against a torn-down webview and deadlock.
+    assert window.events.closed.waited == 1
+
+
+def test_window_controls_use_native_fullscreen_on_macos(monkeypatch) -> None:
+    # pywebview's macOS maximize() only resizes; the green control should open a
+    # full-screen Space instead, matching other Mac apps.
+    monkeypatch.setattr(desktop, "_fullscreen_maximize", lambda: True)
+    controls = desktop.WindowControls()
+    window = _FakeWindow()
+    controls.attach(window)
+
+    assert controls.toggle_maximize() is True
+    assert controls.toggle_maximize() is False
+
+    assert window.calls == ["toggle_fullscreen", "toggle_fullscreen"]
+
+
+def test_window_controls_follow_os_maximize_and_restore_events() -> None:
+    controls = desktop.WindowControls()
+    window = _FakeWindow()
+    controls.attach(window)
+
+    window.events.maximized.fire()
+
+    assert controls.is_maximized() is True
+    assert window.scripts[-1].endswith("setMaximized(true)")
+
+    window.events.restored.fire()
+
+    assert controls.is_maximized() is False
+    assert window.scripts[-1].endswith("setMaximized(false)")
+
+    # Restoring an already-restored window is idempotent and still syncs the page.
+    window.events.restored.fire()
+    assert controls.is_maximized() is False
+
+
+def test_window_controls_attach_tolerates_a_missing_window() -> None:
+    controls = desktop.WindowControls()
+
+    controls.attach(None)
+
+    assert controls.window is None
+
+
+def test_window_controls_are_safe_before_a_window_exists() -> None:
+    controls = desktop.WindowControls()
+
+    controls.minimize()
+    controls.close()
+
+    assert controls.toggle_maximize() is False
+    assert controls.is_maximized() is False
+
+
+def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeypatch) -> None:
+    created: dict[str, Any] = {}
+
+    fake_window = _FakeWindow()
+
+    class FakeWebview:
+        @staticmethod
+        def create_window(title, url, **kwargs):
+            created["title"] = title
+            created["url"] = url
+            created["kwargs"] = kwargs
+            return fake_window
+
+        @staticmethod
+        def start(**kwargs) -> None:
+            created["start"] = kwargs
+
+    monkeypatch.setitem(sys.modules, "webview", FakeWebview)
+    monkeypatch.setattr(desktop, "webview_start_kwargs", lambda: {})
+
+    desktop.show_window("http://127.0.0.1:5000/")
+
+    kwargs = created["kwargs"]
+    controls = kwargs["js_api"]
+    assert kwargs["frameless"] is True
+    assert kwargs["easy_drag"] is False
+    assert controls.window is fake_window
+
+    # show_window must have wired the OS maximize/restore events to the bridge.
+    fake_window.events.maximized.fire()
+    assert controls.is_maximized() is True
 
 
 def test_start_server_serves_until_shutdown() -> None:
