@@ -70,6 +70,18 @@ uv run -q python packaging/make_pkg.py \
   dist/SpotM3U-0.1.0-macos-arm64.pkg
 ```
 
+A local build reports the `__version__` committed in `src/spotm3u/__init__.py`,
+which is what the in-app update check reads. To build a bundle that reports a
+specific release version, stamp it first:
+
+```bash
+uv run -q python packaging/stamp_version.py 1.2.3
+```
+
+The release workflow does this automatically from the pushed tag; commit a real
+version before stamping so the tree is not left reporting a release that does
+not match it.
+
 When `ffmpeg-stage/` exists at the repository root, the shortcut supplies it as
 `SPOTM3U_FFMPEG_DIR` automatically. The same command is what the GitHub Actions
 release workflow runs, so a local build matches a release build for your

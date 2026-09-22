@@ -3,6 +3,7 @@
 import contextlib
 import http.server
 import importlib.util
+import json
 import socket
 import threading
 import zipfile
@@ -170,6 +171,55 @@ def _free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
+
+
+class _UpdateCheckHandler(http.server.BaseHTTPRequestHandler):
+    """Serves the ``/update/check`` payload of an app built from version 1.2.3."""
+
+    def do_GET(self) -> None:  # noqa: N802 - name required by http.server
+        body = json.dumps(
+            {"update_available": False, "latest_version": None, "current_version": "1.2.3"}
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        """Keep the test output free of request logs."""
+
+
+@contextlib.contextmanager
+def _update_check_server() -> Iterator[int]:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _UpdateCheckHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield int(server.server_address[1])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+
+
+def test_check_reported_version_accepts_the_release_version() -> None:
+    with _update_check_server() as port:
+        smoke_test.check_reported_version(port, "1.2.3")
+
+
+def test_check_reported_version_rejects_a_bundle_with_a_stale_version() -> None:
+    # A bundle that never got the tag stamped in would keep offering an update
+    # it already has, so verification has to fail loudly.
+    with _update_check_server() as port:
+        with pytest.raises(AssertionError, match="reports version '1.2.3', expected '2.0.0'"):
+            smoke_test.check_reported_version(port, "2.0.0")
+
+
+def test_main_requires_a_bundle_path() -> None:
+    with pytest.raises(SystemExit, match="usage"):
+        smoke_test.main(["a", "b"])
+    with pytest.raises(SystemExit, match="usage"):
+        smoke_test.main(["--expect-version"])
 
 
 def test_wait_for_home_uses_the_port_reported_in_the_log(tmp_path) -> None:

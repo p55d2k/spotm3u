@@ -63,6 +63,10 @@ class Config:
     # [m3u]
     m3u_extended: bool = True
     m3u_relative: bool = False
+    # [update]
+    check_updates: bool = True
+    update_check_interval_hours: int = 24
+    github_repo: str = "p55d2k/spotm3u"
 
     def to_app_config(self) -> dict[str, Any]:
         """Return the Flask-friendly mapping for these settings."""
@@ -88,6 +92,9 @@ class Config:
             "YTDLP_POT_PROVIDER_HOME": self.pot_provider_home,
             "M3U_EXTENDED": self.m3u_extended,
             "M3U_RELATIVE": self.m3u_relative,
+            "UPDATE_CHECK": self.check_updates,
+            "UPDATE_CHECK_INTERVAL_HOURS": self.update_check_interval_hours,
+            "UPDATE_REPO": self.github_repo,
         }
         if self.log_level:
             values["LOG_LEVEL"] = self.log_level
@@ -126,6 +133,9 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "download.pot_provider_home": "pot_provider_home",
     "m3u.extended": "m3u_extended",
     "m3u.relative": "m3u_relative",
+    "update.check": "check_updates",
+    "update.check_interval_hours": "update_check_interval_hours",
+    "update.github_repo": "github_repo",
 }
 
 _FIELD_TYPES: dict[str, type] = {

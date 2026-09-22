@@ -136,6 +136,37 @@ When processing completes, offer a `Save playlist (M3U)` link to
 `GET /processing/<job_id>/<playlist_id>/playlist.m3u`, which downloads the
 generated playlist as an attachment.
 
+## In-App Update Notice
+
+Every page runs `GET /update/check`, which asks GitHub for the latest
+`p55d2k/spotm3u` release (cached server-side for `[update] check_interval_hours`,
+default 24 hours) and reports whether a newer version than the running
+`spotm3u.__version__` exists. The check is non-fatal: network failures, rate
+limits, missing releases and unknown assets all report "no update" without
+raising, so an offline or stale machine works exactly as before.
+
+When an update is available, the header shows a banner with the new version, a
+**Release notes** link, a dismiss control (remembered per version in
+`localStorage`), and **Download update**. SpotM3U never replaces a running
+application on its own - a packaged bundle cannot safely overwrite its own
+files - so the action downloads the correct platform installer instead:
+
+- macOS downloads `SpotM3U-<version>-macos-<arch>.pkg`,
+- Windows and Linux download `SpotM3U-<version>-<platform>-<arch>.zip`.
+
+In the desktop shell the download goes through the `WindowControls`
+`download_update` bridge into the Downloads folder with an **Open folder** toast
+(the same flow as saving an M3U). The toast shows the same layout as the
+playlist-save toast: the downloaded filename plus the next step, *quit SpotM3U
+and open the file to install*. A finished download also clears the banner and
+remembers the dismissal for that version, so the notice stops prompting once the
+installer is on disk. In a plain browser the asset URL opens in a new tab.
+Downloads travel over HTTPS to the GitHub release asset URL only and are never
+launched or extracted by the app.
+
+The check can be disabled wholesale with `[update] check = false` in
+`config.toml`, and its repository overridden with `[update] github_repo`.
+
 ## Add to Media Player
 
 A completed result with at least one resolved track also offers **Add to Media

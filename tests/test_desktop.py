@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import requests
 from flask import Flask
 
 from spotm3u import desktop, launcher
@@ -293,6 +294,106 @@ def test_save_m3u_without_an_app_reports_not_ready(tmp_path) -> None:
     controls = desktop.WindowControls()
 
     assert "error" in controls.save_m3u("job", "0")
+
+
+def test_download_update_streams_the_asset_into_downloads(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    chunks = iter([b"PK", b"\x03\x04payload"])
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            assert chunk_size > 0
+            return chunks
+
+    downloaded = {}
+
+    def fake_get(url, **kwargs):
+        downloaded["url"] = url
+        assert kwargs["stream"] is True
+        return _FakeResponse()
+
+    monkeypatch.setattr(desktop.requests, "get", fake_get)
+    controls = desktop.WindowControls()
+
+    result = controls.download_update(
+        "https://example.com/SpotM3U-v2.0.0-macos-arm64.pkg", "SpotM3U-v2.0.0-macos-arm64.pkg"
+    )
+
+    assert downloaded == {"url": "https://example.com/SpotM3U-v2.0.0-macos-arm64.pkg"}
+    assert result["saved"] is True
+    assert result["name"] == "SpotM3U-v2.0.0-macos-arm64.pkg"
+    assert Path(result["path"]).read_bytes() == b"PK\x03\x04payload"
+
+
+def test_download_update_uses_a_unique_name_when_collisions_exist(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    downloads.mkdir()
+    (downloads / "SpotM3U.pkg").write_bytes(b"old")
+    controls = desktop.WindowControls()
+    monkeypatch.setattr(
+        desktop.requests,
+        "get",
+        lambda *args, **kwargs: _chunked_response([b"new"]),
+    )
+
+    result = controls.download_update("https://example.com/SpotM3U.pkg", "SpotM3U.pkg")
+
+    assert result["name"] == "SpotM3U (2).pkg"
+    assert Path(result["path"]).read_bytes() == b"new"
+
+
+def test_download_update_rejects_non_https_urls(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: tmp_path / "Downloads")
+    monkeypatch.setattr(desktop.requests, "get", lambda *a, **k: _chunked_response([b"x"]))
+    controls = desktop.WindowControls()
+
+    result = controls.download_update("http://example.com/a.pkg", "a.pkg")
+
+    assert "error" in result
+    assert (tmp_path / "Downloads" / "a.pkg").exists() is False
+
+
+def test_download_update_reports_request_failures(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: tmp_path / "Downloads")
+    controls = desktop.WindowControls()
+
+    def fail(*_args, **_kwargs):
+        raise requests.RequestException("boom")
+
+    monkeypatch.setattr(desktop.requests, "get", fail)
+
+    result = controls.download_update("https://example.com/a.pkg", "a.pkg")
+
+    assert "error" in result
+    assert (tmp_path / "Downloads" / "a.pkg").exists() is False
+
+
+def _chunked_response(chunks):
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            return iter(chunks)
+
+    return _Response()
 
 
 def test_open_at_reveals_the_file_in_finder(tmp_path, monkeypatch) -> None:

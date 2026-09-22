@@ -32,6 +32,7 @@ import sys
 import threading
 from pathlib import Path
 
+import requests
 from flask import Flask
 from werkzeug.serving import make_server
 
@@ -247,6 +248,54 @@ class WindowControls:
             _LOGGER.warning("could not reveal %s in the file manager: %s", target, error)
             return {"error": "The file manager could not be opened."}
         return {"opened": True}
+
+    def _unique_download_target(self, name: str) -> Path:
+        """A collision-free path under ``_downloads_root()`` for ``name``.
+
+        Appends `` (2)``, `` (3)`` … until the name is free so repeated saves
+        never silently overwrite an older copy.
+        """
+        root = _downloads_root()
+        root.mkdir(parents=True, exist_ok=True)
+        candidate = root / name
+        stem = candidate.stem
+        suffix = candidate.suffix
+        counter = 2
+        while candidate.exists():
+            candidate = root / f"{stem} ({counter}){suffix}"
+            counter += 1
+        return candidate
+
+    def download_update(self, asset_url: str, filename: str) -> dict[str, str | bool | Path]:
+        """Download a release asset (e.g. the new installer) into Downloads.
+
+        The desktop shell cannot rely on a browser download, so the update
+        banner hands the asset URL to this bridge instead. The file is
+        streamed to ``_downloads_root()`` and returned with its path so the
+        page can show a toast with an "Open folder" action; SpotM3U never
+        launches or extracts the downloaded update itself.
+        """
+        name = Path(filename).name
+        if not asset_url.startswith("https://") or not name:
+            return {"error": "The update download is not available."}
+        target = self._unique_download_target(name)
+        try:
+            _LOGGER.info("downloading update %s", name)
+            with requests.get(asset_url, stream=True, timeout=120) as response:
+                response.raise_for_status()
+                with target.open("wb") as handle:
+                    for chunk in response.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            handle.write(chunk)
+        except requests.RequestException as error:
+            _LOGGER.warning("could not download update %s: %s", name, error)
+            return {
+                "error": "The update could not be downloaded. Check your connection and try again."
+            }
+        except OSError as error:
+            _LOGGER.warning("could not save update %s: %s", name, error)
+            return {"error": "The update could not be saved."}
+        return {"saved": True, "path": str(target), "name": target.name}
 
     def _find_job(self, job_id: str, playlist_id: str):
         if self.app is None:

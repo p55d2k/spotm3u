@@ -133,3 +133,15 @@ workers = 4
 # Write paths relative to the download directory instead of absolute paths,
 # keeping the playlist portable as long as it stays next to the audio.
 # relative = false
+
+[update]
+# Check GitHub for a newer SpotM3U release and show an in-app update notice.
+# The check never blocks or fails the app and never replaces the app itself;
+# it only prompts the user to download the new installer.
+# check = true
+
+# How often (hours) the running app asks GitHub for the latest release.
+# check_interval_hours = 24
+
+# Repository whose releases are checked, in OWNER/REPO form.
+# github_repo = "p55d2k/spotm3u"

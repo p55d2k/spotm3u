@@ -12,11 +12,14 @@ HTTP itself. The Windows build is windowed, so the port is probed over HTTP
 instead of being read from the startup log, which that build does not have.
 
 Accepts a bundle directory, an extracted ``.app``, a release ZIP, or a
-directory containing one ZIP.
+directory containing one ZIP. ``--expect-version`` additionally asserts the
+packaged app reports that release version, which is how CI verifies the release
+tag reached the bundle.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -147,7 +150,21 @@ def wait_for_home(
     raise SystemExit(f"packaged app did not serve within {timeout}s:\n{_read_log(log_path)}")
 
 
-def smoke_test(bundle: Path) -> None:
+def check_reported_version(port: int, expected: str) -> None:
+    """Assert the packaged app reports the release it was built from.
+
+    ``/update/check`` always echoes the running ``spotm3u.__version__``, even
+    when the GitHub request itself fails, so this verifies the release workflow
+    stamped the version into the frozen bundle without depending on the network
+    or on GitHub being reachable at build time.
+    """
+    status, body = _get(f"http://127.0.0.1:{port}/update/check")
+    assert status == 200, f"update check returned {status}"
+    reported = json.loads(body).get("current_version")
+    assert reported == expected, f"app reports version {reported!r}, expected {expected!r}"
+
+
+def smoke_test(bundle: Path, expected_version: str | None = None) -> None:
     exe = find_executable(bundle)
     check_bundled_ffmpeg(bundle)
 
@@ -174,6 +191,9 @@ def smoke_test(bundle: Path) -> None:
         status, css = _get(f"http://127.0.0.1:{port}/static/style.css")
         assert status == 200, f"static returned {status}"
         assert css.strip(), "static stylesheet is empty"
+
+        if expected_version:
+            check_reported_version(port, expected_version)
 
         assert _get(f"http://127.0.0.1:{port}/no-such-route")[0] == 404
         print(f"smoke test passed: {exe} on 127.0.0.1:{port}")
@@ -265,7 +285,26 @@ def _make_executable(path: Path) -> None:
         path.chmod(path.stat().st_mode | 0o111)
 
 
+def _usage() -> None:
+    raise SystemExit(
+        f"usage: {sys.argv[0]} <bundle-dir | release.zip | dir-with-zip> "
+        "[--expect-version <version>]"
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = list(sys.argv[1:] if argv is None else argv)
+    expected_version = None
+    if "--expect-version" in args:
+        position = args.index("--expect-version")
+        if position + 1 >= len(args):
+            _usage()
+        expected_version = args.pop(position + 1)
+        args.pop(position)
+    if len(args) != 1:
+        _usage()
+    smoke_test(_bundle_root(Path(args[0])), expected_version)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit(f"usage: {sys.argv[0]} <bundle-dir | release.zip | dir-with-zip>")
-    smoke_test(_bundle_root(Path(sys.argv[1])))
+    main()

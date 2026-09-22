@@ -13,8 +13,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-tag:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Refuses v2.0, v2.0-rc, v2.0.0-rc.1 and anything else that is not
+      # vMAJOR.MINOR.PATCH, so a malformed tag cannot publish a partial or
+      # un-versioned release. Runs on the runner's own python3 with no
+      # dependencies, which keeps the guard instant.
+      - name: Require a vMAJOR.MINOR.PATCH tag
+        run: python3 packaging/check_release_tag.py "$GITHUB_REF_NAME"
+
   build:
     name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: validate-tag
     strategy:
       fail-fast: false
       matrix:
@@ -119,6 +134,13 @@ jobs:
       - name: Compute release version
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Stamp the release version
+        shell: bash
+        # The packaged app reports spotm3u.__version__ to the in-app update
+        # check, so the tag must reach the frozen source instead of the
+        # version committed on main.
+        run: uv run -q python packaging/stamp_version.py "$VERSION"
 
       - name: Build with PyInstaller
         env:
@@ -257,7 +279,7 @@ jobs:
 
       - name: Extract and smoke test packaged application
         if: matrix.platform == 'windows'
-        run: uv run -q python packaging/smoke_test.py dist-artifacts
+        run: uv run -q python packaging/smoke_test.py dist-artifacts --expect-version "${{ env.VERSION }}"
 
       - name: Smoke test extracted application (Linux, macOS)
         if: matrix.platform != 'windows'
@@ -265,7 +287,7 @@ jobs:
         run: |
           artifact=$(find dist-artifacts -type d -name '*-extracted' -print -quit)
           test -n "$artifact"
-          uv run -q python packaging/smoke_test.py "$artifact"
+          uv run -q python packaging/smoke_test.py "$artifact" --expect-version "${{ env.VERSION }}"
 
   release:
     name: Publish GitHub Release

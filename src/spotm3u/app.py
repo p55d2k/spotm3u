@@ -23,6 +23,7 @@ from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, describe_youtube_setup, download_track
 from .online.cache import DownloadCache
 from .resolution import TrackResolver
+from .update import check_for_updates
 from .uploads import UploadError, cleanup_jobs, default_upload_root, store_upload
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -60,6 +61,30 @@ def create_app(config: dict | None = None) -> Flask:
         pot_provider_home=app.config.get("YTDLP_POT_PROVIDER_HOME"),
     )
     logging.getLogger(PACKAGE_LOGGER).info("youtube setup: %s", json.dumps(report, sort_keys=True))
+
+    @app.get("/update/check")
+    def update_check():
+        """Report whether a newer SpotM3U release is available.
+
+        The check is cached server-side by ``[update] check_interval_hours``
+        and degrades to "no update known" on any network problem, so the page
+        never blocks or errors on the GitHub API.
+        """
+        from . import __version__
+
+        if not app.config.get("UPDATE_CHECK", True):
+            return jsonify(
+                {
+                    "update_available": False,
+                    "latest_version": None,
+                    "current_version": __version__,
+                    "error": "Update checks are disabled.",
+                }
+            )
+        interval = int(app.config.get("UPDATE_CHECK_INTERVAL_HOURS", 24)) * 60 * 60
+        repo = str(app.config.get("UPDATE_REPO", "p55d2k/spotm3u"))
+        info = check_for_updates(repo=repo, current_version=__version__, interval_seconds=interval)
+        return jsonify(info.as_dict())
 
     @app.get("/")
     def index():
