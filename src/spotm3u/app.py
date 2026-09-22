@@ -13,6 +13,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from .audio.resolver import LocalAudioResolver
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
+from .fast import FastSourceSearcher, FastTrackResolver
 from .ffmpeg import locate_ffmpeg_location
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
@@ -265,6 +266,7 @@ def create_app(config: dict | None = None) -> Flask:
             "batch_processing.html",
             job_id=job_id,
             playlists=list(zip(selected, playlists, strict=True)),
+            fast_mode_default=_requested_fast_mode(app),
         )
 
     @app.post("/processing/<job_id>/batch/start")
@@ -290,6 +292,7 @@ def create_app(config: dict | None = None) -> Flask:
                 output_dir=_download_dir(app),
                 music_library=app.config["MUSIC_LIBRARY"],
                 m3u_filename=f"playlist-{playlist_id}.m3u",
+                fast_mode=_requested_fast_mode(app),
             )
             manager.submit(job)
             job.start()
@@ -358,6 +361,7 @@ def create_app(config: dict | None = None) -> Flask:
             playlist_id=playlist_id,
             playlist_name=playlist.name,
             total_tracks=len(playlist.tracks),
+            fast_mode_default=_requested_fast_mode(app),
         )
 
     @app.post("/processing/<job_id>/<playlist_id>/start")
@@ -398,6 +402,7 @@ def create_app(config: dict | None = None) -> Flask:
             playlist=playlist,
             output_dir=_download_dir(app),
             music_library=app.config["MUSIC_LIBRARY"],
+            fast_mode=_requested_fast_mode(app),
         )
         manager.submit(job)
         job.start()
@@ -705,6 +710,20 @@ def _sweep_old_jobs(app: Flask, *, log: bool = False) -> None:
         app.logger.exception("Unable to sweep abandoned upload jobs")
 
 
+def _requested_fast_mode(app: Flask) -> bool:
+    """Return the fast-mode choice for a start request.
+
+    The processing pages always submit the field (the checkbox plus a hidden
+    ``0``), so a posted value wins and a caller that sends nothing falls back to
+    the ``[fast] enabled`` configuration default. Every submitted value is
+    considered so the hidden fallback can never mask a checked box.
+    """
+    values = request.form.getlist("fast_mode") if request.method == "POST" else []
+    if not values:
+        return bool(app.config.get("FAST_MODE", False))
+    return any(str(value).strip().casefold() in {"1", "true", "on", "yes"} for value in values)
+
+
 def _download_dir(app: Flask) -> Path:
     """Resolve the persistent directory for downloaded MP3s and the M3U.
 
@@ -726,6 +745,7 @@ def _build_processing_job(
     output_dir: Path,
     music_library: str | Path,
     m3u_filename: str = "playlist.m3u",
+    fast_mode: bool = False,
 ) -> ProcessingJob:
     max_results = int(app.config.get("SEARCH_MAX_RESULTS", 8))
     max_search_workers = int(app.config.get("SEARCH_MAX_WORKERS", 4))
@@ -758,7 +778,17 @@ def _build_processing_job(
             pot_provider_url=pot_provider_url,
             pot_provider_home=pot_provider_home,
             ffmpeg_location=locate_ffmpeg_location(),
+            # Fast mode downloads audio only: the shared downloader skips its
+            # post-download validation and metadata enrichment.
+            verify=not fast_mode,
         )
+        if fast_mode:
+            return FastTrackResolver(
+                local_resolver,
+                output_dir,
+                searcher=FastSourceSearcher(searcher),
+                downloader=downloader,
+            )
         return TrackResolver(
             local_resolver,
             output_dir,
@@ -779,6 +809,7 @@ def _build_processing_job(
         m3u_extended=bool(app.config.get("M3U_EXTENDED", True)),
         m3u_relative=bool(app.config.get("M3U_RELATIVE", False)),
         m3u_filename=m3u_filename,
+        fast_mode=fast_mode,
     )
 
 

@@ -48,6 +48,8 @@ class Config:
     max_results: int = 8
     max_search_workers: int = 4
     search_socket_timeout: int = 30
+    # [fast]
+    fast_mode: bool = False
     # [metadata]
     metadata_enabled: bool = True
     metadata_tags: bool = True
@@ -87,6 +89,7 @@ class Config:
             "SEARCH_MAX_RESULTS": self.max_results,
             "SEARCH_MAX_WORKERS": self.max_search_workers,
             "SEARCH_SOCKET_TIMEOUT": self.search_socket_timeout,
+            "FAST_MODE": self.fast_mode,
             "METADATA_ENABLED": self.metadata_enabled,
             "METADATA_TAGS": self.metadata_tags,
             "ARTWORK_VERIFY_LOCAL": self.artwork_verify_local,
@@ -133,6 +136,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "search.max_results": "max_results",
     "search.max_search_workers": "max_search_workers",
     "search.socket_timeout": "search_socket_timeout",
+    "fast.enabled": "fast_mode",
     "metadata.enabled": "metadata_enabled",
     "metadata.tags": "metadata_tags",
     "artwork.verify_local": "artwork_verify_local",

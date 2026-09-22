@@ -117,17 +117,9 @@ class OnlineSourceSearcher:
             logger.debug("search track=%s queries=0 status=skipped", track_identifier(track))
             return ()
 
-        try:
-            import yt_dlp  # type: ignore
-        except ImportError:  # pragma: no cover - optional dependency in tests
-            logger.warning(
-                "search track=%s status=failed reason=yt_dlp unavailable", track_identifier(track)
-            )
+        yt_dlp = self._backend(track)
+        if yt_dlp is None:
             return ()
-
-        # Load plugins once before the worker pool builds YoutubeDL instances;
-        # concurrent lazy loading re-registers providers ("already registered").
-        ensure_ytdlp_plugins_loaded()
 
         workers = min(len(queries), self.max_search_workers)
         if workers <= 1:
@@ -156,6 +148,37 @@ class OnlineSourceSearcher:
             len(results),
         )
         return tuple(results)
+
+    def search_query(self, track: Track, query: str) -> tuple[SourceCandidate, ...]:
+        """Run exactly one search query and return its candidates.
+
+        Public so a caller that must not run the whole query set — the fast
+        path, which stops as soon as one query yields a usable candidate — uses
+        the same yt-dlp options and result coercion as :meth:`search`. Returns
+        an empty tuple when the search backend is unavailable or the query
+        fails.
+        """
+        if not query.strip():
+            return ()
+        yt_dlp = self._backend(track)
+        if yt_dlp is None:
+            return ()
+        return tuple(self._run_query(yt_dlp, query, track))
+
+    @staticmethod
+    def _backend(track: Track) -> Any | None:
+        """Return the yt-dlp module with plugins loaded, or ``None``."""
+        try:
+            import yt_dlp  # type: ignore
+        except ImportError:  # pragma: no cover - optional dependency in tests
+            logger.warning(
+                "search track=%s status=failed reason=yt_dlp unavailable", track_identifier(track)
+            )
+            return None
+        # Load plugins once before YoutubeDL instances are built; concurrent
+        # lazy loading re-registers providers ("already registered").
+        ensure_ytdlp_plugins_loaded()
+        return yt_dlp
 
     def _run_query(self, yt_dlp: Any, query: str, track: Track) -> list[SourceCandidate]:
         """Run one focused query and return its coerced candidates."""

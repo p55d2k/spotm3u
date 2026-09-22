@@ -38,6 +38,46 @@ ranked. The highest-ranked plausible candidate is downloaded first; an
 official music video is only used as a fallback when no audio/lyrics source
 for the same recording exists.
 
+## Fast Mode
+
+Fast mode is the lightweight path for large playlists: it finds audio,
+downloads it as MP3, and writes the playlist, and does nothing else.
+
+**Skipped** compared with the normal pipeline:
+
+- source validation (no candidate is rejected before downloading)
+- search breadth: queries run one at a time and stop at the first query that
+  yields a usable candidate, instead of running every query and comparing them
+- downloaded-audio validation (no duration/bitrate/content checks)
+- candidate retry after a failed download beyond the candidates that single
+  search already returned
+- the download cache (neither consulted nor populated)
+- all metadata work: ID3 tags, album cover, artist image, lyrics — and the
+  network lookups those need
+
+**Kept**: playlist parsing, local-library matching, source searching, the
+download itself (including yt-dlp error classification and the complete-MP3
+check), filename sanitisation, M3U generation, progress reporting and the
+bounded worker pools.
+
+It is much faster because the expensive per-track work is the network round
+trips: 6 parallel searches become 1, one or two validation passes are removed,
+and no artwork/lyrics requests happen at all. The trade-off is confidence: a
+fast-mode match can be a live version, a cover or a wrong artist, and the MP3s
+carry no tags, artwork or lyrics.
+
+A track that finds no usable source fails immediately instead of falling back
+into the normal pipeline, so one bad track never slows the rest of a playlist.
+
+Enable it either globally in `config.toml`:
+
+```toml
+[fast]
+enabled = true
+```
+
+or per run with the **Fast mode** toggle on the processing page.
+
 ## Candidate Retry
 
 When several plausible candidates exist:

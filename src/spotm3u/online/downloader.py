@@ -152,8 +152,9 @@ def download_track(
     pot_provider_url: str | None = None,
     pot_provider_home: str | None = None,
     ffmpeg_location: str | None = None,
+    verify: bool = True,
 ) -> Path:
-    """Download ``source_url`` and return its verified local MP3 path.
+    """Download ``source_url`` and return its local MP3 path.
 
     ``output_dir`` is the caller-owned job/library directory. All yt-dlp
     intermediate files and the final file are constrained to that directory.
@@ -165,6 +166,12 @@ def download_track(
 
     ``ffmpeg_location``, when given, is passed to yt-dlp unchanged so a bundled
     or otherwise non-``PATH`` FFmpeg is found for audio extraction.
+
+    ``verify`` controls the expensive post-download steps. When ``False`` the
+    download stops once a complete MP3 exists: no audio validation and no
+    metadata enrichment run, and a file produced by a concurrent download of
+    the same track is reused without re-validating it. This is the audio-only
+    path fast mode uses; it never changes what yt-dlp itself downloads.
     """
     _validate_source_url(source_url)
     destination = Path(output_dir).expanduser().resolve()
@@ -188,6 +195,7 @@ def download_track(
         pot_provider_url=pot_provider_url,
         pot_provider_home=pot_provider_home,
         ffmpeg_location=ffmpeg_location,
+        verify=verify,
     )
 
 
@@ -206,6 +214,7 @@ def _download_single_flight(
     pot_provider_url: str | None,
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
+    verify: bool,
 ) -> Path:
     """Download ``output_path`` exactly once no matter how many callers race.
 
@@ -245,10 +254,11 @@ def _download_single_flight(
                     pot_provider_url=pot_provider_url,
                     pot_provider_home=pot_provider_home,
                     ffmpeg_location=ffmpeg_location,
+                    verify=verify,
                 ),
             )
 
-        reused = _await_peer(in_flight, track, timeout)
+        reused = _await_peer(in_flight, track, timeout, verify=verify)
         if reused is not None:
             logger.info(
                 "download track=%s url=%s status=reused from concurrent peer path=%s",
@@ -288,22 +298,21 @@ def _await_peer(
     in_flight: _InFlightDownload,
     track: Track,
     timeout: float | None,
+    *,
+    verify: bool = True,
 ) -> Path | None:
-    """Wait for the owner of ``in_flight`` and reuse a validated result.
+    """Wait for the owner of ``in_flight`` and reuse its result.
 
     Returns the owner's path when it produced a file that still passes audio
     validation against ``track``; ``None`` means the caller must download the
-    file itself.
+    file itself. With ``verify`` disabled (fast mode) a complete file is
+    reused as-is, matching the download that produced it.
     """
     with in_flight.condition:
         in_flight.condition.wait_for(lambda: in_flight.done, timeout=timeout)
-        if (
-            in_flight.done
-            and in_flight.path is not None
-            and in_flight.path.is_file()
-            and validate_downloaded_audio(track, in_flight.path).status == "valid"
-        ):
-            return in_flight.path
+        if in_flight.done and in_flight.path is not None and in_flight.path.is_file():
+            if not verify or validate_downloaded_audio(track, in_flight.path).status == "valid":
+                return in_flight.path
     return None
 
 
@@ -322,6 +331,7 @@ def _perform_download(
     pot_provider_url: str | None,
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
+    verify: bool,
 ) -> Path:
     """Run the actual yt-dlp/ffmpeg download under the per-path lock."""
     if timeout is not None and timeout > 0:
@@ -341,6 +351,7 @@ def _perform_download(
                 pot_provider_url=pot_provider_url,
                 pot_provider_home=pot_provider_home,
                 ffmpeg_location=ffmpeg_location,
+                verify=verify,
             )
         except TimeoutError as exc:
             _prune_partial(output_path)
@@ -366,6 +377,7 @@ def _perform_download(
         pot_provider_url=pot_provider_url,
         pot_provider_home=pot_provider_home,
         ffmpeg_location=ffmpeg_location,
+        verify=verify,
     )
 
 
@@ -383,6 +395,7 @@ def _download_guarded(
     pot_provider_url: str | None,
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
+    verify: bool,
 ) -> Path:
     """Run :func:`_download_to` under the per-output-path lock."""
     with _output_lock(output_path):
@@ -399,6 +412,7 @@ def _download_guarded(
             pot_provider_url=pot_provider_url,
             pot_provider_home=pot_provider_home,
             ffmpeg_location=ffmpeg_location,
+            verify=verify,
         )
 
 
@@ -471,7 +485,14 @@ def _download_to(
     pot_provider_url: str | None,
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
+    verify: bool = True,
 ) -> Path:
+    """Download one source into ``output_path``.
+
+    With ``verify`` disabled the file is complete as soon as yt-dlp and the
+    FFmpeg extraction succeed: audio validation and metadata enrichment are
+    skipped (fast mode).
+    """
     output_template = str(output_path.with_suffix(".%(ext)s"))
     try:
         output_path.unlink(missing_ok=True)
@@ -572,27 +593,28 @@ def _download_to(
             log_url,
         )
         raise DownloadError(f"download did not produce a complete MP3: {output_path.name}")
-    validation = validate_downloaded_audio(track, output_path)
-    if validation.status == "invalid":
-        _prune_partial(output_path)
-        logger.warning(
-            "download track=%s url=%s status=failed reason=audio invalid: %s",
-            track_identifier(track),
-            log_url,
-            ", ".join(validation.reasons),
-        )
-        raise DownloadError(f"downloaded audio is invalid: {', '.join(validation.reasons)}")
-    try:
-        result = enrich_metadata(output_path, track, destination)
-        if result.errors:
+    if verify:
+        validation = validate_downloaded_audio(track, output_path)
+        if validation.status == "invalid":
+            _prune_partial(output_path)
             logger.warning(
-                "metadata enrichment track=%s errors=%s",
+                "download track=%s url=%s status=failed reason=audio invalid: %s",
                 track_identifier(track),
-                "; ".join(result.errors),
+                log_url,
+                ", ".join(validation.reasons),
             )
-    except MetadataError:
-        _prune_partial(output_path)
-        raise
+            raise DownloadError(f"downloaded audio is invalid: {', '.join(validation.reasons)}")
+        try:
+            result = enrich_metadata(output_path, track, destination)
+            if result.errors:
+                logger.warning(
+                    "metadata enrichment track=%s errors=%s",
+                    track_identifier(track),
+                    "; ".join(result.errors),
+                )
+        except MetadataError:
+            _prune_partial(output_path)
+            raise
     logger.info(
         "download track=%s url=%s status=ok path=%s",
         track_identifier(track),

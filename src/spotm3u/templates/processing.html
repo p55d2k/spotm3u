@@ -16,6 +16,12 @@
       <p class="intro">{{ total_tracks }} tracks · You can leave this tab open while SpotM3U works.</p>
 
       <form id="start-form" method="post" action="{{ url_for('start_processing', job_id=job_id, playlist_id=playlist_id) }}">
+        <label class="mode-option">
+          {# The hidden 0 must follow the checkbox: form fields are read in document order, so a checked box submits 1 first. #}
+          <input type="checkbox" id="fast-mode" name="fast_mode" value="1"{% if fast_mode_default %} checked{% endif %}>
+          <input type="hidden" name="fast_mode" value="0">
+          <span class="mode-option-text"><strong>Fast mode</strong> — find audio and write the playlist without source checks, audio checks or metadata (tags, artwork, lyrics). Downloads finish much faster, but matches can be less accurate and the MP3s stay plain.</span>
+        </label>
         <button type="submit">Start converting playlist</button>
       </form>
 
@@ -403,7 +409,7 @@
         const button = startForm.querySelector("button");
         button.disabled = true;
         try {
-          const response = await fetch(startForm.action, { method: "POST" });
+          const response = await fetch(startForm.action, { method: "POST", body: new FormData(startForm) });
           if (response.status === 202 || response.status === 409) {
             startForm.hidden = true;
             render(await response.json());

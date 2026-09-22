@@ -46,6 +46,18 @@ Each Track goes through:
 7. Retry with another candidate if appropriate
 8. Final resolution
 
+## Fast Mode Toggle
+
+Both processing pages (single playlist and batch) show a **Fast mode**
+checkbox above the start button, defaulting to the `[fast] enabled`
+configuration value. The form always submits the field (a hidden `0` plus the
+checkbox's `1`), so an unchecked box is a deliberate "normal mode" choice and a
+request that sends nothing falls back to the configured default.
+
+The choice belongs to the job: the resolver is built once when processing
+starts, a retry reuses the same mode, and starting an already-started playlist
+returns the existing job rather than switching its mode.
+
 ## Processing States
 
 Useful states include:

@@ -424,6 +424,35 @@ form {
 
 label { font-weight: 700; }
 
+/* Download-mode choice shown above the start button on the processing pages. */
+.mode-option {
+  align-items: flex-start;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  font-weight: 400;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+}
+
+.mode-option input[type="checkbox"] {
+  accent-color: var(--blue);
+  flex: 0 0 auto;
+  height: 1.05rem;
+  margin: 0.15rem 0 0;
+  width: 1.05rem;
+}
+
+.mode-option-text {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.mode-option-text strong { color: var(--ink); }
+
 input[type="file"],
 input[type="search"] {
   background: var(--input);

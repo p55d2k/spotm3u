@@ -188,6 +188,29 @@ Candidate B
 → download
 → valid
 
+## Fast Mode
+
+Fast mode is a separate, lightweight resolution path, not a set of switches
+threaded through the normal one. `src/spotm3u/fast.py` provides:
+
+- `FastSourceSearcher` — runs the configured queries one at a time and stops
+  at the first query that yields an accepted candidate.
+- `FastTrackResolver` — subclasses `TrackResolver` to reuse the shared
+  resolution helpers and replaces only the searching and downloading phases:
+  local match, one search series, one download per candidate already returned,
+  no source validation, no downloaded-audio validation, no download cache and
+  no metadata enrichment.
+
+The expensive post-download steps live in the shared downloader behind its
+`verify` flag, so fast mode downloads through the same yt-dlp options, error
+classification and single-flight/locking code as normal mode.
+
+Selecting it is explicit: `ProcessingJob.fast_mode` is set from the `[fast]
+enabled` configuration or the per-run toggle on the processing page, and the
+resolver factory in `app.py` builds either `FastTrackResolver` (with
+`verify=False` downloads) or the normal `TrackResolver`. Normal mode's
+behaviour is unchanged.
+
 ## Lyrics Enrichment
 
 Lyrics retrieval is isolated in `src/spotm3u/lyrics.py` and delegates the

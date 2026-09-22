@@ -4,6 +4,9 @@ from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
+from werkzeug.datastructures import MultiDict
+
+from spotm3u import app as app_module
 from spotm3u.app import create_app
 from spotm3u.media_player import MediaPlayerError, MediaPlayerResult
 
@@ -209,6 +212,9 @@ class NoCandidates:
     def search(self, track):
         return ()
 
+    def search_query(self, track, query):
+        return ()
+
 
 def _job_directory(tmp_path) -> str:
     return next(
@@ -277,6 +283,112 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     assert final["failed"] == 0
     m3u_path = tmp_path / "music" / "SpotM3U-downloads" / "playlist.m3u"
     assert str(music / "Artist - First.mp3") in m3u_path.read_text(encoding="utf-8")
+
+
+def test_processing_pages_offer_the_fast_mode_toggle(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    single = client.get(f"/processing/{job_id}/1")
+
+    assert single.status_code == 200
+    assert b"Fast mode" in single.data
+    assert b'name="fast_mode"' in single.data
+    assert b'value="1" checked' not in single.data, "fast mode is off by default"
+    # The checkbox must be submitted before its hidden fallback: form fields
+    # are read in document order, so a checked box has to come first.
+    html = single.data.decode()
+    assert html.index('id="fast-mode"') < html.index('name="fast_mode" value="0"')
+
+    client.post(f"/playlists/{job_id}/batch-select", data={"playlist_id": ["0", "1"]})
+    batch = client.get(f"/processing/{job_id}/batch")
+
+    assert batch.status_code == 200
+    assert b"Fast mode" in batch.data
+    assert b'name="fast_mode"' in batch.data
+
+
+def test_fast_mode_toggle_reflects_the_configuration_default(tmp_path) -> None:
+    client = create_app({"UPLOAD_ROOT": tmp_path, "FAST_MODE": True}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.get(f"/processing/{job_id}/1")
+
+    assert response.status_code == 200
+    assert b'value="1" checked' in response.data
+
+
+def test_checked_fast_mode_toggle_wins_over_the_hidden_fallback(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    # Exactly what the page submits with the box checked.
+    response = client.post(
+        f"/processing/{job_id}/1/start",
+        data=MultiDict([("fast_mode", "1"), ("fast_mode", "0")]),
+    )
+
+    assert response.status_code == 202
+    assert response.get_json()["fast_mode"] is True
+
+
+def test_start_processing_honours_fast_mode(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("fast mode must not enrich metadata")
+
+    monkeypatch.setattr("spotm3u.resolution.enrich_metadata", forbidden)
+    built: list[bool] = []
+    resolver_class = app_module.FastTrackResolver
+
+    class SpyFastResolver(resolver_class):
+        def __init__(self, *args, **kwargs):
+            built.append(True)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(app_module, "FastTrackResolver", SpyFastResolver)
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    response = client.post(f"/processing/{job_id}/1/start", data={"fast_mode": "1"})
+
+    assert response.status_code == 202
+    assert response.get_json()["fast_mode"] is True
+    job = client.application.config["JOB_MANAGER"].get(job_id)
+    job.wait(timeout=10)
+    final = client.get(f"/processing/{job_id}/1/status").get_json()
+    assert final["fast_mode"] is True
+    assert final["successful"] == 1
+    assert final["failed"] == 0
+    assert built == [True], "the fast resolver must be the one that runs"
+
+
+def test_start_processing_uses_the_configured_fast_mode_and_form_can_override(
+    tmp_path, monkeypatch
+) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app(
+        {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music, "FAST_MODE": True}
+    ).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    configured = client.post(f"/processing/{job_id}/1/start")
+    overridden = client.post(f"/processing/{job_id}/1/start", data={"fast_mode": "0"})
+
+    assert configured.status_code == 202
+    assert configured.get_json()["fast_mode"] is True
+    assert overridden.status_code == 409, "an existing job keeps the mode it started with"
 
 
 def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:

@@ -108,6 +108,7 @@ class ProcessingJob:
         m3u_extended: bool = True,
         m3u_relative: bool = False,
         m3u_filename: str = "playlist.m3u",
+        fast_mode: bool = False,
     ) -> None:
         self.job_id = job_id
         self.playlist_id = playlist_id
@@ -121,6 +122,9 @@ class ProcessingJob:
         self.m3u_extended = m3u_extended
         self.m3u_relative = m3u_relative
         self.m3u_filename = m3u_filename
+        # The resolver the factory builds for this job decides what fast mode
+        # actually skips; the flag is kept here for the UI and diagnostics.
+        self.fast_mode = fast_mode
         self.manager: JobManager | None = None
 
         self._lock = threading.Lock()
@@ -257,10 +261,11 @@ class ProcessingJob:
         total = len(self.tracks) if indices is None else len(indices)
         track_log = TrackLogger(logger, job_id=self.job_id)
         track_log.info(
-            "job started playlist=%s tracks=%d output=%s",
+            "job started playlist=%s tracks=%d output=%s fast_mode=%s",
             self.playlist_name,
             total,
             self.output_dir,
+            self.fast_mode,
         )
         try:
             resolver = self.resolver_factory()
@@ -510,6 +515,7 @@ class ProcessingJob:
                 "status": self._status,
                 "error": self._error,
                 "output_dir": str(self.output_dir),
+                "fast_mode": self.fast_mode,
                 "m3u_path": (str(self._m3u_path) if self._m3u_path is not None else None),
                 "tracks": track_states,
                 "started_at": (

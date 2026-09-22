@@ -70,6 +70,16 @@
 # hung source cannot occupy a worker forever.
 # socket_timeout = 30
 
+[fast]
+# Fast mode: prioritise download speed over match confidence and metadata.
+# It finds audio, downloads it and writes the playlist, skipping source
+# validation, downloaded-audio validation, retries against other candidates,
+# artwork/lyrics lookups and all metadata embedding. Downloads of large
+# playlists finish much faster, but matches can be less accurate and the MP3s
+# contain no tags, artwork or lyrics. It can also be toggled per run on the
+# processing page.
+# enabled = false
+
 [metadata]
 # Master switch for writing anything into the downloaded audio file. Set to
 # false for "just the audio": no text tags, album cover, artist image or

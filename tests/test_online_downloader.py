@@ -208,9 +208,9 @@ def test_concurrent_downloads_download_shared_output_once(tmp_path, monkeypatch)
 
     real_await_peer = downloader._await_peer
 
-    def wrapped_await_peer(in_flight, track, timeout):
+    def wrapped_await_peer(in_flight, track, timeout, **kwargs):
         waiter_entered.set()
-        return real_await_peer(in_flight, track, timeout)
+        return real_await_peer(in_flight, track, timeout, **kwargs)
 
     monkeypatch.setattr(downloader, "_perform_download", fake_perform)
     monkeypatch.setattr(downloader, "validate_downloaded_audio", _valid_audio)

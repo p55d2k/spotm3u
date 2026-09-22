@@ -37,6 +37,7 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.pot_provider_home is None
     assert config.m3u_extended is True
     assert config.m3u_relative is False
+    assert config.fast_mode is False
     assert config.metadata_enabled is True
     assert config.metadata_tags is True
     assert config.artwork_verify_local is True
@@ -78,6 +79,9 @@ def test_load_config_parses_known_values(tmp_path) -> None:
         extended = true
         relative = true
 
+        [fast]
+        enabled = true
+
         [metadata]
         enabled = false
         tags = false
@@ -113,6 +117,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.pot_provider_url == "http://127.0.0.1:8080"
     assert config.m3u_extended is True
     assert config.m3u_relative is True
+    assert config.fast_mode is True
     assert config.metadata_enabled is False
     assert config.metadata_tags is False
     assert config.artwork_verify_local is False
