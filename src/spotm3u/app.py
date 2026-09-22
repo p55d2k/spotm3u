@@ -18,6 +18,7 @@ from .ffmpeg import locate_ffmpeg_location
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
 from .lyrics import set_lyrics_enabled
+from .m3u import check_playlist
 from .media_player import MediaPlayerError, add_to_media_player, media_player_available
 from .metadata import (
     cached_artwork_path,
@@ -491,6 +492,30 @@ def create_app(config: dict | None = None) -> Flask:
         if not m3u_path.is_file():
             return jsonify({"error": "That playlist is not ready to download."}), 404
         name = sanitize_filename_component(job.playlist_name) or job.playlist_id
+        # The playlist is written once and never rewritten, so a file deleted by
+        # hand afterwards leaves entries that resolve to nothing. Warn before
+        # handing it over (unless the user explicitly confirms) rather than
+        # letting their media player silently skip tracks.
+        check = check_playlist(m3u_path)
+        if not check.complete and request.args.get("confirm") != "1":
+            return (
+                render_template(
+                    "m3u_missing.html",
+                    job_id=job_id,
+                    playlist_id=playlist_id,
+                    playlist_name=job.playlist_name,
+                    check=check,
+                    missing_names=check.missing_names(),
+                    confirm_url=url_for(
+                        "download_m3u",
+                        job_id=job_id,
+                        playlist_id=playlist_id,
+                        confirm=1,
+                    ),
+                    result_url=url_for("processing", job_id=job_id, playlist_id=playlist_id),
+                ),
+                409,
+            )
         # Served as octet-stream (not audio/x-mpegurl) so a WebView that ignores
         # ``Content-Disposition: attachment`` cannot "show" the playlist and open
         # its built-in media player; it can only offer a native save instead.

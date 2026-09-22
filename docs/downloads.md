@@ -209,7 +209,8 @@ its audio file is still on disk (the manifest lives in the download folder
 next to it), and the manifest heals itself: entries whose file has been deleted
 are dropped on the next lookup or store, so a stale row can never make SpotM3U
 skip a re-download. A finished run reports tracks whose file disappeared as
-**missing from disk** and offers a retry that downloads them again (see
+**missing from disk** and offers a retry that downloads them again, and handing
+out the playlist itself warns first when any entry it references is gone (see
 [web](web.md)).
 
 Concurrent downloaders that target the same output file (for example two

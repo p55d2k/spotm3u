@@ -281,6 +281,46 @@ def test_save_m3u_uses_a_unique_name_when_collisions_exist(tmp_path, monkeypatch
     assert result["path"] == str(downloads / "Hits (2).m3u")
 
 
+def test_save_m3u_asks_for_confirmation_when_files_are_missing(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    controls, _window, _app, job = _controls_client(tmp_path)
+    job.m3u_path.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
+
+    result = controls.save_m3u("job", "0")
+
+    assert result["confirm_required"] is True
+    assert result["missing"] == 1
+    assert result["total"] == 1
+    assert result["names"] == ["Artist - Song.mp3"]
+    assert not downloads.exists()
+
+
+def test_save_m3u_saves_confirmed_playlists_with_missing_files(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    controls, _window, _app, job = _controls_client(tmp_path)
+    job.m3u_path.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
+
+    result = controls.save_m3u("job", "0", True)
+
+    assert result["saved"] is True
+    assert (downloads / "Hits.m3u").is_file()
+
+
+def test_save_m3u_needs_no_confirmation_when_every_file_is_present(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    controls, _window, _app, job = _controls_client(tmp_path)
+    (tmp_path / "Artist - Song.mp3").write_bytes(b"audio")
+    job.m3u_path.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
+
+    result = controls.save_m3u("job", "0")
+
+    assert result["saved"] is True
+    assert "confirm_required" not in result
+
+
 def test_save_m3u_reports_jobs_that_are_not_ready(tmp_path) -> None:
     controls, _window, _app, _job = _controls_client(tmp_path)
 

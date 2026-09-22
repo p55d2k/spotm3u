@@ -158,6 +158,22 @@ When processing completes, offer a `Save playlist (M3U)` link to
 `GET /processing/<job_id>/<playlist_id>/playlist.m3u`, which downloads the
 generated playlist as an attachment.
 
+Before serving, the route re-reads the playlist and checks that every file it
+references still exists, resolving relative entries against the playlist's own
+directory. A playlist whose audio was deleted by hand is **not** served
+silently: the route answers
+`409` with a warning page naming the missing files and offering **Download
+missing tracks again** (back to the result page, where retry re-downloads them)
+or **Download playlist anyway** (`?confirm=1`, which serves the file as-is).
+Nothing is ever rewritten by this check - a playlist that is complete is served
+exactly as before, and an unreadable playlist is treated as complete so the
+check can never block a download.
+
+In the desktop shell the warning goes through the `WindowControls` `save_m3u`
+bridge instead: a save with missing files returns `confirm_required` with the
+missing count and names, and the page shows a toast whose **Download anyway**
+action repeats the save with `confirm=True`.
+
 ## In-App Update Notice
 
 Every page runs `GET /update/check`, which asks GitHub for the latest

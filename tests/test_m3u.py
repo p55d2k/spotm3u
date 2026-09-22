@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from spotm3u.m3u import m3u_text, write_m3u
+from spotm3u.m3u import check_playlist, m3u_entries, m3u_text, write_m3u
 from spotm3u.models import ResolvedTrack, Track
 from spotm3u.resolution import ResolutionReport, TrackResolution
 
@@ -128,3 +128,84 @@ def test_no_source_urls_embedded(tmp_path: Path) -> None:
 
     assert "https://example.com/source" not in text
     assert str(file_a) in text
+
+
+def test_check_playlist_reports_files_missing_from_disk(tmp_path: Path) -> None:
+    present = tmp_path / "present.mp3"
+    present.write_bytes(b"audio")
+    playlist = tmp_path / "playlist.m3u"
+    playlist.write_text(
+        "\n".join(["#EXTM3U", str(present), str(tmp_path / "gone.mp3"), ""]),
+        encoding="utf-8",
+    )
+
+    check = check_playlist(playlist)
+
+    assert check.total == 2
+    assert check.complete is False
+    assert check.missing_count == 1
+    assert check.missing == (tmp_path / "gone.mp3",)
+    assert check.missing_names() == ("gone.mp3",)
+
+
+def test_check_playlist_resolves_relative_entries_against_the_playlist(tmp_path: Path) -> None:
+    downloads = tmp_path / "SpotM3U-downloads"
+    downloads.mkdir()
+    audio = downloads / "Artist - Song.mp3"
+    audio.write_bytes(b"audio")
+    playlist = downloads / "playlist.m3u"
+    playlist.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
+
+    assert check_playlist(playlist).complete is True
+
+    audio.unlink()
+
+    assert check_playlist(playlist).missing == (audio,)
+
+
+def test_check_playlist_ignores_comments_and_blank_lines(tmp_path: Path) -> None:
+    playlist = tmp_path / "playlist.m3u"
+    playlist.write_text("#EXTM3U\n\n# a comment\n", encoding="utf-8")
+
+    check = check_playlist(playlist)
+
+    assert m3u_entries(playlist) == ()
+    assert check.total == 0
+    assert check.complete is True
+
+
+def test_check_playlist_treats_an_unreadable_playlist_as_empty(tmp_path: Path) -> None:
+    check = check_playlist(tmp_path / "does-not-exist.m3u")
+
+    assert check.entries == ()
+    assert check.complete is True
+
+
+def test_missing_names_are_unique_and_capped(tmp_path: Path) -> None:
+    playlist = tmp_path / "playlist.m3u"
+    entries = [f"gone-{index}.mp3" for index in range(15)] + ["gone-0.mp3"]
+    playlist.write_text("#EXTM3U\n" + "\n".join(entries) + "\n", encoding="utf-8")
+
+    check = check_playlist(playlist)
+
+    assert check.missing_count == 16  # duplicates count per entry
+    names = check.missing_names()
+    assert len(names) == 10
+    assert names[0] == "gone-0.mp3"
+    assert len(set(names)) == 10
+
+
+def test_written_playlist_is_checked_by_its_own_output(tmp_path: Path) -> None:
+    audio = tmp_path / "SpotM3U-downloads" / "Artist - Song.mp3"
+    audio.parent.mkdir()
+    audio.write_bytes(b"audio")
+    playlist = audio.parent / "playlist.m3u"
+    write_m3u(playlist, [_resolved(audio)], relative_to=audio.parent)
+
+    assert check_playlist(playlist).complete is True
+
+    audio.unlink()
+    missing = check_playlist(playlist)
+
+    assert missing.missing_count == 1
+    assert missing.missing_names() == ("Artist - Song.mp3",)

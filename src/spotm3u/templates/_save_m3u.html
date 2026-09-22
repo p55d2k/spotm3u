@@ -20,6 +20,38 @@
       showToast();
     }
 
+    function showMessageWithAction(message, actionButton, hideAfter) {
+      toast.textContent = "";
+      const text = document.createElement("span");
+      text.textContent = message;
+      toast.appendChild(text);
+      toast.appendChild(actionButton);
+      actionButton.style.marginLeft = "auto";
+      showToast(hideAfter);
+    }
+
+    // Warn before writing a playlist whose audio was deleted by hand: an
+    // action button saves it anyway, so the warning is never a dead end.
+    function showConfirmRequired(result, retryLink) {
+      const count = Number(result.missing) || 0;
+      const total = Number(result.total) || 0;
+      const names = Array.isArray(result.names) ? result.names : [];
+      const message =
+        count +
+        " of " +
+        total +
+        " tracks in this playlist reference files that are missing from the download folder" +
+        (names.length ? ": " + names.join(", ") : ".") +
+        " Download anyway to get a playlist that skips them.";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "toast-action";
+      button.textContent = "Download anyway";
+      button.addEventListener("click", () => save(retryLink, true));
+      showMessageWithAction(message, button, 12000);
+    }
+
     function showSaved(filename, actionButton) {
       toast.textContent = "";
 
@@ -46,19 +78,19 @@
       showToast();
     }
 
-    function showToast() {
+    function showToast(hideAfter = 5000) {
       toast.hidden = false;
       window.clearTimeout(hideTimer);
       window.requestAnimationFrame(() => toast.classList.add("is-visible"));
       hideTimer = window.setTimeout(() => {
         toast.classList.remove("is-visible");
         toast.hidden = true;
-      }, 5000);
+      }, hideAfter);
     }
 
     // Resolve the bridge at click time: pywebview injects window.pywebview only
     // after the page has finished loading, so reading it up front is wrong.
-    async function save(link) {
+    async function save(link, confirm) {
       const api = window.pywebview && window.pywebview.api;
       if (!api || typeof api.save_m3u !== "function") {
         window.location.href = link.href;
@@ -66,13 +98,23 @@
       }
       let result;
       try {
-        result = await api.save_m3u(link.dataset.jobId, link.dataset.playlistId);
+        result = await api.save_m3u(
+          link.dataset.jobId,
+          link.dataset.playlistId,
+          Boolean(confirm)
+        );
       } catch (error) {
         showMessage("The playlist could not be saved: " + error.message);
         return;
       }
       if (!result || result.error) {
         showMessage(result ? result.error : "The playlist could not be saved.");
+        return;
+      }
+      // The save was refused because the playlist references missing files;
+      // warn and offer to save it anyway (the same click, confirmed).
+      if (result.confirm_required) {
+        showConfirmRequired(result, link);
         return;
       }
 
@@ -93,7 +135,7 @@
     for (const link of links) {
       link.addEventListener("click", (event) => {
         event.preventDefault();
-        save(link);
+        save(link, false);
       });
     }
   })();

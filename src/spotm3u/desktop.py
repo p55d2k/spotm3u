@@ -46,6 +46,7 @@ from .launcher import (
     wait_for_server,
 )
 from .log import PACKAGE_LOGGER
+from .m3u import check_playlist
 from .normalization import sanitize_filename_component
 from .runtime import bundle_roots, is_frozen
 
@@ -199,7 +200,7 @@ class WindowControls:
         window.destroy()
         window.events.closed.wait(timeout=_CLOSE_TIMEOUT_SECONDS)
 
-    def save_m3u(self, job_id: str, playlist_id: str) -> dict[str, str | bool | Path]:
+    def save_m3u(self, job_id: str, playlist_id: str, confirm: bool = False) -> dict[str, object]:
         """Copy a generated playlist straight into the Downloads folder.
 
         pywebview cannot deliver Flask's ``Content-Disposition: attachment``
@@ -209,6 +210,11 @@ class WindowControls:
         playlist-derived name under ``_downloads_root()``; no save panel is
         opened, which keeps the action a single click. The returned ``path``
         lets the page show a toast with an "Open folder" action.
+
+        A playlist whose referenced files were deleted by hand is reported
+        back with ``confirm_required`` instead of being saved, so the page can
+        warn before writing a playlist that would skip those tracks. Passing
+        ``confirm`` (the "Download anyway" action) saves it regardless.
         """
         job = self._find_job(job_id, playlist_id)
         if job is None or job.m3u_path is None:
@@ -216,6 +222,15 @@ class WindowControls:
         source = Path(job.m3u_path)
         if not source.is_file():
             return {"error": "That playlist is not ready to download."}
+
+        check = check_playlist(source)
+        if not check.complete and not confirm:
+            return {
+                "confirm_required": True,
+                "missing": check.missing_count,
+                "total": check.total,
+                "names": list(check.missing_names()),
+            }
 
         destination = _unique_download_target(job)
         try:

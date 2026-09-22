@@ -512,6 +512,54 @@ def test_download_m3u_route_returns_playlist(tmp_path, monkeypatch) -> None:
     assert response.mimetype == "application/octet-stream"
 
 
+def test_download_m3u_route_warns_when_referenced_files_are_gone(tmp_path, monkeypatch) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    audio = music / "Artist - First.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+    # The user deletes the downloaded audio by hand, so the written playlist now
+    # points at files that are not on disk any more.
+    audio.unlink()
+
+    warning = client.get(f"/processing/{job_id}/1/playlist.m3u")
+
+    assert warning.status_code == 409
+    page = warning.get_data(as_text=True)
+    assert "no longer in the download folder" in page
+    assert "Artist - First.mp3" in page
+    assert "/playlist.m3u?confirm=1" in page
+
+    confirmed = client.get(f"/processing/{job_id}/1/playlist.m3u?confirm=1")
+
+    assert confirmed.status_code == 200
+    assert b"#EXTM3U" in confirmed.data
+
+
+def test_download_m3u_route_serves_a_playlist_whose_files_are_all_present(
+    tmp_path, monkeypatch
+) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    (music / "Artist - First.mp3").write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
+
+    response = client.get(f"/processing/{job_id}/1/playlist.m3u")
+
+    assert response.status_code == 200
+    assert b"#EXTM3U" in response.data
+
+
 def test_download_m3u_route_requires_completed_job(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()

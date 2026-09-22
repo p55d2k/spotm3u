@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% include "_theme_init.html" %}
+    <title>Playlist files are missing - Spotify to M3U Converter</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    {% include "_header.html" %}
+    <main class="card">
+      <p class="eyebrow">Check before downloading</p>
+      <h1>{{ playlist_name }}</h1>
+      <p class="error" role="alert">
+        {{ check.missing_count }} of {{ check.total }} track{{ '' if check.total == 1 else 's' }}
+        in this playlist reference file{{ '' if check.missing_count == 1 else 's' }} that
+        {{ 'is' if check.missing_count == 1 else 'are' }} no longer in the download folder.
+      </p>
+
+      <section aria-labelledby="missing-heading">
+        <h2 id="missing-heading">Missing files</h2>
+        <ul class="track-list">
+          {% for name in missing_names %}
+          <li class="track-missing"><span class="track-title">{{ name }}</span></li>
+          {% endfor %}
+        </ul>
+        {% if check.missing_count > missing_names | length %}
+        <p class="field-help">
+          and {{ check.missing_count - missing_names | length }} more.
+        </p>
+        {% endif %}
+      </section>
+
+      <section aria-labelledby="choice-heading">
+        <h2 id="choice-heading">What would you like to do?</h2>
+        <p class="field-help">
+          Downloading anyway gives you a playlist that will skip these tracks.
+          Downloading them again is the way to get the full playlist back.
+        </p>
+        <div class="result-actions">
+          <a class="button" href="{{ result_url }}">Download missing tracks again</a>
+          <a class="button button-secondary" href="{{ confirm_url }}">Download playlist anyway</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

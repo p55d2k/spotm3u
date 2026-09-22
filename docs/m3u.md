@@ -62,6 +62,18 @@ must not silently appear as successful entries.
 
 The processing result should report them separately.
 
+## Verification Before Serving
+
+The written playlist is checked when it is handed out, not when it is written:
+the application reads the file back, resolves each entry (relative entries
+against the playlist's own directory) and reports the ones that are no longer on
+disk. The user is warned and can download anyway or re-download the missing
+tracks, so a playlist never silently reaches a media player with entries that
+resolve to nothing.
+
+This check belongs to the serving step. The writer still only writes, and it is
+never asked to rewrite a playlist after the fact.
+
 ## Separation of Concerns
 
 The M3U writer must not:
