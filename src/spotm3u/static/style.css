@@ -495,6 +495,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 }
 
 .batch-playlists { display: grid; gap: 0.6rem; margin-top: 0.9rem; }
+
+main.card > .batch-playlist { margin-top: 1.25rem; }
 .batch-playlist { border: 1px solid var(--line); border-radius: 14px; padding: 1rem; }
 .batch-playlist.active { border-color: var(--blue); box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }
 .batch-playlist h2 { margin: 0; }

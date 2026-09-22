@@ -159,6 +159,10 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
     assert client.get(f"/processing/{job_id}/batch/result").status_code == 200
     assert (music / "SpotM3U-downloads" / "playlist-0.m3u").is_file()
     assert (music / "SpotM3U-downloads" / "playlist-1.m3u").is_file()
+    result = client.get(f"/processing/{job_id}/0/result")
+    assert result.status_code == 200
+    assert b"Local matches" in result.data
+    assert f"/processing/{job_id}/batch/result".encode() in result.data
 
 
 def test_batch_processing_page_renders_full_start_state(tmp_path) -> None:

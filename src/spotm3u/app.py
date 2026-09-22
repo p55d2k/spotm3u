@@ -430,6 +430,7 @@ def create_app(config: dict | None = None) -> Flask:
             job_id=job_id,
             playlist_id=playlist_id,
             state=state,
+            batch_back=bool(_selected_playlist_ids(job_directory)),
             media_player_available=media_player_available(),
         )
 
@@ -463,6 +464,7 @@ def create_app(config: dict | None = None) -> Flask:
             return jsonify(
                 {"error": "Add to Media Player is only available on macOS and Windows."}
             ), 404
+        job_directory = _current_job_directory(app, job_id)
         job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
         if job is None or job.playlist_id != playlist_id or job.status != "completed":
             return jsonify({"error": "That playlist is not ready to import."}), 404
@@ -484,6 +486,7 @@ def create_app(config: dict | None = None) -> Flask:
                 job_id=job_id,
                 playlist_id=playlist_id,
                 state={**state, "media_player_error": str(error)},
+                batch_back=bool(_selected_playlist_ids(job_directory)),
                 media_player_available=True,
             ), 502
         return render_template(
@@ -504,6 +507,7 @@ def create_app(config: dict | None = None) -> Flask:
                     "partial": bool(result.failed or unresolved),
                 },
             },
+            batch_back=bool(_selected_playlist_ids(job_directory)),
             media_player_available=True,
         )
 
@@ -574,7 +578,9 @@ def _selection_matches(job_directory: Path, playlist_id: str) -> bool:
         state = json.loads((job_directory / "state.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    return state.get("selected_playlist_id") == playlist_id
+    if state.get("selected_playlist_id") == playlist_id:
+        return True
+    return playlist_id in state.get("selected_playlist_ids", [])
 
 
 def _selected_playlist_ids(job_directory: Path | None) -> list[str]:

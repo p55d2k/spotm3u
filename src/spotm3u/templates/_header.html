@@ -42,9 +42,9 @@
 <div class="context-nav">
   <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">← Back to playlist selection</a>
 </div>
-{% elif endpoint in ("processing_result", "batch_processing_result") %}
+{% elif endpoint == "processing_result" and batch_back %}
 <div class="context-nav">
-  <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">← Back to playlist selection</a>
+  <a class="back-link" href="{{ url_for('batch_processing_result', job_id=job_id) }}">← Back to all playlist results</a>
 </div>
 {% endif %}
 <script>
