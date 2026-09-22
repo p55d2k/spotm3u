@@ -107,8 +107,9 @@ bundle's `ffmpeg/` directory. The resulting one-folder application is
 `Contents/MacOS/` and whose runtime files live under `Contents/Frameworks`.
 
 The spec collects package templates/static assets, yt-dlp dynamic modules,
-bgutil plugin modules, zhconv data, and the pywebview desktop shell and its
-platform backends. `packaging/run_app.py` is the
+bgutil plugin modules, zhconv data, the syncedlyrics lyrics providers (pulled in
+through `spotm3u.lyrics`), and the pywebview desktop shell and its platform
+backends. `packaging/run_app.py` is the
 PyInstaller entry point; do not replace it with a bare package module. On
 macOS a `BUNDLE` target wraps the one-folder output as `SpotM3U.app`; the
 PyInstaller bootloader uses the `.app/Contents/MacOS` location to find

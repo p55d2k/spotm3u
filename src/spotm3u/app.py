@@ -16,6 +16,7 @@ from .exportify import ExportifyParseError, parse_exportify
 from .ffmpeg import locate_ffmpeg_location
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
+from .lyrics import set_lyrics_enabled
 from .media_player import MediaPlayerError, add_to_media_player, media_player_available
 from .metadata import cached_artwork_path, set_artist_artwork_enabled, set_artwork_verify_local
 from .models import Playlist
@@ -55,6 +56,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     set_artwork_verify_local(bool(app.config.get("ARTWORK_VERIFY_LOCAL", True)))
     set_artist_artwork_enabled(bool(app.config.get("ARTWORK_ARTIST_ARTWORK", True)))
+    set_lyrics_enabled(bool(app.config.get("LYRICS_ENABLED", True)))
 
     report = describe_youtube_setup(
         cookies_from_browser=app.config.get("YTDLP_COOKIES_FROM_BROWSER"),

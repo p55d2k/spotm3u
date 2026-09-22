@@ -47,9 +47,9 @@ For every Track:
 8. Validate the downloaded audio.
 9. If validation fails, try another plausible candidate when available.
 10. Store the successful local file.
-11. Enrich the resolved MP3 with album artwork, artist artwork and standard ID3
-    metadata when possible.
-12. Keep the track in a resolved state even if artwork is unavailable.
+11. Enrich the resolved MP3 with album artwork, artist artwork, lyrics and
+    standard ID3 metadata when possible.
+12. Keep the track in a resolved state even if artwork or lyrics are unavailable.
 13. Pass the resolved file to the M3U writer.
 
 ## Important Matching Principle
@@ -78,10 +78,15 @@ Do not duplicate its functionality inside the online resolver.
 Searches for candidate recordings using Track metadata.
 
 Search queries are a small set of focused artist-aware queries (for example
-`{artist} {title}`, `{artist} {title} lyrics`, `{artist} {title} official
-audio`, `{title} {artist}`). Search queries always include the requested
-artist alongside the song title, so common titles such as `演员` still surface
-the correct artist's official upload instead of only other-artist covers.
+`{artist} {title}`, `{artist} {title} official audio`, `{title} {artist}`).
+Search queries always include the requested artist alongside the song title, so
+common titles such as `演员` still surface the correct artist's official upload
+instead of only other-artist covers.
+
+Lyric-video uploads are no longer searched for: lyrics metadata comes from a
+dedicated lyrics library (see "Lyrics Enrichment" below), and a lyric video is
+a low-signal audio source. Lyric-titled uploads that still surface from the
+queries above remain recognized and ranked below pure audio sources.
 
 The searcher runs **every** query and aggregates all candidates (deduplicated
 by URL) before any ranking or download, so a candidate that appears only in a
@@ -118,7 +123,9 @@ Source-quality preference (only among already-correct recordings):
 7. covers / remixes (only when explicitly requested)
 
 An official music video is a valid fallback but never outranks an
-audio/lyrics source for the same recording.
+audio/lyrics source for the same recording. Lyric videos are not searched for,
+but when one surfaces from another query it still outranks a music video and
+loses to a pure audio upload.
 
 Each candidate decision is logged with its score, the identity-evidence
 breakdown, and the source-quality tier.
@@ -180,6 +187,23 @@ Candidate A
 Candidate B
 → download
 → valid
+
+## Lyrics Enrichment
+
+Lyrics retrieval is isolated in `src/spotm3u/lyrics.py` and delegates the
+search to the `syncedlyrics` library, which queries public lyrics providers
+itself. SpotM3U never searches the web for lyrics, scrapes lyrics sites, or
+hardcodes provider URLs and parsers.
+
+Plain lyrics found for a track are written into the standard lyrics field
+(ID3 `USLT`) alongside the existing tags, preserving all other metadata and
+embedded artwork. Retrieval is optional enrichment: a missing match, a provider
+or network failure, an unusable result, or an audio format that cannot hold the
+field leaves the track resolved and the lyrics field empty. Failures are logged
+at debug level so normal downloads stay quiet.
+
+`[lyrics] enabled` in `config.toml` (default true) turns retrieval off. Fast
+mode skips metadata enrichment entirely, so it never requests lyrics.
 
 ## M3U Writer
 

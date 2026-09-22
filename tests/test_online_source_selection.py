@@ -133,10 +133,10 @@ def test_results_in_second_or_third_query_are_discovered(monkeypatch: pytest.Mon
     install(
         {
             "薛之谦 演员": [],
-            "薛之谦 演员 lyric": [
+            "薛之谦 演员 official audio": [
                 {
                     "title": "演员",
-                    "webpage_url": "https://example.com/lyric-result",
+                    "webpage_url": "https://example.com/later-query-result",
                     "uploader": "薛之谦",
                     "duration": 250,
                 }
@@ -146,8 +146,8 @@ def test_results_in_second_or_third_query_are_discovered(monkeypatch: pytest.Mon
 
     candidates = OnlineSourceSearcher(max_results=5).search(ACTOR)
 
-    assert any(c.source_query == "薛之谦 演员 lyric" for c in candidates)
-    assert any(c.url == "https://example.com/lyric-result" for c in candidates)
+    assert any(c.source_query == "薛之谦 演员 official audio" for c in candidates)
+    assert any(c.url == "https://example.com/later-query-result" for c in candidates)
 
 
 def test_duplicate_across_queries_is_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:

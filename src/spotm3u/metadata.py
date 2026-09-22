@@ -18,6 +18,7 @@ from typing import Any
 import mutagen.id3 as mutagen_id3
 import requests
 
+from .lyrics import fetch_lyrics, lyrics_enabled
 from .models import Track
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ TPOS = mutagen_id3.TPOS
 TDRC = mutagen_id3.TDRC
 TCON = mutagen_id3.TCON
 COMM = mutagen_id3.COMM
+USLT = mutagen_id3.USLT
 APIC = mutagen_id3.APIC
 
 _ORIGINAL_ID3 = ID3
@@ -46,7 +48,11 @@ _ORIGINAL_TPOS = TPOS
 _ORIGINAL_TDRC = TDRC
 _ORIGINAL_TCON = TCON
 _ORIGINAL_COMM = COMM
+_ORIGINAL_USLT = USLT
 _ORIGINAL_APIC = APIC
+
+# Standard ID3 frame holding a track's plain (unsynchronised) lyrics.
+_USLT_FRAME = "USLT"
 
 
 def _id3_symbol(name: str):
@@ -1088,6 +1094,50 @@ def _embed_artwork(
         return False
 
 
+def _embed_lyrics(path: Path, lyrics: str) -> bool:
+    """Write plain lyrics into the file's standard lyrics frame.
+
+    Only the USLT frame is replaced, so every other field (including embedded
+    album and artist artwork) is preserved.
+    """
+    ID3_cls = _id3_symbol("ID3")
+    ID3NoHeaderError_cls = _id3_symbol("ID3NoHeaderError")
+    USLT_cls = _id3_symbol("USLT")
+
+    try:
+        tags = ID3_cls(str(path))
+    except ID3NoHeaderError_cls:
+        tags = ID3_cls()
+
+    if hasattr(tags, "delall"):
+        tags.delall(_USLT_FRAME)
+    tags[_USLT_FRAME] = USLT_cls(encoding=3, lang="eng", desc="", text=lyrics)
+
+    try:
+        tags.save(str(path), v2_version=3)
+        return True
+    except (OSError, ValueError) as exc:
+        logger.debug("Failed to embed lyrics path=%s: %s", path, exc)
+        return False
+
+
+def _embed_track_lyrics(path: Path, track: Track) -> bool:
+    """Retrieve and embed a track's lyrics, never failing the track.
+
+    Lyrics are optional enrichment: retrieval, an unsupported audio format, or
+    a metadata write problem are all contained here and reported through the
+    return value.
+    """
+    try:
+        lyrics = fetch_lyrics(track)
+        if not lyrics:
+            return False
+        return _embed_lyrics(path, lyrics)
+    except Exception as exc:  # pragma: no cover - defensive behavior
+        logger.debug("Lyrics enrichment failed path=%s: %s", path, exc)
+        return False
+
+
 def _embed_artist_artwork(
     audio_path: Path,
     download_dir: Path,
@@ -1202,6 +1252,11 @@ def enrich_metadata(
         artist_artwork_embedded, artist_artwork_source = _embed_artist_artwork(
             audio_path, download_path, track.artists[0], errors
         )
+
+    # Lyrics are skipped entirely in fast mode (``set_lyrics_enabled``), which
+    # avoids the lyrics provider requests as well as the metadata write.
+    if lyrics_enabled() and track.title and _embed_track_lyrics(audio_path, track):
+        fields_written.append(_USLT_FRAME)
 
     return MetadataResult(
         path=audio_path,

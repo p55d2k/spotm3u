@@ -91,12 +91,16 @@ Search queries are a small, configurable set, always paired as
 `{artist} {title}` with a few focused audio hints:
 
 - `{artist} {title}`
-- `{artist} {title} lyrics`
-- `{artist} {title} lyric`
 - `{artist} {title} official audio`
 - `{artist} {title} audio`
 - `{artist} {title} official`
 - `{title} {artist}`
+
+Lyric-video queries are deliberately not part of this set: a lyric video is a
+low-signal audio source, and lyrics metadata is retrieved by a dedicated lyrics
+library rather than searched for online. Lyric-titled uploads that still appear
+in the results of the queries above remain recognized and ranked below pure
+audio sources.
 
 Title-only queries are used only as a fallback when artist information is
 genuinely absent, because a title-only search tends to return same-title
@@ -108,7 +112,7 @@ Recording identity includes explicit version attributes. Instrumental targets
 must prefer instrumental candidates; an explicitly vocal candidate is strong
 contradictory evidence and is rejected. Missing version metadata lowers
 confidence but does not prove a mismatch. Instrumental searches include
-instrumental variants and do not blindly prioritize lyric queries.
+instrumental variants.
 
 Preference order for the **same correct recording** (best first):
 

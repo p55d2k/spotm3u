@@ -51,6 +51,8 @@ class Config:
     # [artwork]
     artwork_verify_local: bool = True
     artwork_artist_artwork: bool = True
+    # [lyrics]
+    lyrics_enabled: bool = True
     # [download]
     audio_quality: str = "192"
     max_download_workers: int = 2
@@ -83,6 +85,7 @@ class Config:
             "SEARCH_SOCKET_TIMEOUT": self.search_socket_timeout,
             "ARTWORK_VERIFY_LOCAL": self.artwork_verify_local,
             "ARTWORK_ARTIST_ARTWORK": self.artwork_artist_artwork,
+            "LYRICS_ENABLED": self.lyrics_enabled,
             "DOWNLOAD_QUALITY": self.audio_quality,
             "DOWNLOAD_MAX_WORKERS": self.max_download_workers,
             "DOWNLOAD_TIMEOUT": self.download_timeout,
@@ -125,6 +128,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "search.socket_timeout": "search_socket_timeout",
     "artwork.verify_local": "artwork_verify_local",
     "artwork.artist_artwork": "artwork_artist_artwork",
+    "lyrics.enabled": "lyrics_enabled",
     "download.audio_quality": "audio_quality",
     "download.workers": "max_download_workers",
     "download.timeout": "download_timeout",

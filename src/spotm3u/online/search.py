@@ -30,11 +30,15 @@ DEFAULT_SEARCH_WORKERS = 4
 # A small, configurable set of focused search queries. The artist is always
 # included because a title-only search tends to return same-title uploads by
 # other artists (e.g. ``演员`` by Hebe Tien instead of by Joker Xue).
+#
+# Lyric-video queries are deliberately absent: a lyric video is a low-signal
+# audio source, and lyrics metadata now comes from a dedicated lyrics library
+# instead of being searched for online. Lyric-titled uploads that still surface
+# from the artist-aware queries are recognized and ranked below pure audio
+# sources by the ranking layer.
 SEARCH_QUERY_TEMPLATES = (
     "{artist} {title}",
     "{artist} {title} instrumental",
-    "{artist} {title} lyrics",
-    "{artist} {title} lyric",
     "{artist} {title} official audio",
     "{artist} {title} audio",
     "{artist} {title} official",
@@ -44,8 +48,6 @@ SEARCH_QUERY_TEMPLATES = (
 # Title-only fallbacks used only when artist information is genuinely absent.
 TITLE_ONLY_QUERY_TEMPLATES = (
     "{title}",
-    "{title} lyrics",
-    "{title} lyric",
     "{title} official audio",
     "{title} audio",
     "{title} official",
@@ -228,11 +230,6 @@ def build_search_queries(track: Track) -> tuple[str, ...]:
             templates = tuple(template for template in templates if "instrumental" not in template)
         else:
             title = _strip_instrumental_marker(title)
-            templates = tuple(
-                template
-                for template in templates
-                if "lyrics" not in template and "lyric" not in template
-            )
         artist_text = " ".join(artists)
     else:
         templates = TITLE_ONLY_QUERY_TEMPLATES

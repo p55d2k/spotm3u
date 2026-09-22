@@ -110,6 +110,28 @@ evidence of actual spoken dialogue; clear speech remains rejectable. A
 downloaded vocal version of an explicitly instrumental target fails recording
 validation and triggers candidate retry.
 
+## Lyrics
+
+After a track resolves, its lyrics are written into the file's standard lyrics
+field (ID3 `USLT`) as part of metadata enrichment.
+
+Lyrics are retrieved through the `syncedlyrics` library, which searches public
+lyrics providers itself. SpotM3U performs no web search of its own, scrapes no
+lyrics sites, and hardcodes no provider URLs or parsers. The library is asked
+for plain (unsynchronised) lyrics, which is what the standard lyrics field
+holds.
+
+Lyrics are optional enrichment and never affect resolution:
+
+- a track with no lyrics keeps an empty lyrics field
+- an unavailable provider or a network failure is logged at debug level and ignored
+- a malformed or empty library result is discarded
+- an audio file that cannot hold the field is left untouched
+- existing metadata and embedded artwork are preserved
+
+Retrieval is enabled by `[lyrics] enabled` in `config.toml` (default true).
+Fast mode skips metadata enrichment altogether, so it never requests lyrics.
+
 ## Cache
 
 Successful downloads may be cached and reused when their association with the requested recording is sufficiently strong.

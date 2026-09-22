@@ -22,7 +22,9 @@ def test_build_search_queries_include_title_artist_and_audio_hints() -> None:
     assert "artist two" in queries[0].lower()
     assert "song name" in queries[0].lower()
     assert any("official audio" in query.lower() for query in queries)
-    assert any("lyrics" in query.lower() for query in queries)
+    # Lyric-video uploads are no longer searched for; lyrics metadata comes from
+    # the dedicated lyrics library instead.
+    assert not any("lyric" in query.lower() for query in queries)
 
 
 def test_build_search_queries_keep_collaborating_artists_separate() -> None:
@@ -80,7 +82,8 @@ def test_build_search_queries_handle_punctuation_features_and_version() -> None:
     queries = build_search_queries(track)
 
     assert queries[0] == "artist one guest artist can t stop live from tokyo"
-    assert any("lyrics" in query for query in queries)
+    assert any("official audio" in query for query in queries)
+    assert not any("lyric" in query for query in queries)
 
 
 def test_coerce_results_skips_malformed_entries() -> None:

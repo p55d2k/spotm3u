@@ -39,6 +39,7 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.m3u_relative is False
     assert config.artwork_verify_local is True
     assert config.artwork_artist_artwork is True
+    assert config.lyrics_enabled is True
 
 
 def test_load_config_parses_known_values(tmp_path) -> None:
@@ -77,6 +78,9 @@ def test_load_config_parses_known_values(tmp_path) -> None:
         [artwork]
         verify_local = false
         artist_artwork = false
+
+        [lyrics]
+        enabled = false
         """,
     )
 
@@ -103,6 +107,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.m3u_relative is True
     assert config.artwork_verify_local is False
     assert config.artwork_artist_artwork is False
+    assert config.lyrics_enabled is False
 
 
 def test_unknown_keys_are_ignored(tmp_path) -> None:
@@ -259,3 +264,19 @@ def test_create_app_wires_artist_artwork(tmp_path, monkeypatch) -> None:
 
     create_app()
     assert metadata._ARTIST_ARTWORK_ENABLED is True
+
+
+def test_create_app_wires_lyrics_enabled(tmp_path, monkeypatch) -> None:
+    from spotm3u import lyrics
+
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app()
+    assert lyrics.lyrics_enabled() is True
+
+    create_app({"LYRICS_ENABLED": False})
+    assert lyrics.lyrics_enabled() is False
+
+    create_app()
+    assert lyrics.lyrics_enabled() is True

@@ -21,6 +21,10 @@ dependencies = [
     "pywebview>=5; sys_platform != 'linux'",
     "pywebview[gtk]>=5; sys_platform == 'linux'",
     "requests>=2.32",
+    # "Add lyrics" enrichment: fetches plain or time-synced lyrics for a track
+    # from public lyrics providers through one library API instead of spotm3u
+    # scraping or searching for lyrics itself.
+    "syncedlyrics>=1.0",
     # YouTube error messages and PO-token handling are version-sensitive;
     # spotm3u's YouTube classification and diagnostics are verified against
     # this release line rather than an older PO-token-era minimum.
