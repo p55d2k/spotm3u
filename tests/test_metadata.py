@@ -711,5 +711,192 @@ def test_enrich_metadata_error_handling(tmp_path, monkeypatch):
     assert "metadata write failed" in result.errors[0]
 
 
+def _write_embedded_cover(
+    path: Path,
+    data: bytes,
+    mime: str = "image/jpeg",
+    ptype=3,
+    append: bool = False,
+    desc: str = "Cover",
+) -> None:
+    """Write an APIC frame into a fresh media file using mutagen."""
+    import mutagen.id3 as mutagen_id3
+
+    if append and path.is_file():
+        tags = mutagen_id3.ID3(str(path))
+    else:
+        tags = mutagen_id3.ID3()
+    tags.add(mutagen_id3.APIC(encoding=3, mime=mime, type=ptype, desc=desc, data=data))
+    tags.save(path, v2_version=3)
+
+
+def test_verified_release_cover_overrides_local_embedded_art(tmp_path, monkeypatch):
+    """A local file's embedded cover must not win over a verified release cover."""
+    from spotm3u import metadata
+
+    _install_fake_requests(monkeypatch)
+    mp3 = tmp_path / "local.mp3"
+    _write_embedded_cover(mp3, b"wrong-local-cover")
+
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating", mp3)
+
+    assert data == b"fake-image-data"
+    assert source == "coverartarchive"
+    key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
+    cache = tmp_path / "artwork_cache"
+    assert (cache / f"{key}.jpg").read_bytes() == b"fake-image-data"
+    assert metadata._read_artwork_source(tmp_path, key) == "coverartarchive"
+
+
+def test_local_embedded_art_is_fallback_when_release_lookup_fails(tmp_path, monkeypatch):
+    """Offline, the best local evidence is still embedded instead of leaving the track artless."""
+    from spotm3u import metadata
+
+    def unreachable(*_args, **_kwargs):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+    mp3 = tmp_path / "local.mp3"
+    _write_embedded_cover(mp3, b"local-cover")
+
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating", mp3)
+
+    assert data == b"local-cover"
+    assert source == "embedded:image/jpeg"
+    key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
+    assert metadata._read_artwork_source(tmp_path, key) == "embedded:image/jpeg"
+
+
+def test_legacy_unmarked_cache_entry_is_reverified(tmp_path, monkeypatch):
+    """Old caches written before source tracking may hold a wrong cover; re-verify them."""
+    from spotm3u import metadata
+
+    cache = tmp_path / "artwork_cache"
+    cache.mkdir()
+    key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
+    (cache / f"{key}.jpg").write_bytes(b"stale-wrong-cover")
+    _install_fake_requests(monkeypatch)
+
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
+
+    assert data == b"fake-image-data"
+    assert source == "coverartarchive"
+    assert (cache / f"{key}.jpg").read_bytes() == b"fake-image-data"
+    assert metadata._read_artwork_source(tmp_path, key) == "coverartarchive"
+
+
+def test_verified_cache_entry_is_not_refetched(tmp_path, monkeypatch):
+    """A cache entry recorded from a verified lookup is authoritative and needs no network."""
+    from spotm3u import metadata
+
+    cache = tmp_path / "artwork_cache"
+    cache.mkdir()
+    key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
+    (cache / f"{key}.jpg").write_bytes(b"verified-cover")
+    (cache / f"{key}.src").write_text("itunes")
+    _install_fake_requests(monkeypatch)
+    calls: list[str] = []
+    base_get = metadata.requests.get
+
+    def counting_get(url, **kwargs):
+        calls.append(url)
+        return base_get(url, **kwargs)
+
+    monkeypatch.setattr(metadata.requests, "get", counting_get)
+
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
+
+    assert data == b"verified-cover"
+    assert source == "cache"
+    assert calls == []
+
+
+def test_embedded_artwork_rejects_ambiguous_multiple_frames(tmp_path):
+    """Multiple APIC frames with none marked as front cover must not be guessed."""
+    from spotm3u import metadata
+
+    mp3 = tmp_path / "multi.mp3"
+    _write_embedded_cover(mp3, b"back-cover", ptype=4, desc="Back")
+    _write_embedded_cover(mp3, b"artist-photo", ptype=8, append=True, desc="Artist")
+
+    assert metadata._embedded_artwork(mp3) is None
+
+
+def test_embedded_artwork_accepts_single_untyped_frame(tmp_path):
+    """A sole APIC frame is treated as the cover even when its type is unset."""
+    from spotm3u import metadata
+
+    mp3 = tmp_path / "single.mp3"
+    _write_embedded_cover(mp3, b"sole-cover", mime="image/png", ptype=0)
+
+    assert metadata._embedded_artwork(mp3) == (b"sole-cover", "image/png")
+
+
+def test_embedded_artwork_prefers_largest_front_cover(tmp_path):
+    """When several frames are front covers, the highest-resolution one wins."""
+    from spotm3u import metadata
+
+    mp3 = tmp_path / "best.mp3"
+    _write_embedded_cover(mp3, b"small", ptype=3, desc="Small")
+    _write_embedded_cover(mp3, b"large-high-res-cover", ptype=3, append=True, desc="Large")
+
+    assert metadata._embedded_artwork(mp3) == (b"large-high-res-cover", "image/jpeg")
+
+
+@pytest.fixture
+def verify_local_toggle():
+    """Run a test with the artwork verification flag, restoring the default after."""
+    from spotm3u import metadata
+
+    yield
+    metadata.set_artwork_verify_local(True)
+
+
+def test_verify_local_disabled_uses_embedded_art_without_network(tmp_path, monkeypatch):
+    """With verify_local off, a file that already has a cover does no network lookup."""
+    from spotm3u import metadata
+
+    metadata.set_artwork_verify_local(False)
+    calls: list[str] = []
+
+    def failing_get(url, **kwargs):
+        calls.append(url)
+        raise AssertionError(f"network must not be consulted: {url}")
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", failing_get)
+    mp3 = tmp_path / "local.mp3"
+    _write_embedded_cover(mp3, b"local-cover")
+
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating", mp3)
+
+    assert data == b"local-cover"
+    assert source == "embedded:image/jpeg"
+    assert calls == []
+
+
+def test_verify_local_disabled_serves_unmarked_cache_without_network(tmp_path, monkeypatch):
+    """With verify_local off, legacy unmarked cache entries are served as-is."""
+    from spotm3u import metadata
+
+    metadata.set_artwork_verify_local(False)
+    cache = tmp_path / "artwork_cache"
+    cache.mkdir()
+    key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
+    (cache / f"{key}.jpg").write_bytes(b"cached-cover")
+    calls: list[str] = []
+
+    def failing_get(url, **kwargs):
+        calls.append(url)
+        raise AssertionError(f"network must not be consulted: {url}")
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", failing_get)
+
+    data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
+
+    assert data == b"cached-cover"
+    assert source == "cache"
+    assert calls == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -4,15 +4,37 @@
 
 Cover art belongs to a **release**, so artwork is resolved album-first:
 
-1. **Artist + album / release** — the primary lookup.
-2. **Artist + song title** — used when album metadata is missing, empty, or
-   clearly unreliable, or when the album lookup produces no sufficiently
-   reliable result.
-3. **No artwork** when neither lookup yields a reliable result.
+1. **Artist + album / release** — the primary lookup, and an **authoritative
+   verified cover** whenever a reliable album value exists (quantified by
+   `_has_reliable_album`). MusicBrainz / Cover Art Archive / iTunes results are
+   only accepted when their artist + album identity strongly matches the
+   target.
+2. **Local embedded/sidecar art** — used **only as a fallback** when the album
+   lookup is impossible (no reliable album value) or fails (e.g. offline).
+   A local file's existing cover is frequently the wrong artwork for the
+   target release (mis-tagged file, compilation, previously-downloaded YouTube
+   thumbnail), so it is never trusted ahead of a verified release cover.
+3. **Artist + song title** — used when album metadata is missing, empty, or
+   clearly unreliable, or when the album and local lookups produce no result.
+4. **No artwork** when nothing is reliable.
 
 Song-title search is never the primary method while a reliable album value
 exists, because it can return alternate releases, covers, singles, live
 versions and remixes.
+
+The release-first behavior can be relaxed for speed through the optional
+`[artwork] verify_local` setting in `config.toml` (default `true`). When set
+to `false`, existing local art is trusted and used immediately, so files that
+already carry a cover perform no artwork network lookups at all — at the cost
+of possibly borrowing a wrong local cover.
+
+### Reading a local file's embedded art
+
+`_embedded_artwork` returns only an unambiguous front cover: an explicit
+type-3 (front cover) APIC frame, or the sole APIC frame in the file. When
+several frames exist and none is marked as a front cover (a back cover or
+artist photo could be picked), the file is treated as having no cover rather
+than guessing. When multiple front covers exist the largest one wins.
 
 ## External artwork sources
 
@@ -45,6 +67,13 @@ names are **never joined** into a malformed lookup string such as
   keyed by normalized artist + album (or artist + song title for the fallback).
 - The same directory is shared across runs and jobs, so tracks from the same
   release reuse one lookup.
+- Each cached image records its **source** in a sibling `*.src` marker file.
+  Entries from a verified release lookup (`coverartarchive`, `itunes`,
+  `itunes-song`) are authoritative and are served straight from cache. Entries
+  from local embedded/sidecar art (`embedded:*`, `sidecar:*`), and legacy
+  entries written before source tracking existed, may carry a wrong cover and
+  are **re-verified** against the release on a later networked run; offline they
+  remain the best-available image.
 - A bounded in-process memo plus per-identity **in-flight deduplication**
   ensures concurrent workers resolving tracks from the same album share a
   single external fetch instead of repeating it.

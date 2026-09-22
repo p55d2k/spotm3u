@@ -239,6 +239,51 @@ def _save_cached_artwork(download_dir: Path, cache_key: str, data: bytes) -> Non
                 pass
 
 
+def _artwork_source_path(cache_dir: Path, cache_key: str) -> Path:
+    return cache_dir / f"{cache_key}.src"
+
+
+def _read_artwork_source(download_dir: Path, cache_key: str) -> str | None:
+    """Read the recorded source of a cached artwork entry, or None."""
+    path = _artwork_source_path(_cache_dir(download_dir), cache_key)
+    try:
+        return path.read_text().strip() or None
+    except OSError:
+        return None
+
+
+def _write_artwork_source(download_dir: Path, cache_key: str, source: str) -> None:
+    """Record where a cached artwork entry came from.
+
+    Verified release lookups record a trusted source; local embedded/sidecar
+    art records an ``embedded:`` / ``sidecar:`` prefix so it can be re-verified
+    against the release on a later networked run instead of being trusted.
+    """
+    path = _artwork_source_path(_cache_dir(download_dir), cache_key)
+    try:
+        path.write_text(source)
+    except OSError:
+        pass
+
+
+# Cache sources that are authoritative for the identity because they came from
+# a verified external release lookup, not from the local audio file itself.
+_ARTWORK_TRUSTED_SOURCES = frozenset({"coverartarchive", "itunes", "itunes-song"})
+
+# When True (default), local embedded/sidecar art is re-verified against the
+# release when the album identity is reliable, so a wrong local cover is never
+# borrowed. When False, existing local art is trusted and used immediately,
+# which avoids the network lookups entirely for files that already carry a
+# cover. Configured through ``artwork.verify_local`` in config.toml.
+_ARTWORK_VERIFY_LOCAL = True
+
+
+def set_artwork_verify_local(enabled: bool) -> None:
+    """Enable or disable re-verification of local artwork against the release."""
+    global _ARTWORK_VERIFY_LOCAL
+    _ARTWORK_VERIFY_LOCAL = enabled
+
+
 def _normalize_album_for_search(album: str) -> str:
     """Normalize album title for search queries."""
     value = unicodedata.normalize("NFKC", album)
@@ -494,17 +539,26 @@ def _image_mime(data: bytes) -> str:
 
 
 def _embedded_artwork(path: Path) -> tuple[bytes, str] | None:
-    """Return an existing front-cover APIC frame, if the source already has one."""
+    """Return an existing front-cover APIC frame, if the source already has one.
+
+    An image is returned only when it is clearly the front cover: an explicit
+    type-3 frame, or the sole APIC frame in the file. When several frames exist
+    and none is marked as a front cover the file is ambiguous (a back cover or
+    artist photo could be picked), so nothing is returned instead of guessing.
+    """
     try:
         tags = mutagen_id3.ID3(str(path))
     except (mutagen_id3.ID3NoHeaderError, OSError, ValueError):
         return None
-    covers = [frame for frame in tags.getall("APIC") if getattr(frame, "type", None) == 3]
-    if not covers:
-        covers = tags.getall("APIC")
+    frames = tags.getall("APIC")
+    if not frames:
+        return None
+    covers = [frame for frame in frames if getattr(frame, "type", None) == 3]
+    if not covers and len(frames) == 1:
+        covers = frames
     if not covers:
         return None
-    frame = covers[0]
+    frame = max(covers, key=lambda item: len(getattr(item, "data", b"") or b""))
     mime = getattr(frame, "mime", "image/jpeg")
     return frame.data, mime
 
@@ -534,11 +588,26 @@ def _find_album_artwork(
     title: str = "",
     audio_path: Path | None = None,
 ) -> tuple[bytes | None, str | None]:
-    """Find artwork for a track, preferring artist + album identity.
+    """Find artwork for a track, preferring a verified release cover.
 
-    Artwork belongs to the release, so ``artist + album`` is the primary lookup
-    and ``artist + song title`` is used only when album metadata is missing or
-    the album lookup produced no reliable result. Results are cached by identity.
+    Album artwork belongs to the release, so when ``artist + album`` is
+    reliable the verified release lookup (MusicBrainz / Cover Art Archive /
+    iTunes) is authoritative. The local file's embedded or sidecar art is only
+    a fallback: an existing local cover (for example from a mis-tagged or
+    previously-downloaded file) is frequently the wrong artwork for the target
+    release and must never be trusted ahead of a verified album identity.
+
+    This release-first verification is disabled by ``set_artwork_verify_local``
+    (the ``artwork.verify_local`` config option). When disabled, existing local
+    art is trusted and used immediately so files that already carry a cover do
+    no network lookups at all, at the cost of possibly borrowing a wrong cover.
+
+    Cached entries that came from a verified lookup are authoritative. Legacy
+    unmarked entries and ``embedded:``/``sidecar:`` entries may carry a wrong
+    cover, so they are re-verified against the release when the album identity
+    is reliable and local verification is enabled; offline, the best local
+    evidence is kept. ``artist + song`` remains a fallback used only when the
+    album lookup is impossible or fails.
     """
     # Older versions wrote permanent negative-cache markers. Remove only the
     # marker for this identity so improved lookup logic gets a fresh attempt.
@@ -548,41 +617,60 @@ def _find_album_artwork(
     except OSError:
         pass
 
-    if audio_path is not None:
-        embedded = _embedded_artwork(audio_path)
-        if embedded is not None:
-            data, mime = embedded
-            _save_cached_artwork(download_dir, _cache_key(artist, album, title), data)
-            return data, f"embedded:{mime}"
-        sidecar = _sidecar_artwork(audio_path)
-        if sidecar is not None:
-            data, mime = sidecar
-            _save_cached_artwork(download_dir, _cache_key(artist, album, title), data)
-            return data, f"sidecar:{mime}"
-
     cache_key = _cache_key(artist, album, title)
+    release_first = _has_reliable_album(album)
+
     cached = _load_cached_artwork(download_dir, cache_key)
-    if cached is not None:
+    cached_source = _read_artwork_source(download_dir, cache_key)
+    trusted = cached_source in _ARTWORK_TRUSTED_SOURCES
+    if cached is not None and (not release_first or trusted or not _ARTWORK_VERIFY_LOCAL):
         logger.debug("Artwork cache hit artist=%s album=%s", artist, album)
         return cached, "cache"
 
-    release_first = _has_reliable_album(album)
-
     def fetch() -> tuple[bytes | None, str | None]:
+        if not _ARTWORK_VERIFY_LOCAL and audio_path is not None:
+            local = _local_artwork(download_dir, cache_key, audio_path)
+            if local is not None:
+                return local
         if release_first:
             data, source = _fetch_release_artwork(download_dir, artist, album, title, cache_key)
             if data is not None:
                 return data, source
+        if audio_path is not None:
+            local = _local_artwork(download_dir, cache_key, audio_path)
+            if local is not None:
+                return local
         if title:
             data, source = _fetch_song_artwork(download_dir, artist, title, cache_key)
             if data is not None:
                 return data, source
         # Negative results are deliberately not persisted. A later run may have
         # network access or a newly indexed release/artwork source.
+        if cached is not None:
+            return cached, "cache"
         logger.info("Artwork not found artist=%s album=%s title=%s", artist, album, title)
         return None, "not-found"
 
     return _deduplicated_artwork_fetch(download_dir, cache_key, fetch)
+
+
+def _local_artwork(
+    download_dir: Path, cache_key: str, audio_path: Path
+) -> tuple[bytes, str] | None:
+    """Return embedded or sidecar artwork from a local file, cached by identity."""
+    embedded = _embedded_artwork(audio_path)
+    if embedded is not None:
+        data, mime = embedded
+        _save_cached_artwork(download_dir, cache_key, data)
+        _write_artwork_source(download_dir, cache_key, f"embedded:{mime}")
+        return data, f"embedded:{mime}"
+    sidecar = _sidecar_artwork(audio_path)
+    if sidecar is not None:
+        data, mime = sidecar
+        _save_cached_artwork(download_dir, cache_key, data)
+        _write_artwork_source(download_dir, cache_key, f"sidecar:{mime}")
+        return data, f"sidecar:{mime}"
+    return None
 
 
 def _fetch_release_artwork(
@@ -637,6 +725,7 @@ def _pick_candidate(
         data = _download_artwork(candidate.url)
         if data is not None:
             _save_cached_artwork(download_dir, cache_key, data)
+            _write_artwork_source(download_dir, cache_key, candidate.source)
             logger.info(
                 "Artwork downloaded artist=%s album=%s title=%s source=%s",
                 artist,

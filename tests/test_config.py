@@ -37,6 +37,7 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.pot_provider_home is None
     assert config.m3u_extended is True
     assert config.m3u_relative is False
+    assert config.artwork_verify_local is True
 
 
 def test_load_config_parses_known_values(tmp_path) -> None:
@@ -71,6 +72,9 @@ def test_load_config_parses_known_values(tmp_path) -> None:
         [m3u]
         extended = true
         relative = true
+
+        [artwork]
+        verify_local = false
         """,
     )
 
@@ -95,6 +99,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.pot_provider_url == "http://127.0.0.1:8080"
     assert config.m3u_extended is True
     assert config.m3u_relative is True
+    assert config.artwork_verify_local is False
 
 
 def test_unknown_keys_are_ignored(tmp_path) -> None:
@@ -131,6 +136,7 @@ def test_partial_file_keeps_other_defaults(tmp_path) -> None:
         ('[web]\nport = "many"\n', "web.port must be an integer"),
         ("[web]\nport = true\n", "web.port must be an integer"),
         ('[m3u]\nextended = "yes"\n', "m3u.extended must be a boolean"),
+        ("[artwork]\nverify_local = 1\n", "artwork.verify_local must be a boolean"),
         ("[search]\nmax_results = []\n", "search.max_results must be an integer"),
     ],
 )
@@ -217,3 +223,19 @@ def test_create_app_config_argument_overrides_file(tmp_path, monkeypatch) -> Non
     app = create_app({"MUSIC_LIBRARY": str(music)})
 
     assert app.config["MUSIC_LIBRARY"] == str(music)
+
+
+def test_create_app_wires_artwork_verify_local(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app()
+    assert metadata._ARTWORK_VERIFY_LOCAL is True
+
+    create_app({"ARTWORK_VERIFY_LOCAL": False})
+    assert metadata._ARTWORK_VERIFY_LOCAL is False
+
+    create_app()
+    assert metadata._ARTWORK_VERIFY_LOCAL is True

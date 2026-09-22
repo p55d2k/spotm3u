@@ -70,6 +70,15 @@
 # hung source cannot occupy a worker forever.
 # socket_timeout = 30
 
+[artwork]
+# When true (default), album artwork for a track is verified against the
+# release identity (MusicBrainz / Cover Art Archive / iTunes) before any local
+# cover is used, so a wrong cover already embedded in a local file is never
+# borrowed. When false, existing local artwork is trusted and used immediately,
+# avoiding these network lookups entirely for files that already carry a cover
+# at the cost of possibly keeping a wrong one.
+# verify_local = true
+
 [download]
 # MP3 bitrate used by yt-dlp when extracting downloaded audio.
 # audio_quality = "192"
