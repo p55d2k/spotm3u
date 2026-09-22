@@ -12,6 +12,47 @@
     <main class="card">
       <p class="eyebrow">Step 4 · Conversion complete</p>
       <h1>Playlist results</h1>
+      {% set importable = states | selectattr('m3u_path') | selectattr('counts.successful') | list %}
+      {% if batch_import_available and importable %}
+      <section class="batch-import" aria-labelledby="batch-import-heading">
+        <h2 id="batch-import-heading">Add every playlist to {{ library_name }}</h2>
+        <p class="field-help">
+          One click imports each of the {{ importable | length }} playlist{{ '' if importable | length == 1 else 's' }} below
+          into {{ library_name }} as {{ 'its' if importable | length == 1 else 'their' }} own playlist.
+          Nothing is merged, and playlists are imported one after another; a playlist that
+          fails does not stop the others.
+        </p>
+        <form method="post" action="{{ url_for('add_batch_to_media_player', job_id=job_id) }}">
+          <button class="button" type="submit">Add all {{ importable | length }} playlist{{ '' if importable | length == 1 else 's' }} to {{ library_name }}</button>
+        </form>
+      </section>
+      {% endif %}
+      {% if media_player %}
+      <section class="batch-import-result" aria-labelledby="batch-import-result-heading">
+        <h2 id="batch-import-result-heading">Media player import</h2>
+        {% if media_player.partial %}
+        <p class="error" role="alert">{{ media_player.message }}</p>
+        {% else %}
+        <p role="status">{{ media_player.message }}</p>
+        {% endif %}
+        <ul class="import-list">
+          {% for entry in media_player.playlists %}
+          <li class="{{ 'import-error' if entry.error else 'import-cancelled' if entry.cancelled else 'import-ok' }}">
+            <strong class="import-name">{{ entry.name }}</strong>
+            {% if entry.error %}
+            <span class="import-detail">{{ entry.error }}</span>
+            {% elif entry.cancelled %}
+            <span class="import-detail">Cancelled — the playlist in {{ library_name }} was left unchanged.</span>
+            {% else %}
+            <span class="import-detail">
+              {{ entry.imported }} track{{ '' if entry.imported == 1 else 's' }} imported{% if entry.skipped %}, {{ entry.skipped }} already present{% endif %}{% if entry.failed %}, {{ entry.failed }} failed{% endif %}.
+            </span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
       {% for state in states %}
       <section class="batch-playlist">
         <h2>{{ state.playlist.name }}</h2>

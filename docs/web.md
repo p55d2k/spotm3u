@@ -253,6 +253,28 @@ and no shell is involved. Entries inside the playlist keep the forward slashes
 described in [M3U generation](m3u.md), which Windows players read normally. The
 result page confirms with *Playlist opened in your default media player.*
 
+### Adding every playlist at once (batch)
+
+The batch result page offers **Add all N playlists to Apple Music**, which posts
+to `POST /processing/<job_id>/batch/media-player`. One click imports every
+processed playlist of the batch, in selection order, as **its own** Apple Music
+playlist - nothing is ever merged into a single playlist. Each playlist reuses
+the M3U and the resolved files its job already produced, exactly like the
+single-playlist action; there is no second import implementation.
+
+The action is offered only where a library import exists (Apple Music). On
+Windows the action is a file handoff to the default player, and one click that
+opened one player window per playlist would not be an import, so that platform
+keeps the per-playlist button only.
+
+A playlist that cannot be imported never aborts the batch: the import continues
+with the remaining playlists and the result page reports every playlist
+individually - tracks imported, already-present tracks skipped, tracks Music
+refused, playlists the user cancelled in the Music dialog, and playlists that
+could not be added at all (including playlists with no resolved tracks). The
+headline summarizes the batch (*Added 3 of 4 playlist(s) to Apple Music*) and is
+styled as a warning whenever any playlist was partial or failed.
+
 ### Other platforms
 
 The action is offered only on macOS and Windows. Everywhere else the manual

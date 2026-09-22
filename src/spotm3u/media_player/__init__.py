@@ -31,6 +31,24 @@ def media_player_available() -> bool:
     return apple_music_available() or windows_media_player_available()
 
 
+def library_import_available() -> bool:
+    """Return whether the host imports playlists into a media *library*.
+
+    Only Apple Music exposes an import the app can drive, so it is the one
+    platform where adding every playlist of a batch in one click means
+    something: each playlist becomes its own library playlist. On Windows the
+    action is a file handoff to the default player, and one click that opened
+    ten player windows would not be an import - the per-playlist handoff keeps
+    covering that platform.
+    """
+    return apple_music_available()
+
+
+def library_player_name() -> str:
+    """Name the media library the batch import targets, for user-facing text."""
+    return "Apple Music"
+
+
 def add_to_media_player(
     playlist_name: str,
     playlist_path: str | Path | None = None,
@@ -65,6 +83,8 @@ __all__ = [
     "add_to_media_player",
     "add_to_windows_media_player",
     "apple_music_available",
+    "library_import_available",
+    "library_player_name",
     "media_player_available",
     "windows_media_player_available",
 ]

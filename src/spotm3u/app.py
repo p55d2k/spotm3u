@@ -19,7 +19,13 @@ from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
 from .lyrics import set_lyrics_enabled
 from .m3u import check_playlist
-from .media_player import MediaPlayerError, add_to_media_player, media_player_available
+from .media_player import (
+    MediaPlayerError,
+    add_to_media_player,
+    library_import_available,
+    library_player_name,
+    media_player_available,
+)
 from .metadata import (
     cached_artwork_path,
     set_album_artwork_enabled,
@@ -328,6 +334,48 @@ def create_app(config: dict | None = None) -> Flask:
             job_id=job_id,
             states=[job.as_dict() for job in jobs],
             media_player_available=media_player_available(),
+            batch_import_available=library_import_available(),
+            library_name=library_player_name(),
+            media_player=None,
+        )
+
+    @app.post("/processing/<job_id>/batch/media-player")
+    def add_batch_to_media_player(job_id: str):
+        """Import every completed playlist of a batch into the media library.
+
+        One click for the whole batch: every playlist becomes its own library
+        playlist - they are never merged into one - reusing the M3U and the
+        resolved files the jobs already produced. A playlist that cannot be
+        imported never stops the rest; the outcome is reported per playlist on
+        the batch result page.
+        """
+        if not library_import_available():
+            return jsonify(
+                {
+                    "error": (
+                        "Adding every playlist at once needs "
+                        f"{library_player_name()}, which is not available here."
+                    )
+                }
+            ), 404
+        job_directory = _current_job_directory(app, job_id)
+        selected = _selected_playlist_ids(job_directory) if job_directory else None
+        if not selected:
+            return jsonify({"error": "That playlist selection has expired."}), 404
+        manager = app.config["JOB_MANAGER"]
+        jobs = [manager.get(job_id, playlist_id) for playlist_id in selected]
+        if not jobs or any(job is None or job.status in {"queued", "running"} for job in jobs):
+            return jsonify({"error": "Every playlist must finish processing first."}), 409
+        completed = [job for job in jobs if job is not None]
+        summary = _import_batch(app, completed)
+        return render_template(
+            "batch_result.html",
+            job_id=job_id,
+            states=[job.as_dict() for job in completed],
+            media_player_available=media_player_available(),
+            batch_import_available=True,
+            library_name=library_player_name(),
+            media_player=summary,
         )
 
     @app.get("/processing/<job_id>/<playlist_id>")
@@ -702,6 +750,99 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
         ),
         "playlists": states,
     }
+
+
+def _import_batch(app: Flask, jobs: list[ProcessingJob]) -> dict[str, object]:
+    """Import every playlist of a batch into the media library, one at a time.
+
+    Each playlist is handed over exactly like the single-playlist action, so the
+    batch needs no second import implementation. A playlist that has nothing to
+    import, is cancelled, or fails never aborts the rest: the user asked for all
+    of them, so the playlists that do work still arrive and the outcome is
+    reported per playlist.
+    """
+    playlists: list[dict[str, object]] = []
+    imported = skipped = failed = cancelled = errors = 0
+    for job in jobs:
+        state = job.as_dict()
+        paths = [
+            track["local_path"]
+            for track in state["tracks"]
+            if track["status"] == "complete" and track["local_path"]
+        ]
+        entry: dict[str, object] = {
+            "playlist_id": job.playlist_id,
+            "name": job.playlist_name,
+            "imported": 0,
+            "skipped": 0,
+            "failed": 0,
+            "cancelled": False,
+            "message": "",
+            "error": "",
+        }
+        if not paths:
+            entry["error"] = "There were no resolved tracks to add."
+            errors += 1
+            playlists.append(entry)
+            continue
+        try:
+            result = add_to_media_player(job.playlist_name, job.m3u_path, paths)
+        except MediaPlayerError as error:
+            app.logger.warning(
+                "Batch Add to Media Player failed playlist=%s: %s", job.playlist_name, error
+            )
+            entry["error"] = str(error)
+            errors += 1
+            playlists.append(entry)
+            continue
+        entry["message"] = result.message
+        entry["imported"] = result.imported
+        entry["skipped"] = result.skipped
+        entry["failed"] = result.failed
+        entry["cancelled"] = result.cancelled
+        imported += result.imported
+        skipped += result.skipped
+        failed += result.failed
+        cancelled += int(result.cancelled)
+        playlists.append(entry)
+    return {
+        "playlists": playlists,
+        "imported": imported,
+        "skipped": skipped,
+        "failed": failed,
+        "cancelled": cancelled,
+        "errors": errors,
+        "partial": bool(failed or cancelled or errors),
+        "message": _batch_import_message(
+            total=len(playlists),
+            imported=imported,
+            skipped=skipped,
+            failed=failed,
+            cancelled=cancelled,
+            errors=errors,
+        ),
+    }
+
+
+def _batch_import_message(
+    *, total: int, imported: int, skipped: int, failed: int, cancelled: int, errors: int
+) -> str:
+    """Compose the user-facing summary for a whole-batch media-player import."""
+    name = library_player_name()
+    added = total - errors - cancelled
+    if added <= 0:
+        return f"None of the {total} playlist(s) could be added to {name}."
+    parts = [f"Added {added} of {total} playlist(s) to {name}."]
+    parts.append(f"{imported} track(s) were imported.")
+    if skipped:
+        parts.append(f"{skipped} already-present track(s) were skipped.")
+    if failed:
+        parts.append(f"{failed} track(s) could not be imported.")
+    if cancelled:
+        parts.append(f"{cancelled} playlist(s) were cancelled and left unchanged.")
+    if errors:
+        parts.append(f"{errors} playlist(s) could not be added at all.")
+    return " ".join(parts)
 
 
 def _annotate_artwork(job: ProcessingJob, state: dict[str, object]) -> None:

@@ -38,6 +38,18 @@ def test_media_player_is_available_on_macos_and_windows(monkeypatch) -> None:
     assert media_player.media_player_available()
 
 
+def test_library_import_follows_apple_music_only(monkeypatch) -> None:
+    monkeypatch.setattr(macos.sys, "platform", "darwin")
+    assert media_player.library_import_available()
+    assert media_player.library_player_name() == "Apple Music"
+
+    # Windows hands the playlist to a file association, so there is no library
+    # to import a whole batch into.
+    monkeypatch.setattr(windows.sys, "platform", "win32")
+    assert not media_player.library_import_available()
+    assert media_player.media_player_available()
+
+
 def test_add_to_media_player_uses_apple_music_on_macos(tmp_path, monkeypatch) -> None:
     audio = tmp_path / "song.mp3"
     audio.write_bytes(b"audio")

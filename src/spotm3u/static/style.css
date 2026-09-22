@@ -672,6 +672,37 @@ main.card > .batch-playlist { margin-top: 1.25rem; }
 .batch-playlist p { color: var(--muted); margin: 0.5rem 0; }
 .batch-playlist .result-actions { margin-top: 0.65rem; }
 
+/* Whole-batch media-player import: the action sits above the per-playlist
+   cards, and its outcome summary appears in the same place after the post. */
+main.card > .batch-import,
+main.card > .batch-import-result {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin-top: 1.25rem;
+  padding: 1rem;
+}
+.batch-import h2,
+.batch-import-result h2 { margin: 0; }
+.batch-import form { margin-top: 0.65rem; }
+.import-list {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+}
+.import-list li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  gap: 0.6rem;
+  justify-content: space-between;
+}
+.import-list .import-name { font-weight: 750; }
+.import-list .import-detail { color: var(--muted); }
+.import-list .import-error .import-detail { color: var(--red); }
+
 .download { margin: 0.75rem 0; }
 .download a:not(.button) { color: var(--blue); font-weight: 750; }
 
