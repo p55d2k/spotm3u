@@ -47,7 +47,8 @@ For every Track:
 8. Validate the downloaded audio.
 9. If validation fails, try another plausible candidate when available.
 10. Store the successful local file.
-11. Enrich the resolved MP3 with album artwork and standard ID3 metadata when possible.
+11. Enrich the resolved MP3 with album artwork, artist artwork and standard ID3
+    metadata when possible.
 12. Keep the track in a resolved state even if artwork is unavailable.
 13. Pass the resolved file to the M3U writer.
 

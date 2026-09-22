@@ -48,11 +48,47 @@ arbitrary websites:
 - **Apple iTunes Search API** (`itunes.apple.com/search`) — album artwork from
   the public iTunes catalog, used to supplement MusicBrainz and for the
   song-title fallback.
+- **Deezer** (`api.deezer.com/search/artist`) — artist profile images only (see
+  *Artist artwork* below). Deezer is never used to resolve album covers.
 
 Candidates are only accepted when their **artist identity strongly matches**,
 even for common album/song names (e.g. the many songs named "Home"), and album
 identity must match for album lookups. Low-confidence or mismatched results are
 rejected rather than used.
+
+## Artist artwork
+
+Alongside the album cover, the **performing artist's profile image** is
+embedded into each generated MP3 as an ID3v2 `APIC` frame of type **8**
+(artist/performer), next to the front-cover frame (type 3). Both frames coexist:
+embedding artist artwork replaces only frames of the same picture type, so the
+album cover is never overwritten (and vice versa). ID3 metadata written for the
+track is untouched, and players that take the first image as the cover keep
+showing the album cover.
+
+Artist images are **not** available from the release-oriented sources: Spotify
+itself is off limits (no Web API, no scraping), and MusicBrainz, Cover Art
+Archive and iTunes return no artist image. The artist identity from the export
+is therefore looked up in **Deezer's public catalog**
+(`api.deezer.com/search/artist`), which serves profile images (JPEG) without
+authentication. Only results whose artist identity matches strongly are used,
+and an exact name always outranks a substring match, so a tribute act or
+compilation page never replaces the requested artist. Deezer's JPEG images are
+embedded as returned; a format that ID3 does not support natively is detected
+by its magic bytes and only then would need conversion.
+
+Artist images are cached under `<download_dir>/artwork_cache/artists/`, keyed by
+normalized artist alone (a separate directory from the release cache, so artist
+and release identities can never collide or be mistaken for each other). Every
+track credited to the same artist reuses one download, and concurrent workers
+share a single in-flight fetch through the same deduplication used for album
+artwork.
+
+Artist artwork is **optional enrichment**: a missing, invalid or unavailable
+image is recorded as a non-fatal metadata error (`artist artwork not found`,
+`artist artwork embed failed`), the album artwork and ID3 fields are unaffected,
+and track generation never fails because of it. It is enabled by default and can
+be turned off with the `[artwork] artist_artwork` setting in `config.toml`.
 
 ## Multiple artists
 
@@ -103,5 +139,6 @@ block on, or depend on, artwork being available.
 
 Artwork resolution failures are always non-fatal. A track is never marked
 failed or ambiguous merely because its artwork could not be resolved or
-embedded; missing album/artist artwork is reported on the metadata result and
+embedded; missing album/artist artwork is reported on the metadata result (see
+`MetadataResult.artwork_embedded` / `artist_artwork_embedded` and `errors`) and
 the track keeps its resolved audio file.

@@ -852,7 +852,9 @@ def verify_local_toggle():
     metadata.set_artwork_verify_local(True)
 
 
-def test_verify_local_disabled_uses_embedded_art_without_network(tmp_path, monkeypatch):
+def test_verify_local_disabled_uses_embedded_art_without_network(
+    tmp_path, monkeypatch, verify_local_toggle
+):
     """With verify_local off, a file that already has a cover does no network lookup."""
     from spotm3u import metadata
 
@@ -874,7 +876,269 @@ def test_verify_local_disabled_uses_embedded_art_without_network(tmp_path, monke
     assert calls == []
 
 
-def test_verify_local_disabled_serves_unmarked_cache_without_network(tmp_path, monkeypatch):
+class _FakeJsonResponse:
+    """Minimal requests-style response for a JSON metadata lookup."""
+
+    status_code = 200
+    content = b""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.headers = {"Content-Type": "application/json"}
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _FakeImageResponse:
+    """Minimal requests-style response for an image download."""
+
+    status_code = 200
+
+    def __init__(self, data):
+        self.content = data
+        self.headers = {"Content-Type": "image/jpeg"}
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {}
+
+
+def _install_artwork_requests(
+    monkeypatch,
+    *,
+    artist_results=None,
+    artist_image=b"artist-image",
+    album=True,
+    calls=None,
+):
+    """Mock the release and artist artwork requests used by enrichment."""
+    if artist_results is None:
+        artist_results = [{"name": "Artist", "picture_xl": "https://cdn.example/artist-1000.jpg"}]
+    calls = calls if calls is not None else []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        if "api.deezer.com" in url:
+            return _FakeJsonResponse({"data": list(artist_results)})
+        if "musicbrainz.org" in url:
+            return _FakeJsonResponse({"release-groups": [{"id": "rg"}] if album else []})
+        if "coverartarchive.org" in url:
+            return _FakeJsonResponse(
+                {
+                    "images": [
+                        {
+                            "front": True,
+                            "image": "http://example.com/art.jpg",
+                            "width": 500,
+                            "height": 500,
+                        }
+                    ]
+                }
+                if album
+                else {"images": []}
+            )
+        if "itunes.apple.com" in url:
+            return _FakeJsonResponse({"results": []})
+        if url == "http://example.com/art.jpg":
+            return _FakeImageResponse(b"album-image")
+        return _FakeImageResponse(artist_image)
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    return calls
+
+
+def _apic_frames(path: Path) -> dict[int, object]:
+    """Return the file's APIC frames keyed by ID3 picture type."""
+    import mutagen.id3 as mutagen_id3
+
+    return {frame.type: frame for frame in mutagen_id3.ID3(str(path)).getall("APIC")}
+
+
+def _write_existing_metadata(path: Path) -> None:
+    """Write a front cover plus an unrelated frame that must survive enrichment."""
+    import mutagen.id3 as mutagen_id3
+
+    tags = mutagen_id3.ID3()
+    tags.add(
+        mutagen_id3.APIC(
+            encoding=3, mime="image/jpeg", type=3, desc="Cover", data=b"existing-cover"
+        )
+    )
+    tags.add(mutagen_id3.TXXX(encoding=3, desc="Testing", text=["kept"]))
+    tags.save(path, v2_version=3)
+
+
+@pytest.fixture
+def artist_artwork_toggle():
+    """Run a test with the artist-artwork flag, restoring the default after."""
+    from spotm3u import metadata
+
+    yield
+    metadata.set_artist_artwork_enabled(True)
+
+
+def test_artist_artwork_is_embedded_when_available(tmp_path, monkeypatch, artist_artwork_toggle):
+    """The artist's profile image is embedded as an APIC artist picture (type 8)."""
+    _install_artwork_requests(monkeypatch)
+    track = Track("Song", ["Artist"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_embedded is True
+    assert result.artist_artwork_source == "deezer-artist"
+    assert result.artwork_embedded is True
+    frames = _apic_frames(mp3)
+    assert frames[8].data == b"artist-image"
+    assert frames[3].data == b"album-image"
+
+
+def test_album_and_artist_artwork_coexist(tmp_path, monkeypatch, artist_artwork_toggle):
+    """Embedding artist artwork keeps the album cover and unrelated tags intact."""
+    _install_artwork_requests(monkeypatch, album=False)
+    mp3 = tmp_path / "local.mp3"
+    _write_existing_metadata(mp3)
+    track = Track("Song", ["Artist"], album="Album")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    frames = _apic_frames(mp3)
+    assert set(frames) == {3, 8}
+    assert frames[3].data == b"existing-cover"
+    assert frames[8].data == b"artist-image"
+    assert result.artist_artwork_embedded is True
+
+    import mutagen.id3 as mutagen_id3
+
+    assert str(mutagen_id3.ID3(str(mp3))["TXXX:Testing"].text[0]) == "kept"
+
+
+def test_front_cover_stays_first_picture(tmp_path, monkeypatch, artist_artwork_toggle):
+    """Rewriting artwork keeps the album cover as the file's first APIC frame."""
+    import mutagen.id3 as mutagen_id3
+
+    _install_artwork_requests(monkeypatch, album=False)
+    mp3 = tmp_path / "local.mp3"
+    _write_existing_metadata(mp3)
+    track = Track("Song", ["Artist"], album="Album")
+
+    enrich_metadata(mp3, track, tmp_path)
+    enrich_metadata(mp3, track, tmp_path)
+
+    frames = mutagen_id3.ID3(str(mp3)).getall("APIC")
+    assert [frame.type for frame in frames] == [3, 8]
+    assert frames[0].data == b"existing-cover"
+
+
+def test_missing_artist_artwork_does_not_fail_generation(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """An artist with no matching profile image only reports a non-fatal error."""
+    _install_artwork_requests(monkeypatch, artist_results=[])
+    track = Track("Song", ["Artist"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_embedded is False
+    assert result.artist_artwork_source is None
+    assert "artist artwork not found" in result.errors
+    assert result.artwork_embedded is True
+    assert set(_apic_frames(mp3)) == {3}
+
+
+def test_artist_artwork_network_failure_is_non_fatal(tmp_path, monkeypatch, artist_artwork_toggle):
+    """A failed artist lookup never raises out of enrichment."""
+
+    def unreachable(*_args, **_kwargs):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+    track = Track("Song", ["Artist"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_embedded is False
+    assert "artist artwork not found" in result.errors
+
+
+def test_artist_artwork_rejects_a_different_artist(tmp_path, monkeypatch, artist_artwork_toggle):
+    """A result for another artist must never become the requested artist's image."""
+    _install_artwork_requests(
+        monkeypatch,
+        artist_results=[
+            {"name": "Someone Else Entirely", "picture_xl": "https://cdn.example/wrong.jpg"}
+        ],
+    )
+    track = Track("Song", ["Artist"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_embedded is False
+    assert "artist artwork not found" in result.errors
+
+
+def test_same_artist_artwork_is_downloaded_once(tmp_path, monkeypatch, artist_artwork_toggle):
+    """Tracks credited to the same artist reuse one cached profile image."""
+    calls: list[str] = []
+    _install_artwork_requests(monkeypatch, calls=calls)
+    paths = []
+    for index in range(3):
+        mp3 = tmp_path / f"track{index}.mp3"
+        mp3.write_bytes(b"fake-mp3-data")
+        paths.append(mp3)
+
+    results = enrich_metadata(
+        [Track(f"Song {index}", ["Artist"], album=f"Album {index}") for index in range(3)],
+        paths,
+        tmp_path,
+    )
+
+    assert all(result.artist_artwork_embedded for result in results)
+    assert calls.count("https://cdn.example/artist-1000.jpg") == 1
+    assert sum(1 for url in calls if "api.deezer.com" in url) == 1
+    assert (tmp_path / "artwork_cache" / "artists" / "artist_artist.jpg").is_file()
+
+
+def test_artist_artwork_can_be_disabled(tmp_path, monkeypatch, artist_artwork_toggle):
+    """With artist artwork off, no artist lookup happens at all."""
+    from spotm3u import metadata
+
+    metadata.set_artist_artwork_enabled(False)
+    calls: list[str] = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        assert "api.deezer.com" not in url, "artist lookup must not run when disabled"
+        return _FakeJsonResponse({})
+
+    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    mp3 = tmp_path / "local.mp3"
+    _write_existing_metadata(mp3)
+    track = Track("Song", ["Artist"], album="Album")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_embedded is False
+    assert "artist artwork" not in "; ".join(result.errors)
+    assert calls
+
+
+def test_verify_local_disabled_serves_unmarked_cache_without_network(
+    tmp_path, monkeypatch, verify_local_toggle
+):
     """With verify_local off, legacy unmarked cache entries are served as-is."""
     from spotm3u import metadata
 

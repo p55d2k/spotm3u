@@ -59,9 +59,14 @@ def _id3_symbol(name: str):
 
 
 _ARTWORK_CACHE_DIR = "artwork_cache"
+# Artist images live in their own subdirectory of the artwork cache. Artist
+# identity alone is the cache key there, so it can never collide with (or be
+# mistaken for) a release entry keyed by artist + album / artist + title.
+_ARTIST_ARTWORK_SUBDIR = "artists"
 _MUSICBRAINZ_BASE = "https://musicbrainz.org/ws/2"
 _COVERART_BASE = "https://coverartarchive.org"
 _ITUNES_BASE = "https://itunes.apple.com/search"
+_ARTIST_BASE = "https://api.deezer.com/search/artist"
 _REQUEST_TIMEOUT = 15
 _USER_AGENT = "spotm3u/0.1 (https://github.com/zk/spotm3u)"
 
@@ -95,6 +100,8 @@ class MetadataResult:
     artwork_source: str | None
     fields_written: tuple[str, ...]
     errors: tuple[str, ...]
+    artist_artwork_embedded: bool = False
+    artist_artwork_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -185,6 +192,13 @@ def _cache_dir(download_dir: Path) -> Path:
     return cache_path
 
 
+def _artist_cache_dir(download_dir: Path) -> Path:
+    """Return the artist-image cache directory, separate from release artwork."""
+    cache_path = _cache_dir(download_dir) / _ARTIST_ARTWORK_SUBDIR
+    cache_path.mkdir(parents=True, exist_ok=True)
+    return cache_path
+
+
 def _cache_key(artist: str = "", album: str = "", title: str = "") -> str:
     """Generate a stable cache key from a release or song identity.
 
@@ -206,8 +220,8 @@ def _cached_artwork_path(cache_dir: Path, cache_key: str) -> Path:
     return cache_dir / f"{cache_key}.jpg"
 
 
-def _load_cached_artwork(download_dir: Path, cache_key: str) -> bytes | None:
-    cache_dir = _cache_dir(download_dir)
+def _read_cached_image(cache_dir: Path, cache_key: str) -> bytes | None:
+    """Read a cached image from one cache directory, or None."""
     path = _cached_artwork_path(cache_dir, cache_key)
     if path.is_file():
         try:
@@ -218,8 +232,8 @@ def _load_cached_artwork(download_dir: Path, cache_key: str) -> bytes | None:
     return None
 
 
-def _save_cached_artwork(download_dir: Path, cache_key: str, data: bytes) -> None:
-    cache_dir = _cache_dir(download_dir)
+def _write_cached_image(cache_dir: Path, cache_key: str, data: bytes) -> None:
+    """Write image data into one cache directory, replacing any existing entry."""
     path = _cached_artwork_path(cache_dir, cache_key)
     if not data:
         return
@@ -239,17 +253,39 @@ def _save_cached_artwork(download_dir: Path, cache_key: str, data: bytes) -> Non
                 pass
 
 
+def _load_cached_artwork(download_dir: Path, cache_key: str) -> bytes | None:
+    return _read_cached_image(_cache_dir(download_dir), cache_key)
+
+
+def _save_cached_artwork(download_dir: Path, cache_key: str, data: bytes) -> None:
+    _write_cached_image(_cache_dir(download_dir), cache_key, data)
+
+
 def _artwork_source_path(cache_dir: Path, cache_key: str) -> Path:
     return cache_dir / f"{cache_key}.src"
 
 
-def _read_artwork_source(download_dir: Path, cache_key: str) -> str | None:
-    """Read the recorded source of a cached artwork entry, or None."""
-    path = _artwork_source_path(_cache_dir(download_dir), cache_key)
+def _read_cached_source(cache_dir: Path, cache_key: str) -> str | None:
+    """Read the recorded source of one cached image, or None."""
+    path = _artwork_source_path(cache_dir, cache_key)
     try:
         return path.read_text().strip() or None
     except OSError:
         return None
+
+
+def _write_cached_source(cache_dir: Path, cache_key: str, source: str) -> None:
+    """Record where one cached image came from."""
+    path = _artwork_source_path(cache_dir, cache_key)
+    try:
+        path.write_text(source)
+    except OSError:
+        pass
+
+
+def _read_artwork_source(download_dir: Path, cache_key: str) -> str | None:
+    """Read the recorded source of a cached artwork entry, or None."""
+    return _read_cached_source(_cache_dir(download_dir), cache_key)
 
 
 def _write_artwork_source(download_dir: Path, cache_key: str, source: str) -> None:
@@ -259,11 +295,7 @@ def _write_artwork_source(download_dir: Path, cache_key: str, source: str) -> No
     art records an ``embedded:`` / ``sidecar:`` prefix so it can be re-verified
     against the release on a later networked run instead of being trusted.
     """
-    path = _artwork_source_path(_cache_dir(download_dir), cache_key)
-    try:
-        path.write_text(source)
-    except OSError:
-        pass
+    _write_cached_source(_cache_dir(download_dir), cache_key, source)
 
 
 # Cache sources that are authoritative for the identity because they came from
@@ -282,6 +314,23 @@ def set_artwork_verify_local(enabled: bool) -> None:
     """Enable or disable re-verification of local artwork against the release."""
     global _ARTWORK_VERIFY_LOCAL
     _ARTWORK_VERIFY_LOCAL = enabled
+
+
+# When True (default), the performing artist's profile image is embedded as an
+# ID3 artist picture (APIC type 8) next to the front cover. Configured through
+# ``artwork.artist_artwork`` in config.toml.
+_ARTIST_ARTWORK_ENABLED = True
+
+
+def set_artist_artwork_enabled(enabled: bool) -> None:
+    """Enable or disable embedding artist artwork."""
+    global _ARTIST_ARTWORK_ENABLED
+    _ARTIST_ARTWORK_ENABLED = enabled
+
+
+def artist_artwork_enabled() -> bool:
+    """Return whether artist artwork embedding is currently enabled."""
+    return _ARTIST_ARTWORK_ENABLED
 
 
 def _normalize_album_for_search(album: str) -> str:
@@ -737,6 +786,121 @@ def _pick_candidate(
     return None, "not-found"
 
 
+# Artist profile images are not available from the release-oriented artwork
+# services (MusicBrainz / Cover Art Archive / iTunes return no artist image).
+# Spotify itself is off limits: the project never uses the Spotify Web API and
+# never scrapes Spotify's site. The artist identity from the export is therefore
+# looked up in Deezer's public catalog, which serves profile images without auth.
+_ARTIST_ARTWORK_SOURCES = frozenset({"deezer-artist"})
+
+# Deezer picture fields, largest first. The largest available image is embedded
+# because ID3 APIC data is stored at full size in the file.
+_DEEZER_PICTURE_FIELDS: tuple[tuple[str, int], ...] = (
+    ("picture_xl", 1000),
+    ("picture_big", 500),
+    ("picture_medium", 250),
+    ("picture_small", 56),
+)
+
+
+def _artist_cache_key(artist: str) -> str:
+    """Generate a stable cache key for one artist's profile image."""
+    safe = re.sub(r"[^a-z0-9]+", "_", _normalize_identity(artist)).strip("_")
+    return f"artist_{safe[:110] or 'unknown'}"
+
+
+def _search_deezer_artist_artwork(artist: str) -> ArtworkCandidate | None:
+    """Find one artist's profile image in Deezer's public catalog.
+
+    Only results whose artist identity matches strongly are accepted, and an
+    exact name always outranks a substring match so a tribute act or a
+    compilation page never replaces the requested artist.
+    """
+    try:
+        response = requests.get(
+            _ARTIST_BASE,
+            params={"q": artist, "limit": 25},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        results = response.json().get("data", [])
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        logger.debug("Artist artwork lookup failed artist=%s: %s", artist, exc)
+        return None
+
+    target = _normalize_identity(artist)
+    best: tuple[tuple[int, float, int], ArtworkCandidate] | None = None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        name = _normalize_identity(result.get("name"))
+        score = _identity_score(target, name)
+        if not name or score < 80.0:
+            continue
+        picture = next(
+            (
+                (result[field], size)
+                for field, size in _DEEZER_PICTURE_FIELDS
+                if isinstance(result.get(field), str) and result[field]
+            ),
+            None,
+        )
+        if picture is None:
+            continue
+        url, size = picture
+        rank = (1 if name == target else 0, score, size)
+        if best is None or rank > best[0]:
+            best = (
+                rank,
+                ArtworkCandidate(
+                    url=url,
+                    mime_type="image/jpeg",
+                    source="deezer-artist",
+                    width=size,
+                    height=size,
+                    artist=result.get("name"),
+                ),
+            )
+    return best[1] if best is not None else None
+
+
+def _find_artist_artwork(download_dir: Path, artist: str) -> tuple[bytes | None, str | None]:
+    """Find (or download) the profile image for one artist.
+
+    Artist images are keyed by artist alone and cached in their own directory,
+    so every track credited to the same artist reuses a single download. A
+    failure returns ``(None, "not-found")`` and never raises: artist artwork is
+    optional enrichment and must not fail track generation.
+    """
+    if not artist:
+        return None, "not-found"
+
+    cache_dir = _artist_cache_dir(download_dir)
+    cache_key = _artist_cache_key(artist)
+    cached = _read_cached_image(cache_dir, cache_key)
+    if cached is not None and _read_cached_source(cache_dir, cache_key) in _ARTIST_ARTWORK_SOURCES:
+        logger.debug("Artist artwork cache hit artist=%s", artist)
+        return cached, "cache"
+
+    def fetch() -> tuple[bytes | None, str | None]:
+        candidate = _search_deezer_artist_artwork(artist)
+        if candidate is None:
+            logger.info("Artist artwork not found artist=%s", artist)
+            return None, "not-found"
+        data = _download_artwork(candidate.url)
+        if data is None:
+            return None, "not-found"
+        _write_cached_image(cache_dir, cache_key, data)
+        _write_cached_source(cache_dir, cache_key, candidate.source)
+        logger.info("Artist artwork downloaded artist=%s source=%s", artist, candidate.source)
+        return data, candidate.source
+
+    # The memory key is namespaced by the artist subdirectory so it can never be
+    # confused with a release identity that happens to sanitize the same way.
+    return _deduplicated_artwork_fetch(download_dir, f"{_ARTIST_ARTWORK_SUBDIR}/{cache_key}", fetch)
+
+
 def _write_all_metadata(path: Path, track: Track) -> tuple[str, ...]:
     """Write all ID3 metadata to MP3 file and save. Returns list of fields written."""
     written: list[str] = []
@@ -831,8 +995,71 @@ def _write_all_metadata(path: Path, track: Track) -> tuple[str, ...]:
     return tuple(written)
 
 
-def _embed_artwork(path: Path, artwork_data: bytes, mime_type: str = "image/jpeg") -> bool:
-    """Embed artwork as APIC frame in MP3."""
+def _remove_artwork_frames(tags, picture_type: int, description: str) -> None:
+    """Remove existing APIC frames of one picture type before a replacement.
+
+    Only frames of the same picture type are removed, so a front cover
+    (type 3) and an artist picture (type 8) can coexist in one file without
+    overwriting each other.
+    """
+    if hasattr(tags, "keys") and hasattr(tags, "get"):
+        for key in list(tags.keys()):
+            frame = tags.get(key)
+            if frame is None or getattr(frame, "type", None) != picture_type:
+                continue
+            try:
+                del tags[key]
+            except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
+                continue
+        return
+    if hasattr(tags, "delall"):  # pragma: no cover - lightweight tag doubles
+        tags.delall(f"APIC:{description}")
+
+
+def _order_front_cover_first(tags) -> None:
+    """Keep the front-cover APIC frame first among the file's pictures.
+
+    Many players use the first picture as the cover image. Replacing a cover
+    re-inserts it, which would otherwise push it behind an artist picture, so
+    the APIC frames are rewritten with the front cover first.
+    """
+    if not (hasattr(tags, "keys") and hasattr(tags, "get")):
+        return  # pragma: no cover - lightweight tag doubles
+    try:
+        entries = [
+            (key, tags.get(key)) for key in list(tags.keys()) if str(key).split(":", 1)[0] == "APIC"
+        ]
+    except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
+        return
+    frames = [frame for _key, frame in entries if frame is not None]
+    covers = [frame for frame in frames if getattr(frame, "type", None) == 3]
+    if not covers or frames[0] in covers:
+        return
+    ordered = covers + [frame for frame in frames if frame not in covers]
+    for key, _frame in entries:
+        try:
+            del tags[key]
+        except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
+            continue
+    for frame in ordered:
+        tags[getattr(frame, "HashKey", None) or "APIC"] = frame
+
+
+def _embed_artwork(
+    path: Path,
+    artwork_data: bytes,
+    mime_type: str = "image/jpeg",
+    *,
+    picture_type: int = 3,
+    description: str = "Cover",
+) -> bool:
+    """Embed artwork as an APIC frame in an MP3.
+
+    ``picture_type`` follows the ID3v2 picture types: 3 is the front cover and
+    8 is the performing artist. Frames of the same type are replaced; frames of
+    every other type (an album cover, an existing artist picture) are left
+    untouched, so album and artist artwork coexist in the same file.
+    """
     ID3_cls = _id3_symbol("ID3")
     ID3NoHeaderError_cls = _id3_symbol("ID3NoHeaderError")
     APIC_cls = _id3_symbol("APIC")
@@ -845,13 +1072,13 @@ def _embed_artwork(path: Path, artwork_data: bytes, mime_type: str = "image/jpeg
     apic = APIC_cls(
         encoding=3,
         mime=mime_type,
-        type=3,
-        desc="Cover",
+        type=picture_type,
+        desc=description,
         data=artwork_data,
     )
-    if hasattr(tags, "delall"):
-        tags.delall("APIC")
-    tags["APIC"] = apic
+    _remove_artwork_frames(tags, picture_type, description)
+    tags[getattr(apic, "HashKey", None) or f"APIC:{description}"] = apic
+    _order_front_cover_first(tags)
 
     try:
         tags.save(str(path), v2_version=3)
@@ -859,6 +1086,46 @@ def _embed_artwork(path: Path, artwork_data: bytes, mime_type: str = "image/jpeg
     except (OSError, ValueError) as exc:
         logger.warning("Failed to embed artwork path=%s: %s", path, exc)
         return False
+
+
+def _embed_artist_artwork(
+    audio_path: Path,
+    download_dir: Path,
+    artist: str,
+    errors: list[str],
+) -> tuple[bool, str | None]:
+    """Embed the artist's profile image as an ID3 artist picture (APIC type 8).
+
+    Returns ``(embedded, source)``. Artist artwork is optional enrichment: a
+    missing, invalid or unavailable image is recorded as a non-fatal error and
+    never propagates an exception or fails the track.
+    """
+    try:
+        artist_data, artist_source = _find_artist_artwork(download_dir, artist)
+    except Exception as exc:  # pragma: no cover - defensive behavior
+        logger.warning("Artist artwork lookup failed path=%s: %s", audio_path, exc)
+        errors.append(f"artist artwork failed: {exc}")
+        return False, None
+
+    if not artist_data:
+        errors.append("artist artwork not found")
+        return False, None
+
+    try:
+        embedded = _embed_artwork(
+            audio_path,
+            artist_data,
+            _image_mime(artist_data),
+            picture_type=8,
+            description="Artist",
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        logger.warning("Artist artwork embed failed path=%s: %s", audio_path, exc)
+        embedded = False
+    if embedded:
+        return True, artist_source
+    errors.append("artist artwork embed failed")
+    return False, None
 
 
 def enrich_metadata(
@@ -896,6 +1163,8 @@ def enrich_metadata(
     fields_written: list[str] = []
     artwork_embedded = False
     artwork_source: str | None = None
+    artist_artwork_embedded = False
+    artist_artwork_source: str | None = None
 
     try:
         fields_written.extend(_write_all_metadata(audio_path, track))
@@ -929,12 +1198,19 @@ def enrich_metadata(
     else:
         errors.append("missing album/artist for artwork lookup")
 
+    if _ARTIST_ARTWORK_ENABLED and track.artists:
+        artist_artwork_embedded, artist_artwork_source = _embed_artist_artwork(
+            audio_path, download_path, track.artists[0], errors
+        )
+
     return MetadataResult(
         path=audio_path,
         artwork_embedded=artwork_embedded,
         artwork_source=artwork_source,
         fields_written=tuple(fields_written),
         errors=tuple(errors),
+        artist_artwork_embedded=artist_artwork_embedded,
+        artist_artwork_source=artist_artwork_source,
     )
 
 
@@ -978,8 +1254,10 @@ __all__ = [
     "MetadataResult",
     "ArtworkCandidate",
     "MetadataError",
+    "artist_artwork_enabled",
     "artwork_artist",
     "cached_artwork_path",
+    "set_artist_artwork_enabled",
     "_artist_album_match",
     "_normalize_identity",
     "enrich_metadata",

@@ -38,6 +38,7 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.m3u_extended is True
     assert config.m3u_relative is False
     assert config.artwork_verify_local is True
+    assert config.artwork_artist_artwork is True
 
 
 def test_load_config_parses_known_values(tmp_path) -> None:
@@ -75,6 +76,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
 
         [artwork]
         verify_local = false
+        artist_artwork = false
         """,
     )
 
@@ -100,6 +102,7 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.m3u_extended is True
     assert config.m3u_relative is True
     assert config.artwork_verify_local is False
+    assert config.artwork_artist_artwork is False
 
 
 def test_unknown_keys_are_ignored(tmp_path) -> None:
@@ -137,6 +140,7 @@ def test_partial_file_keeps_other_defaults(tmp_path) -> None:
         ("[web]\nport = true\n", "web.port must be an integer"),
         ('[m3u]\nextended = "yes"\n', "m3u.extended must be a boolean"),
         ("[artwork]\nverify_local = 1\n", "artwork.verify_local must be a boolean"),
+        ("[artwork]\nartist_artwork = 1\n", "artwork.artist_artwork must be a boolean"),
         ("[search]\nmax_results = []\n", "search.max_results must be an integer"),
     ],
 )
@@ -239,3 +243,19 @@ def test_create_app_wires_artwork_verify_local(tmp_path, monkeypatch) -> None:
 
     create_app()
     assert metadata._ARTWORK_VERIFY_LOCAL is True
+
+
+def test_create_app_wires_artist_artwork(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app()
+    assert metadata._ARTIST_ARTWORK_ENABLED is True
+
+    create_app({"ARTWORK_ARTIST_ARTWORK": False})
+    assert metadata._ARTIST_ARTWORK_ENABLED is False
+
+    create_app()
+    assert metadata._ARTIST_ARTWORK_ENABLED is True

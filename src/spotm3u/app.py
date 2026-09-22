@@ -17,7 +17,7 @@ from .ffmpeg import locate_ffmpeg_location
 from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
 from .media_player import MediaPlayerError, add_to_media_player, media_player_available
-from .metadata import cached_artwork_path, set_artwork_verify_local
+from .metadata import cached_artwork_path, set_artist_artwork_enabled, set_artwork_verify_local
 from .models import Playlist
 from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, describe_youtube_setup, download_track
@@ -54,6 +54,7 @@ def create_app(config: dict | None = None) -> Flask:
         app.config.update(config)
 
     set_artwork_verify_local(bool(app.config.get("ARTWORK_VERIFY_LOCAL", True)))
+    set_artist_artwork_enabled(bool(app.config.get("ARTWORK_ARTIST_ARTWORK", True)))
 
     report = describe_youtube_setup(
         cookies_from_browser=app.config.get("YTDLP_COOKIES_FROM_BROWSER"),

@@ -79,6 +79,12 @@
 # at the cost of possibly keeping a wrong one.
 # verify_local = true
 
+# When true (default), the performing artist's profile image is embedded into
+# each MP3 as an ID3 artist picture (APIC type 8) in addition to the album
+# artwork, reusing one cached image per artist. Missing artist artwork never
+# affects the track. When false, no artist image lookup or embedding happens.
+# artist_artwork = true
+
 [download]
 # MP3 bitrate used by yt-dlp when extracting downloaded audio.
 # audio_quality = "192"
