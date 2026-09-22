@@ -33,7 +33,16 @@
         {% endif %}
       {% endif %}
 
+      {% if state.stale_outputs %}
+      <p class="error" role="alert">
+        {{ state.stale_outputs }} track{{ '' if state.stale_outputs == 1 else 's' }} from this playlist
+        {{ 'is' if state.stale_outputs == 1 else 'are' }} no longer in the download folder.
+        Retry to download {{ 'it' if state.stale_outputs == 1 else 'them' }} again.
+      </p>
+      {% endif %}
+
       {% set unresolved = state.tracks | rejectattr('status', 'equalto', 'complete') | list %}
+      {% set retryable = unresolved | length + state.stale_outputs %}
       {# The filter mirrors the summary's Failed and Ambiguous counts exactly,
          which is narrower than the retry action. #}
       {% set failed_tracks = state.tracks | selectattr('resolution', 'in', ('failed', 'ambiguous')) | list %}
@@ -41,9 +50,9 @@
         {% if state.m3u_path %}
         <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}" data-save-m3u data-job-id="{{ job_id }}" data-playlist-id="{{ playlist_id }}">Download M3U playlist</a>
         {% endif %}
-        {% if unresolved %}
+        {% if retryable %}
         <form method="post" action="{{ url_for('retry_processing', job_id=job_id, playlist_id=playlist_id) }}">
-          <button class="button-secondary" type="submit">Retry {{ unresolved | length }} unresolved track{{ '' if unresolved | length == 1 else 's' }}</button>
+          <button class="button-secondary" type="submit">Retry {{ retryable }} unresolved track{{ '' if retryable == 1 else 's' }}</button>
         </form>
         {% endif %}
         {# Only offered when the generated playlist really has tracks to import. #}
@@ -68,6 +77,9 @@
           <div><dt>Missing</dt><dd>{{ state.counts.missing }}</dd></div>
           <div><dt>Failed</dt><dd>{{ state.counts.failed }}</dd></div>
           <div><dt>Uncertain</dt><dd>{{ state.counts.uncertain }}</dd></div>
+          {% if state.stale_outputs %}
+          <div><dt>Missing from disk</dt><dd>{{ state.stale_outputs }}</dd></div>
+          {% endif %}
         </dl>
       </section>
 
@@ -103,7 +115,9 @@
                 {% if track.artists %}
                 <div class="track-artists" data-tooltip="{{ track.artists | join(', ') }}">{{ track.artists | join(', ') }}</div>
                 {% endif %}
-                {% if track.reason %}
+                {% if track.file_missing %}
+                <div class="track-reason">File missing from disk — retry to download it again</div>
+                {% elif track.reason %}
                 <div class="track-reason">{{ track.reason }}</div>
                 {% endif %}
               </div>

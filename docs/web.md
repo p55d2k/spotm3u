@@ -142,6 +142,16 @@ results, and the browser returns to the live processing page, which comes back
 to the refreshed result page when the retry settles. A retry is rejected while
 the job is still running and is a no-op when nothing is unresolved.
 
+A track only counts as resolved while its audio file is still on disk. When a
+finished run's downloads were deleted by hand (an emptied `SpotM3U-downloads`
+folder), the result page marks those tracks *missing from disk*, explains that
+they are no longer in the download folder, adds them to the retry count, and
+shows **File missing from disk — retry to download it again** on the affected
+rows. The batch result page shows the same notice per playlist, and the retry
+then re-downloads exactly those tracks. Counts such as *Successfully resolved*
+still describe the run that produced them.
+
+
 ## M3U Download
 
 When processing completes, offer a `Save playlist (M3U)` link to

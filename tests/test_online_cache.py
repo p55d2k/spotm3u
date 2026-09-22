@@ -242,6 +242,36 @@ def test_corrupt_cached_file_is_not_reused(tmp_path, monkeypatch):
     assert cache.lookup(TRACK, "https://youtu.be/abc123XYZ") is None
 
 
+def test_deleted_cached_file_is_not_reused_and_its_entry_is_forgotten(tmp_path, monkeypatch):
+    install_cache_validation(monkeypatch)
+    downloads = tmp_path / "downloads"
+    cache = DownloadCache(downloads)
+    path = downloads / "entry.mp3"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"audio")
+    cache.store(TRACK, "https://www.youtube.com/watch?v=abc123XYZ", path)
+
+    path.unlink()  # the download folder was emptied by hand
+
+    assert cache.lookup(TRACK, "https://www.youtube.com/watch?v=abc123XYZ") is None
+    assert cache._load_entries() == [], "the manifest must not outlive the audio"
+
+
+def test_store_forgets_entries_whose_files_are_gone(tmp_path):
+    downloads = tmp_path / "downloads"
+    cache = DownloadCache(downloads)
+    cache.store(
+        Track("Old", ["Artist"]),
+        "https://www.youtube.com/watch?v=old0000000",
+        downloads / "old.mp3",
+    )
+    kept = downloads / "kept.mp3"
+    kept.write_bytes(b"audio")
+    cache.store(Track("New", ["Artist"]), "https://www.youtube.com/watch?v=new0000000", kept)
+
+    assert [entry["title"] for entry in cache._load_entries()] == ["New"]
+
+
 def test_lookup_rejects_payload_outside_download_dir(tmp_path):
     cache = DownloadCache(tmp_path / "downloads")
     cache.download_dir.mkdir(parents=True)

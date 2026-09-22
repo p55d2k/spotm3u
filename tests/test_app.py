@@ -391,6 +391,41 @@ def test_start_processing_uses_the_configured_fast_mode_and_form_can_override(
     assert overridden.status_code == 409, "an existing job keeps the mode it started with"
 
 
+def test_result_page_offers_a_retry_after_the_download_folder_is_emptied(
+    tmp_path, monkeypatch
+) -> None:
+    music = tmp_path / "music"
+    music.mkdir()
+    # One local file, as in ``test_processing_job_resolves_local_matches``: the
+    # selected playlist resolves against it and the job finishes cleanly.
+    local_file = music / "Artist - First.mp3"
+    local_file.write_bytes(b"audio")
+    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+    client.post(f"/processing/{job_id}/1/start")
+    job = client.application.config["JOB_MANAGER"].get(job_id)
+    job.wait(timeout=10)
+
+    fresh = client.get(f"/processing/{job_id}/1/result")
+    assert b"no longer in the download folder" not in fresh.data
+    assert b"unresolved track" not in fresh.data
+
+    local_file.unlink()  # the user deleted everything from SpotM3U-downloads
+
+    stale = client.get(f"/processing/{job_id}/1/result")
+
+    assert stale.status_code == 200
+    assert b"no longer in the download folder" in stale.data
+    assert b"File missing from disk" in stale.data
+    assert b"Retry 1 unresolved track" in stale.data
+
+    retried = client.post(f"/processing/{job_id}/1/retry")
+
+    assert retried.status_code == 302, "retry must actually re-resolve the deleted track"
+    assert retried.headers["Location"].endswith(f"/processing/{job_id}/1")
+
+
 def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()

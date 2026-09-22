@@ -60,6 +60,78 @@ def _job(tracks, outcomes, output: Path, *, job_id: str = "abc") -> ProcessingJo
     return job
 
 
+class RewritingResolver:
+    """Resolver that re-creates each track's file, like a fresh download does."""
+
+    def __init__(self, paths: dict[str, Path]) -> None:
+        self.paths = paths
+        self.calls = 0
+
+    def resolve(self, track, *, stage_callback=None):
+        self.calls += 1
+        path = self.paths[track.title]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"audio")
+        return _resolution(track, "downloaded", path=path)
+
+
+def test_snapshot_flags_completed_tracks_whose_file_was_deleted(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B")]
+    files = {"A": tmp_path / "Artist - A.mp3", "B": tmp_path / "Artist - B.mp3"}
+    output = tmp_path / "output"
+    resolver = RewritingResolver(files)
+    job = ProcessingJob(
+        job_id="abc",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=output,
+        resolver_factory=lambda: resolver,
+    )
+    job.start()
+    job.wait(timeout=5)
+    assert job.as_dict()["stale_outputs"] == 0
+
+    files["A"].unlink()  # the user emptied the download folder by hand
+
+    snapshot = job.as_dict()
+    assert snapshot["stale_outputs"] == 1
+    assert [state["file_missing"] for state in snapshot["tracks"]] == [True, False]
+
+
+def test_retry_redownloads_tracks_whose_files_were_deleted(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B")]
+    files = {"A": tmp_path / "Artist - A.mp3", "B": tmp_path / "Artist - B.mp3"}
+    resolver = RewritingResolver(files)
+    job = ProcessingJob(
+        job_id="abc",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=tmp_path / "output",
+        resolver_factory=lambda: resolver,
+    )
+    job.start()
+    job.wait(timeout=5)
+    assert job.as_dict()["successful"] == 2
+    assert job.retry() == (), "nothing is missing yet"
+
+    for path in files.values():
+        path.unlink()
+
+    retried = job.retry()
+    job.wait(timeout=5)
+
+    assert retried == (0, 1), "deleted downloads must be resolved again"
+    assert resolver.calls == 4
+    assert all(path.is_file() for path in files.values())
+    snapshot = job.as_dict()
+    assert snapshot["successful"] == 2
+    assert snapshot["stale_outputs"] == 0
+    m3u = (tmp_path / "output" / "playlist.m3u").read_text(encoding="utf-8")
+    assert str(files["A"]) in m3u and str(files["B"]) in m3u
+
+
 def test_job_tracks_state_counts_and_m3u(tmp_path: Path) -> None:
     tracks = [_track("A"), _track("B"), _track("C")]
     local_file = tmp_path / "Artist - A.mp3"

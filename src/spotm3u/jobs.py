@@ -39,6 +39,31 @@ TrackProcessingStatus = Literal[
 ]
 ResolverFactory = Callable[[], TrackResolver]
 
+
+def _missing_file(path: str | None) -> bool:
+    """Return True when a recorded output path no longer exists on disk."""
+    if not path:
+        return False
+    try:
+        return not Path(path).is_file()
+    except (OSError, ValueError):
+        return True
+
+
+def _missing_output(result: TrackResolution | None) -> bool:
+    """Return True when a previously resolved track's audio file is gone.
+
+    Users delete the download folder by hand, and the cache manifest or the
+    in-memory results must never claim a track is still there after that. A
+    resolution that never produced a file (failed, missing, ambiguous) is not
+    "stale": it is unresolved and already retried.
+    """
+    if result is None or not result.successful:
+        return False
+    local_path = result.local_path
+    return local_path is None or _missing_file(str(local_path))
+
+
 TRACK_STATUS_TERMINAL = {
     "local": "complete",
     "downloaded": "complete",
@@ -214,11 +239,14 @@ class ProcessingJob:
             thread.join(timeout)
 
     def retry(self) -> tuple[int, ...]:
-        """Re-resolve every track that has no usable audio file yet.
+        """Re-resolve every track that has no usable audio file on disk.
 
-        Tracks that already resolved locally or downloaded keep their result and
-        are never processed again, so a retry costs only the unresolved tracks.
-        The M3U is rewritten from the merged results once the retry settles.
+        Tracks that still have their resolved file keep their result and are
+        never processed again, so a retry costs only the unresolved tracks. A
+        track whose file was deleted by hand counts as unresolved too, so
+        deleting the download folder and retrying re-downloads the playlist
+        instead of quietly reporting it as complete. The M3U is rewritten from
+        the merged results once the retry settles.
         """
         with self._lock:
             if self._status in {"queued", "running"}:
@@ -227,7 +255,7 @@ class ProcessingJob:
             indices = tuple(
                 index
                 for index, result in enumerate(self._results)
-                if result is None or not result.successful
+                if result is None or not result.successful or _missing_output(result)
             )
             if not indices:
                 return ()
@@ -474,6 +502,14 @@ class ProcessingJob:
         """Return a consistent, JSON-compatible view of the job state."""
         with self._lock:
             track_states = [state.as_dict() for state in self._track_states]
+            stale_outputs = 0
+            for state in self._track_states:
+                # A completed track whose file is gone is reported as such so the
+                # interface can offer a retry instead of showing a working track.
+                state_dict = track_states[state.index]
+                missing = state.status == "complete" and _missing_file(state.local_path)
+                state_dict["file_missing"] = missing
+                stale_outputs += int(missing)
             current = track_states[self._current_index] if self._current_index is not None else None
             resolutions = [state.resolution for state in self._track_states]
             counts = {
@@ -511,6 +547,7 @@ class ProcessingJob:
                 "successful": sum(state.status == "complete" for state in self._track_states),
                 "failed": sum(state.status == "failed" for state in self._track_states),
                 "ambiguous": sum(state.status == "ambiguous" for state in self._track_states),
+                "stale_outputs": stale_outputs,
                 "counts": counts,
                 "status": self._status,
                 "error": self._error,

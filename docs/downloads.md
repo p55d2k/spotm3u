@@ -204,6 +204,14 @@ Successful downloads may be cached and reused when their association with the re
 
 Cache reuse must not rely solely on filenames.
 
+Deleting downloads by hand is supported. A cached entry is only reused while
+its audio file is still on disk (the manifest lives in the download folder
+next to it), and the manifest heals itself: entries whose file has been deleted
+are dropped on the next lookup or store, so a stale row can never make SpotM3U
+skip a re-download. A finished run reports tracks whose file disappeared as
+**missing from disk** and offers a retry that downloads them again (see
+[web](web.md)).
+
 Concurrent downloaders that target the same output file (for example two
 batch playlists that share a song) are single-flighted: the first caller
 downloads, and the others wait and reuse that validated file instead of

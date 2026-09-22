@@ -85,6 +85,7 @@ class DownloadCache:
             return None
         requested_key = cache_metadata_key(track)
         requested_source = source_identity(url)
+        stale_entry = False
         for entry in self._load_entries():
             source_hit = source_identity(_text(entry.get("source_url"))) == requested_source
             metadata_hit = _text(entry.get("key")) == requested_key and _duration_compatible(
@@ -93,9 +94,36 @@ class DownloadCache:
             if not (source_hit or metadata_hit):
                 continue
             path = self._resolve_cached_file(entry)
-            if path is not None and validate_downloaded_audio(track, path).status == "valid":
+            if path is None:
+                # The file was deleted outside SpotM3U: remember that so the
+                # manifest is healed once, then keep looking for a usable entry.
+                stale_entry = True
+                continue
+            if validate_downloaded_audio(track, path).status == "valid":
+                if stale_entry:
+                    self.prune()
                 return path
+        if stale_entry:
+            self.prune()
         return None
+
+    def prune(self) -> int:
+        """Drop manifest entries whose audio file is missing; return the count.
+
+        Users delete downloads by hand (emptying the download folder), which
+        leaves the manifest pointing at files that no longer exist. Pruning
+        keeps the cache an accurate record of what is actually on disk, so a
+        later run re-downloads instead of trusting a stale entry.
+        """
+        with _MANIFEST_LOCK:
+            entries = self._load_entries()
+            if not entries:
+                return 0
+            kept = [entry for entry in entries if self._resolve_cached_file(entry) is not None]
+            removed = len(entries) - len(kept)
+            if removed:
+                self._write_entries(kept)
+            return removed
 
     def store(self, track: Track, url: str, path: str | Path) -> None:
         """Record a successfully validated download for later reuse."""
@@ -120,12 +148,15 @@ class DownloadCache:
             "recorded_at": datetime.now(UTC).isoformat(),
         }
         with _MANIFEST_LOCK:
-            entries = self._load_entries()
             identity = source_identity(url)
             entries = [
                 existing
-                for existing in entries
+                # Replace this source's record and forget entries whose file
+                # was deleted by hand, so the manifest never outlives the audio
+                # it describes.
+                for existing in self._load_entries()
                 if source_identity(_text(existing.get("source_url"))) != identity
+                and self._resolve_cached_file(existing) is not None
             ]
             entries.append(entry)
             self._write_entries(entries)

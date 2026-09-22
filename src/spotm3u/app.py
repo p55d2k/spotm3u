@@ -664,6 +664,9 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
         "total": total,
         "successful": sum(int(state["successful"]) for state in states),
         "failed": sum(int(state["failed"]) for state in states),
+        # Completed tracks whose audio was deleted by hand; the interface offers
+        # a retry for them instead of treating them as still available.
+        "stale_outputs": sum(int(state["stale_outputs"]) for state in states),
         "started_at": min(
             (int(state["started_at"]) for state in states if isinstance(state["started_at"], int)),
             default=None,
