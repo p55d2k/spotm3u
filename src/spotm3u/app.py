@@ -280,7 +280,10 @@ def create_app(config: dict | None = None) -> Flask:
         if not jobs or any(job is None or job.status in {"queued", "running"} for job in jobs):
             return redirect(url_for("batch_processing", job_id=job_id))
         return render_template(
-            "batch_result.html", job_id=job_id, states=[job.as_dict() for job in jobs]
+            "batch_result.html",
+            job_id=job_id,
+            states=[job.as_dict() for job in jobs],
+            media_player_available=media_player_available(),
         )
 
     @app.get("/processing/<job_id>/<playlist_id>")
