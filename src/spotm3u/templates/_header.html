@@ -42,7 +42,7 @@
 <div class="context-nav">
   <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">← Back to playlist selection</a>
 </div>
-{% elif endpoint == "processing_result" and batch_back %}
+{% elif endpoint in ("processing_result", "add_playlist_to_media_player") and batch_back %}
 <div class="context-nav">
   <a class="back-link" href="{{ url_for('batch_processing_result', job_id=job_id) }}">← Back to all playlist results</a>
 </div>
