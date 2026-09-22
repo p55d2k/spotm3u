@@ -229,12 +229,124 @@ def test_window_controls_are_safe_before_a_window_exists() -> None:
     assert controls.is_maximized() is False
 
 
+def _controls_client(tmp_path) -> tuple[desktop.WindowControls, _FakeWindow, Flask, object]:
+    from spotm3u import jobs
+
+    job = jobs.ProcessingJob(
+        job_id="job",
+        playlist_id="0",
+        playlist_name="Hits",
+        tracks=[],
+        output_dir=tmp_path,
+        resolver_factory=lambda: None,
+        m3u_filename="playlist.m3u",
+    )
+    job._m3u_path = tmp_path / "playlist.m3u"
+    manager = SimpleNamespace(get=lambda job_id, playlist_id: job if playlist_id == "0" else None)
+    app = Flask(__name__)
+    app.config["JOB_MANAGER"] = manager
+    controls = desktop.WindowControls(app=app)
+    window = _FakeWindow()
+    controls.attach(window)
+    return controls, window, app, job
+
+
+def test_save_m3u_copies_the_playlist_into_downloads(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    controls, _window, _app, job = _controls_client(tmp_path)
+    job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+
+    result = controls.save_m3u("job", "0")
+
+    assert result["saved"] is True
+    assert Path(result["path"]) == downloads / "Hits.m3u"
+    assert result["name"] == "Hits.m3u"
+    assert (downloads / "Hits.m3u").read_text(encoding="utf-8") == "#EXTM3U\n"
+
+
+def test_save_m3u_uses_a_unique_name_when_collisions_exist(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    controls, _window, _app, job = _controls_client(tmp_path)
+    downloads.mkdir()
+    (downloads / "Hits.m3u").write_text("older copy", encoding="utf-8")
+    job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+
+    result = controls.save_m3u("job", "0")
+
+    assert result["saved"] is True
+    assert result["name"] == "Hits (2).m3u"
+    assert result["path"] == str(downloads / "Hits (2).m3u")
+
+
+def test_save_m3u_reports_jobs_that_are_not_ready(tmp_path) -> None:
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    assert controls.save_m3u("job", "0") == {"error": "That playlist is not ready to download."}
+    assert controls.save_m3u("job", "99") == {"error": "That playlist is not ready to download."}
+
+
+def test_save_m3u_without_an_app_reports_not_ready(tmp_path) -> None:
+    _controls, _window, _app, job = _controls_client(tmp_path)
+    job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+    controls = desktop.WindowControls()
+
+    assert "error" in controls.save_m3u("job", "0")
+
+
+def test_open_at_reveals_the_file_in_finder(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "playlist.m3u"
+    target.write_text("#EXTM3U\n", encoding="utf-8")
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(desktop.subprocess, "Popen", lambda args, **kwargs: spawned.append(args))
+    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    result = controls.open_at(str(target))
+
+    assert result == {"opened": True}
+    assert spawned == [["open", "-R", str(target)]]
+
+
+def test_open_at_opens_the_parent_folder_on_linux(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "playlist.m3u"
+    target.write_text("#EXTM3U\n", encoding="utf-8")
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(desktop.subprocess, "Popen", lambda args, **kwargs: spawned.append(args))
+    monkeypatch.setattr(desktop.sys, "platform", "linux")
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    result = controls.open_at(str(target))
+
+    assert result == {"opened": True}
+    assert spawned == [["xdg-open", str(target.parent)]]
+
+
+def test_open_at_without_a_window_returns_an_error(tmp_path) -> None:
+    controls, _window, _app, job = _controls_client(tmp_path)
+    job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+    controls.attach(None)
+
+    assert controls.open_at(str(job.m3u_path)) == {"error": "The native window is not available."}
+
+
+def test_open_at_reports_missing_files(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(desktop.sys, "platform", "linux")
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    err = {"error": "That file could not be found."}
+    assert controls.open_at(str(tmp_path / "missing.m3u")) == err
+
+
 def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeypatch) -> None:
     created: dict[str, Any] = {}
 
     fake_window = _FakeWindow()
 
     class FakeWebview:
+        settings: dict[str, Any] = {}
+
         @staticmethod
         def create_window(title, url, **kwargs):
             created["title"] = title
@@ -256,6 +368,7 @@ def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeyp
     assert kwargs["frameless"] is True
     assert kwargs["easy_drag"] is False
     assert controls.window is fake_window
+    assert FakeWebview.settings["ALLOW_DOWNLOADS"] is True
 
     # show_window must have wired the OS maximize/restore events to the bridge.
     fake_window.events.maximized.fire()
@@ -285,7 +398,7 @@ def test_start_server_releases_the_port_after_shutdown() -> None:
 def test_run_desktop_opens_window_then_releases_the_port(monkeypatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr(desktop, "create_app", lambda: _minimal_app())
-    monkeypatch.setattr(desktop, "show_window", lambda url: opened.append(url))
+    monkeypatch.setattr(desktop, "show_window", lambda url, **kwargs: opened.append(url))
     monkeypatch.delenv(desktop.NO_WEBVIEW_ENV, raising=False)
 
     desktop.run_desktop()
@@ -307,7 +420,7 @@ def test_run_desktop_uses_a_dynamic_port_when_preferred_is_taken(monkeypatch) ->
         app.config["PORT"] = taken
         opened: list[str] = []
         monkeypatch.setattr(desktop, "create_app", lambda: app)
-        monkeypatch.setattr(desktop, "show_window", lambda url: opened.append(url))
+        monkeypatch.setattr(desktop, "show_window", lambda url, **kwargs: opened.append(url))
         monkeypatch.delenv(desktop.NO_WEBVIEW_ENV, raising=False)
 
         desktop.run_desktop()

@@ -18,7 +18,7 @@
         <p>{{ state.successful }} successful, {{ state.failed }} failed of {{ state.playlist.total_tracks }} tracks.</p>
         <div class="result-actions">
           {% if state.m3u_path %}
-          <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=state.playlist.id) }}">Save playlist (M3U)</a>
+          <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=state.playlist.id) }}" data-save-m3u data-job-id="{{ job_id }}" data-playlist-id="{{ state.playlist.id }}">Save playlist (M3U)</a>
           {% endif %}
           <a class="button button-secondary" href="{{ url_for('processing_result', job_id=job_id, playlist_id=state.playlist.id) }}">View track details</a>
         </div>
@@ -33,5 +33,6 @@
         </div>
       </section>
     </main>
+    {% include "_save_m3u.html" %}
   </body>
 </html>

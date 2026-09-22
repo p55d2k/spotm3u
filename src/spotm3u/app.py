@@ -442,7 +442,15 @@ def create_app(config: dict | None = None) -> Flask:
         if not m3u_path.is_file():
             return jsonify({"error": "That playlist is not ready to download."}), 404
         name = sanitize_filename_component(job.playlist_name) or job.playlist_id
-        return send_file(m3u_path, as_attachment=True, download_name=f"{name}.m3u")
+        # Served as octet-stream (not audio/x-mpegurl) so a WebView that ignores
+        # ``Content-Disposition: attachment`` cannot "show" the playlist and open
+        # its built-in media player; it can only offer a native save instead.
+        return send_file(
+            m3u_path,
+            as_attachment=True,
+            download_name=f"{name}.m3u",
+            mimetype="application/octet-stream",
+        )
 
     @app.post("/processing/<job_id>/<playlist_id>/media-player")
     def add_playlist_to_media_player(job_id: str, playlist_id: str):

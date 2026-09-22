@@ -39,7 +39,7 @@
       {% set failed_tracks = state.tracks | selectattr('resolution', 'in', ('failed', 'ambiguous')) | list %}
       <div class="result-actions">
         {% if state.m3u_path %}
-        <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}">Download M3U playlist</a>
+        <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}" data-save-m3u data-job-id="{{ job_id }}" data-playlist-id="{{ playlist_id }}">Download M3U playlist</a>
         {% endif %}
         {% if unresolved %}
         <form method="post" action="{{ url_for('retry_processing', job_id=job_id, playlist_id=playlist_id) }}">
@@ -161,5 +161,6 @@
         apply("all");
       })();
     </script>
+    {% include "_save_m3u.html" %}
   </body>
 </html>

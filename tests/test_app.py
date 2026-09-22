@@ -358,6 +358,7 @@ def test_download_m3u_route_returns_playlist(tmp_path, monkeypatch) -> None:
     assert b"#EXTM3U" in response.data
     assert "attachment" in response.headers["Content-Disposition"]
     assert "two.m3u" in response.headers["Content-Disposition"]
+    assert response.mimetype == "application/octet-stream"
 
 
 def test_download_m3u_route_requires_completed_job(tmp_path, monkeypatch) -> None:

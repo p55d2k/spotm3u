@@ -26,10 +26,13 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import subprocess
 import sys
 import threading
 from pathlib import Path
 
+from flask import Flask
 from werkzeug.serving import make_server
 
 from .app import create_app
@@ -42,6 +45,7 @@ from .launcher import (
     wait_for_server,
 )
 from .log import PACKAGE_LOGGER
+from .normalization import sanitize_filename_component
 from .runtime import bundle_roots, is_frozen
 
 _LOGGER = logging.getLogger(PACKAGE_LOGGER)
@@ -68,6 +72,38 @@ def _fullscreen_maximize() -> bool:
     return sys.platform == "darwin"
 
 
+def _downloads_root() -> Path:
+    """The folder generated playlists land in.
+
+    ``$SPOTM3U_DOWNLOADS`` (also honoured by the desktop launcher) wins;
+    otherwise the platform's Downloads folder. Created on demand so tests can
+    point it at a temporary directory.
+    """
+    override = os.environ.get("SPOTM3U_DOWNLOADS")
+    if override:
+        candidate = Path(override)
+        return (candidate if candidate.is_absolute() else Path.home() / override).resolve()
+    return (Path.home() / "Downloads").resolve()
+
+
+def _unique_download_target(job) -> Path:
+    """A playlist-derived, collision-free path under ``_downloads_root()``.
+
+    Names a file ``<playlist>.m3u`` from the sanitised playlist name, appending
+    `` (2)``, `` (3)`` … until the name is free so repeated saves never
+    silently overwrite an older copy.
+    """
+    base = sanitize_filename_component(job.playlist_name) or job.playlist_id
+    root = _downloads_root()
+    root.mkdir(parents=True, exist_ok=True)
+    candidate = root / f"{base}.m3u"
+    counter = 2
+    while candidate.exists():
+        candidate = root / f"{base} ({counter}).m3u"
+        counter += 1
+    return candidate
+
+
 class WindowControls:
     """JavaScript bridge backing the custom HTML title bar.
 
@@ -79,7 +115,8 @@ class WindowControls:
     but it can only control the window once the window exists.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, app: Flask | None = None) -> None:
+        self.app = app
         self.window = None
         self._maximized = False
 
@@ -161,6 +198,64 @@ class WindowControls:
         window.destroy()
         window.events.closed.wait(timeout=_CLOSE_TIMEOUT_SECONDS)
 
+    def save_m3u(self, job_id: str, playlist_id: str) -> dict[str, str | bool | Path]:
+        """Copy a generated playlist straight into the Downloads folder.
+
+        pywebview cannot deliver Flask's ``Content-Disposition: attachment``
+        download the way a browser does, so the page hands the download to
+        this bridge instead of following the link (see ``_save_m3u.html``).
+        The file is copied from the server-owned output directory to a unique
+        playlist-derived name under ``_downloads_root()``; no save panel is
+        opened, which keeps the action a single click. The returned ``path``
+        lets the page show a toast with an "Open folder" action.
+        """
+        job = self._find_job(job_id, playlist_id)
+        if job is None or job.m3u_path is None:
+            return {"error": "That playlist is not ready to download."}
+        source = Path(job.m3u_path)
+        if not source.is_file():
+            return {"error": "That playlist is not ready to download."}
+
+        destination = _unique_download_target(job)
+        try:
+            shutil.copyfile(source, destination)
+        except OSError as error:
+            _LOGGER.warning("could not save the M3U to %s: %s", destination, error)
+            return {"error": "The playlist could not be saved."}
+        return {"saved": True, "path": str(destination), "name": destination.name}
+
+    def open_at(self, path: str) -> dict[str, str | bool]:
+        """Reveal a saved playlist in the OS file manager.
+
+        Powers the "Open folder" button on the download toast: reveals the file
+        (Finder/Explorer) or the parent folder (xdg-open) so the user does not
+        have to go hunting for the freshly saved M3U.
+        """
+        if self.window is None:
+            return {"error": "The native window is not available."}
+        target = Path(path)
+        if not target.is_file():
+            return {"error": "That file could not be found."}
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(target)])
+            elif sys.platform == "win32":
+                subprocess.Popen(["explorer", "/select,", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target.parent)])
+        except OSError as error:
+            _LOGGER.warning("could not reveal %s in the file manager: %s", target, error)
+            return {"error": "The file manager could not be opened."}
+        return {"opened": True}
+
+    def _find_job(self, job_id: str, playlist_id: str):
+        if self.app is None:
+            return None
+        manager = self.app.config.get("JOB_MANAGER")
+        if manager is None:
+            return None
+        return manager.get(job_id, playlist_id)
+
 
 def webview_icon_path() -> Path | None:
     """The canonical SpotM3U icon for the WebView window, when available.
@@ -222,19 +317,27 @@ def webview_start_kwargs() -> dict[str, str]:
     return {"icon": str(icon)}
 
 
-def show_window(url: str) -> None:
+def show_window(url: str, app: Flask | None = None) -> None:
     """Show ``url`` in the native SpotM3U window and block until it closes.
 
     pywebview is imported lazily so tests and the headless server path never
     touch the desktop GUI stack. The window is frameless and the page draws its
     own title bar; :class:`WindowControls` is exposed as ``pywebview.api`` so
-    the HTML minimize/maximize/close buttons can drive the native window. Only
-    that windowing API is exposed to the page, and the localhost URL stays
-    hidden from normal users.
+    the HTML minimize/maximize/close buttons can drive the native window and the
+    M3U download can be saved through a native dialog. Only that API is exposed
+    to the page, and the localhost URL stays hidden from normal users.
     """
     import webview
 
-    controls = WindowControls()
+    # The default (ALLOW_DOWNLOADS=False) makes WebKit silently cancel any
+    # navigation to the octet-stream M3U URL, so a download that slips past the
+    # page's JS bridge would do nothing. Allow downloads so it falls back to a
+    # native save dialog instead.
+    settings = getattr(webview, "settings", None)
+    if settings is not None:
+        settings["ALLOW_DOWNLOADS"] = True
+
+    controls = WindowControls(app=app)
     window = webview.create_window(
         WINDOW_TITLE,
         url,
@@ -271,7 +374,7 @@ def run_desktop(*, open_window: bool | None = None) -> None:
         if not wait_for_server(host, port, timeout=READINESS_TIMEOUT):
             raise RuntimeError("server did not become ready")
         if webview_enabled(open_window):
-            show_window(url)
+            show_window(url, app=app)
         else:
             server_thread.join()
     finally:
