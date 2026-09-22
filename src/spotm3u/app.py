@@ -474,6 +474,7 @@ def create_app(config: dict | None = None) -> Flask:
         if job is None or job.playlist_id != playlist_id or job.status != "completed":
             return jsonify({"error": "That playlist is not ready to import."}), 404
         state = job.as_dict()
+        _annotate_artwork(job, state)
         paths = [
             track["local_path"]
             for track in state["tracks"]

@@ -724,6 +724,37 @@ def test_add_to_media_player_reuses_the_generated_playlist(tmp_path, monkeypatch
     assert client.get(f"/processing/{job.job_id}/1/playlist.m3u").status_code == 200
 
 
+def test_add_to_media_player_keeps_artwork_on_result_page(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
+    from spotm3u import metadata
+
+    client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    track = job.tracks[0]
+    artwork_path = metadata._cached_artwork_path(
+        metadata._cache_dir(download_dir),
+        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    )
+    artwork_path.write_bytes(b"cached-artwork-bytes")
+    captured = {}
+
+    def fake_add(playlist_name, playlist_path, paths):
+        captured["paths"] = list(paths)
+        return MediaPlayerResult(
+            action="created",
+            imported=1,
+            message="Added to Media Player. 1 track(s) were imported into Apple Music.",
+        )
+
+    monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+
+    response = client.post(f"/processing/{job.job_id}/1/media-player")
+
+    assert response.status_code == 200
+    assert b'class="track-art-img"' in response.data
+    assert f"/processing/{job.job_id}/1/artwork/0".encode() in response.data
+    assert artwork_path.is_file()
+
+
 def test_add_to_media_player_reports_failures(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
     client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
