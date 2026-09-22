@@ -26,8 +26,7 @@
           <span id="eta-chip" class="eta-chip" hidden aria-live="polite"></span>
         </div>
         <dl class="stats">
-          <div><dt>Total tracks</dt><dd id="stat-total">0</dd></div>
-          <div><dt>Finding files</dt><dd id="stat-searched">0</dd></div>
+          <div><dt>Searched</dt><dd id="stat-searched">0</dd></div>
           <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
           <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
           <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
@@ -42,7 +41,6 @@
       const progress = document.getElementById("progress");
       const status = document.getElementById("status");
       const bar = document.getElementById("bar");
-      const statTotal = document.getElementById("stat-total");
       const statCompleted = document.getElementById("stat-completed");
       const statSearched = document.getElementById("stat-searched");
       const statSuccessful = document.getElementById("stat-successful");
@@ -53,6 +51,10 @@
       const etaChip = document.getElementById("eta-chip");
       const statusUrl = "{{ url_for('batch_processing_status', job_id=job_id) }}";
       const playlistViews = new Map();
+
+      function fmtNumber(n) {
+        return n.toLocaleString();
+      }
       const artworkUrl = (playlistId, index) =>
         "{{ url_for('track_artwork', job_id=job_id, playlist_id='playlist', index=0) }}"
           .replace("/playlist/", "/" + playlistId + "/")
@@ -272,11 +274,10 @@
           ? "Batch complete"
           : state.status === "failed" ? "Batch finished with errors" : "Processing playlists";
         bar.style.width = Math.round(progressFraction(state) * 100) + "%";
-        statCompleted.textContent = state.completed + " / " + state.total;
-        statSearched.textContent = state.searched + " / " + state.total;
-        statTotal.textContent = state.total;
-        statSuccessful.textContent = state.successful;
-        statFailed.textContent = state.failed;
+        statCompleted.textContent = fmtNumber(state.completed) + " / " + fmtNumber(state.total);
+        statSearched.textContent = fmtNumber(state.searched) + " / " + fmtNumber(state.total);
+        statSuccessful.textContent = fmtNumber(state.successful);
+        statFailed.textContent = fmtNumber(state.failed);
         const active = state.playlists.find((playlist) => playlist.status === "running");
         currentTrack.textContent = active && active.current_track
           ? "Active playlist: " + active.playlist.name + " · Current: " +
