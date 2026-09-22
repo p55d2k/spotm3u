@@ -490,6 +490,108 @@ def test_cached_artwork_path_returns_file_when_present(tmp_path):
     assert cached_artwork_path(tmp_path, track).read_bytes() == b"image-bytes"
 
 
+def _write_artwork_entry(tmp_path, track, *, source="coverartarchive"):
+    """Write a cached release image (and artist image) for one track."""
+    from spotm3u import metadata
+
+    artist = artwork_artist(track)
+    key = _cache_key(artist or "", track.album or "", track.title)
+    metadata._save_cached_artwork(tmp_path, key, b"image-bytes")
+    metadata._write_artwork_source(tmp_path, key, source)
+    artist_key = metadata._artist_cache_key(artist or "")
+    metadata._write_cached_image(metadata._artist_cache_dir(tmp_path), artist_key, b"artist")
+    metadata._write_cached_source(metadata._artist_cache_dir(tmp_path), artist_key, "deezer")
+    return key, artist_key
+
+
+def _entry_paths(tmp_path, key, artist_key):
+    from spotm3u import metadata
+
+    cache = metadata._cache_dir(tmp_path)
+    return (
+        metadata._cached_artwork_path(cache, key),
+        metadata._artwork_source_path(cache, key),
+        metadata._cached_artwork_path(metadata._artist_cache_dir(tmp_path), artist_key),
+    )
+
+
+def test_prune_missing_artwork_removes_the_release_entry(tmp_path):
+    from spotm3u.metadata import prune_missing_artwork
+
+    track = Track("Home", ["Artist"], album="Album")
+    key, artist_key = _write_artwork_entry(tmp_path, track)
+    image, source, artist_image = _entry_paths(tmp_path, key, artist_key)
+
+    removed = prune_missing_artwork(tmp_path, [track])
+
+    assert removed == 4  # the release image and artist image, each with its source marker
+    assert not image.exists()
+    assert not source.exists()
+    assert not artist_image.exists()
+    assert cached_artwork_path(tmp_path, track) is None
+
+
+def test_prune_missing_artwork_keeps_artists_that_still_have_a_track(tmp_path):
+    from spotm3u.metadata import prune_missing_artwork
+
+    deleted = Track("Home", ["Artist"], album="Album")
+    kept = Track("Other", ["Artist"], album="Another Album")
+    deleted_key, deleted_artist_key = _write_artwork_entry(tmp_path, deleted)
+    kept_key, kept_artist_key = _write_artwork_entry(tmp_path, kept)
+    deleted_image, _deleted_source, artist_image = _entry_paths(
+        tmp_path, deleted_key, deleted_artist_key
+    )
+    kept_image, _kept_source, _kept_artist_image = _entry_paths(tmp_path, kept_key, kept_artist_key)
+
+    removed = prune_missing_artwork(tmp_path, [deleted], keep_artists=["Artist"])
+
+    assert removed == 2  # the release image and its source marker only
+    assert not deleted_image.exists()
+    assert kept_image.exists()
+    assert artist_image.exists()  # shared by the track that is still on disk
+
+
+def test_prune_missing_artwork_leaves_other_identities_alone(tmp_path):
+    from spotm3u.metadata import prune_missing_artwork
+
+    deleted = Track("Home", ["Artist"], album="Album")
+    untouched = Track("Song", ["Someone Else"], album="Their Album")
+    key, artist_key = _write_artwork_entry(tmp_path, deleted)
+    other_key, other_artist_key = _write_artwork_entry(tmp_path, untouched)
+    other_image, other_source, other_artist_image = _entry_paths(
+        tmp_path, other_key, other_artist_key
+    )
+
+    prune_missing_artwork(tmp_path, [deleted], keep_artists=["Someone Else"])
+
+    assert other_image.exists()
+    assert other_source.exists()
+    assert other_artist_image.exists()
+
+
+def test_prune_missing_artwork_without_a_cache_entry_removes_nothing(tmp_path):
+    from spotm3u.metadata import prune_missing_artwork
+
+    track = Track("Home", ["Artist"], album="Album")
+
+    assert prune_missing_artwork(tmp_path, [track]) == 0
+    assert prune_missing_artwork(tmp_path, [Track("No Artist", [])]) == 0
+
+
+def test_prune_missing_artwork_forgets_the_in_process_memo(tmp_path):
+    from spotm3u import metadata
+    from spotm3u.metadata import prune_missing_artwork
+
+    track = Track("Home", ["Artist"], album="Album")
+    key, _artist_key = _write_artwork_entry(tmp_path, track)
+    memory_key = metadata._artwork_memory_key(tmp_path, key)
+    metadata._ARTWORK_MEMORY[memory_key] = (b"image-bytes", "cache")
+
+    prune_missing_artwork(tmp_path, [track])
+
+    assert memory_key not in metadata._ARTWORK_MEMORY
+
+
 def test_enrich_metadata_uses_song_fallback_without_album(tmp_path, monkeypatch):
     _mock_id3_operations(monkeypatch)
     _song_search_requests(

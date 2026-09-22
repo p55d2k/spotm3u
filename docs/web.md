@@ -148,8 +148,10 @@ folder), the result page marks those tracks *missing from disk*, explains that
 they are no longer in the download folder, adds them to the retry count, and
 shows **File missing from disk — retry to download it again** on the affected
 rows. The batch result page shows the same notice per playlist, and the retry
-then re-downloads exactly those tracks. Counts such as *Successfully resolved*
-still describe the run that produced them.
+then re-downloads exactly those tracks, dropping the cached artwork of the files
+it is replacing so the fresh download gets fresh images (see
+[artwork](artwork.md)). Counts such as *Successfully resolved* still describe the
+run that produced them.
 
 
 ## M3U Download

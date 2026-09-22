@@ -209,9 +209,10 @@ its audio file is still on disk (the manifest lives in the download folder
 next to it), and the manifest heals itself: entries whose file has been deleted
 are dropped on the next lookup or store, so a stale row can never make SpotM3U
 skip a re-download. A finished run reports tracks whose file disappeared as
-**missing from disk** and offers a retry that downloads them again, and handing
-out the playlist itself warns first when any entry it references is gone (see
-[web](web.md)).
+**missing from disk** and offers a retry that downloads them again, handing out
+the playlist itself warns first when any entry it references is gone (see
+[web](web.md)), and the retry drops the cached artwork of the deleted tracks so
+it is re-fetched with the fresh download (see [artwork](artwork.md)).
 
 Concurrent downloaders that target the same output file (for example two
 batch playlists that share a song) are single-flighted: the first caller

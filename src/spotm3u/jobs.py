@@ -13,6 +13,7 @@ from typing import Literal
 
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
+from .metadata import artwork_artist, prune_missing_artwork
 from .models import Track
 from .resolution import (
     PreparedTrack,
@@ -259,6 +260,12 @@ class ProcessingJob:
             )
             if not indices:
                 return ()
+            # A track that is about to be downloaded again must not keep the
+            # artwork of the file the user deleted: the release entry is dropped
+            # and re-fetched with the fresh download. Artists that still have a
+            # track on disk (or another track in this retry) keep their shared
+            # profile image.
+            self._forget_artwork_for_missing_outputs()
             self._pending = indices
             self._searched = 0
             self._error = None
@@ -280,6 +287,34 @@ class ProcessingJob:
         )
         self._thread.start()
         return indices
+
+    def _forget_artwork_for_missing_outputs(self) -> None:
+        """Prune cached artwork for deleted downloads, never for live ones."""
+        stale = [index for index, result in enumerate(self._results) if _missing_output(result)]
+        if not stale:
+            return
+        stale_set = set(stale)
+        keep_artists = {
+            artist
+            for index, track in enumerate(self.tracks)
+            if index not in stale_set and (artist := artwork_artist(track)) is not None
+        }
+        try:
+            removed = prune_missing_artwork(
+                self.output_dir,
+                (self.tracks[index] for index in stale),
+                keep_artists=keep_artists,
+            )
+        except OSError as error:
+            logger.debug("Artwork cache prune failed job=%s: %s", self.job_id, error)
+            return
+        if removed:
+            logger.info(
+                "Removed %d cached artwork file(s) for %d deleted download(s) job=%s",
+                removed,
+                len(stale),
+                self.job_id,
+            )
 
     def _run(self) -> None:
         self._process(None)
@@ -497,6 +532,14 @@ class ProcessingJob:
                 result.status,
                 result.reason or "no reason given",
             )
+
+    def output_missing(self, index: int) -> bool:
+        """Return True when a completed track's audio file is no longer on disk."""
+        with self._lock:
+            if index < 0 or index >= len(self._track_states):
+                return False
+            state = self._track_states[index]
+            return state.status == "complete" and _missing_file(state.local_path)
 
     def snapshot(self) -> dict[str, object]:
         """Return a consistent, JSON-compatible view of the job state."""

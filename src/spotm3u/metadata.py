@@ -9,7 +9,7 @@ import tempfile
 import threading
 import unicodedata
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -292,6 +292,29 @@ def _write_cached_source(cache_dir: Path, cache_key: str, source: str) -> None:
 def _read_artwork_source(download_dir: Path, cache_key: str) -> str | None:
     """Read the recorded source of a cached artwork entry, or None."""
     return _read_cached_source(_cache_dir(download_dir), cache_key)
+
+
+def _remove_cached_entry(cache_dir: Path, cache_key: str) -> int:
+    """Delete one image entry and its recorded source; return files removed."""
+    removed = 0
+    for path in (
+        _cached_artwork_path(cache_dir, cache_key),
+        _artwork_source_path(cache_dir, cache_key),
+    ):
+        try:
+            path.unlink()
+        except OSError:
+            # Already gone or not removable: either way the entry is unusable.
+            continue
+        removed += 1
+    return removed
+
+
+def _forget_memory_entry(download_dir: Path, cache_key: str) -> None:
+    """Drop one identity from the in-process memo so it cannot be re-served."""
+    memory_key = _artwork_memory_key(download_dir, cache_key)
+    with _ARTWORK_LOCK:
+        _ARTWORK_MEMORY.pop(memory_key, None)
 
 
 def _write_artwork_source(download_dir: Path, cache_key: str, source: str) -> None:
@@ -1351,6 +1374,53 @@ def artwork_artist(track: Track) -> str | None:
     return track.album_artist or track.artists[0]
 
 
+def prune_missing_artwork(
+    download_dir: str | Path,
+    tracks: Iterable[Track],
+    *,
+    keep_artists: Iterable[str] = (),
+) -> int:
+    """Forget cached artwork for tracks whose audio file is gone.
+
+    Artwork entries are keyed by release identity, not by audio file, so a
+    deleted download never makes a cached cover *wrong* - and this deliberately
+    does not pretend otherwise. What it removes is the entry nothing in the
+    download folder references any more: the release image, its recorded
+    ``*.src`` marker and the in-process memo for that identity. The next run
+    re-fetches whatever it needs, so this only reclaims disk and keeps the cache
+    honest about what is still downloaded.
+
+    Artist profile images are shared by every album of that artist, so they are
+    dropped only for artists absent from ``keep_artists`` (the artists that
+    still have a track on disk or waiting to be re-downloaded). Returns the
+    number of cache files removed.
+    """
+    directory = Path(download_dir)
+    keep = {_artist_cache_key(artist) for artist in keep_artists if artist}
+    removed = 0
+    artists_to_drop: set[str] = set()
+    release_keys: list[str] = []
+    for track in tracks:
+        artist = artwork_artist(track)
+        if artist is None:
+            continue
+        cache_key = _cache_key(artist, track.album or "", track.title)
+        release_keys.append(cache_key)
+        artist_key = _artist_cache_key(artist)
+        if artist_key not in keep:
+            artists_to_drop.add(artist_key)
+
+    release_cache = _cache_dir(directory)
+    artist_cache = _artist_cache_dir(directory)
+    for cache_key in release_keys:
+        removed += _remove_cached_entry(release_cache, cache_key)
+        _forget_memory_entry(directory, cache_key)
+    for artist_key in sorted(artists_to_drop):
+        removed += _remove_cached_entry(artist_cache, artist_key)
+        _forget_memory_entry(directory, f"{_ARTIST_ARTWORK_SUBDIR}/{artist_key}")
+    return removed
+
+
 def cached_artwork_path(download_dir: str | Path, track: Track) -> Path | None:
     """Return the locally cached artwork file for a track, or None.
 
@@ -1373,6 +1443,7 @@ __all__ = [
     "artist_artwork_enabled",
     "artwork_artist",
     "cached_artwork_path",
+    "prune_missing_artwork",
     "id3_tags_enabled",
     "metadata_enabled",
     "set_album_artwork_enabled",

@@ -99,6 +99,59 @@ def test_snapshot_flags_completed_tracks_whose_file_was_deleted(tmp_path: Path) 
     assert [state["file_missing"] for state in snapshot["tracks"]] == [True, False]
 
 
+def test_retry_forgets_artwork_of_downloads_that_were_deleted(tmp_path: Path) -> None:
+    from spotm3u import metadata
+    from spotm3u.metadata import cached_artwork_path
+
+    deleted = Track("A", ["Artist"], album="Album A")
+    kept = Track("B", ["Other Artist"], album="Album B")
+    tracks = [deleted, kept]
+    files = {"A": tmp_path / "Artist - A.mp3", "B": tmp_path / "Other Artist - B.mp3"}
+    output = tmp_path / "output"
+    for track in tracks:
+        artist = metadata.artwork_artist(track) or ""
+        metadata._save_cached_artwork(
+            output, metadata._cache_key(artist, track.album or "", track.title), b"image-bytes"
+        )
+        artist_key = metadata._artist_cache_key(artist)
+        metadata._write_cached_image(metadata._artist_cache_dir(output), artist_key, b"artist")
+        metadata._write_cached_source(metadata._artist_cache_dir(output), artist_key, "deezer")
+
+    def artist_image(track: Track) -> Path:
+        path = metadata._cached_artwork_path(
+            metadata._artist_cache_dir(output),
+            metadata._artist_cache_key(metadata.artwork_artist(track) or ""),
+        )
+        assert path is not None
+        return path
+
+    resolver = RewritingResolver(files)
+    job = ProcessingJob(
+        job_id="abc",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=output,
+        resolver_factory=lambda: resolver,
+    )
+    job.start()
+    job.wait(timeout=5)
+    assert cached_artwork_path(output, deleted) is not None
+    assert job.retry() == (), "nothing is missing yet"
+    assert cached_artwork_path(output, deleted) is not None, "a no-op retry prunes nothing"
+
+    files["A"].unlink()
+
+    assert job.retry() == (0,)
+    job.wait(timeout=5)
+
+    assert cached_artwork_path(output, deleted) is None, "the deleted download's art is gone"
+    assert cached_artwork_path(output, kept) is not None, "live downloads keep their art"
+    assert not artist_image(deleted).exists()
+    assert artist_image(kept).is_file(), "another artist's profile image is untouched"
+    assert files["A"].is_file(), "the retry downloaded the deleted track again"
+
+
 def test_retry_redownloads_tracks_whose_files_were_deleted(tmp_path: Path) -> None:
     tracks = [_track("A"), _track("B")]
     files = {"A": tmp_path / "Artist - A.mp3", "B": tmp_path / "Artist - B.mp3"}

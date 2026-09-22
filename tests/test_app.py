@@ -837,6 +837,54 @@ def test_result_page_shows_artwork_image_when_available(tmp_path, monkeypatch) -
     assert f"/processing/{job.job_id}/1/artwork/0".encode() in response.data
 
 
+def test_artwork_is_hidden_for_a_download_that_was_deleted(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    track = job.tracks[0]
+    artwork_path = metadata._cached_artwork_path(
+        metadata._cache_dir(download_dir),
+        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    )
+    artwork_path.write_bytes(b"cached-artwork-bytes")
+
+    resolved_path = Path(job.as_dict()["tracks"][0]["local_path"])
+    resolved_path.unlink()  # the user deleted the download by hand
+
+    result = client.get(f"/processing/{job.job_id}/1/result")
+
+    assert result.status_code == 200
+    assert b'class="track-art-img"' not in result.data
+    assert f"/processing/{job.job_id}/1/artwork/0".encode() not in result.data
+
+    # The image itself is not served either, so no surface claims the download
+    # is still there. Hiding is not deleting: the retry reclaims the cache.
+    assert client.get(f"/processing/{job.job_id}/1/artwork/0").status_code == 404
+    assert artwork_path.is_file()
+
+
+def test_status_reports_no_artwork_for_a_deleted_download(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    track = job.tracks[0]
+    metadata._cached_artwork_path(
+        metadata._cache_dir(download_dir),
+        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    ).write_bytes(b"cached-artwork-bytes")
+
+    assert (
+        client.get(f"/processing/{job.job_id}/1/status").get_json()["tracks"][0]["artwork"] is True
+    )
+
+    Path(job.as_dict()["tracks"][0]["local_path"]).unlink()
+
+    state = client.get(f"/processing/{job.job_id}/1/status").get_json()
+
+    assert state["tracks"][0]["file_missing"] is True
+    assert state["tracks"][0]["artwork"] is False
+
+
 def test_result_page_shows_placeholder_without_artwork(tmp_path, monkeypatch) -> None:
     client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
 

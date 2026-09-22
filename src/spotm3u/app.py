@@ -595,6 +595,10 @@ def create_app(config: dict | None = None) -> Flask:
             track = job.tracks[index]
         except IndexError:
             return jsonify({"error": "That track is not available."}), 404
+        # No artwork for a download that is no longer on disk, even though its
+        # release image is still cached.
+        if job.output_missing(index):
+            return jsonify({"error": "That track is not available."}), 404
         path = cached_artwork_path(job.output_dir, track)
         if path is None:
             return jsonify({"error": "No artwork is available for that track."}), 404
@@ -701,7 +705,12 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
 
 
 def _annotate_artwork(job: ProcessingJob, state: dict[str, object]) -> None:
-    """Mark each track snapshot with whether cached artwork can be served."""
+    """Mark each track snapshot with whether cached artwork can be served.
+
+    A track whose audio file was deleted by hand shows no artwork even though
+    the cached image for its release is still on disk: the row would otherwise
+    claim a cover for a download that is no longer there.
+    """
     tracks = state.get("tracks")
     if not isinstance(tracks, list):
         return
@@ -710,6 +719,9 @@ def _annotate_artwork(job: ProcessingJob, state: dict[str, object]) -> None:
             continue
         index = item.get("index")
         if not isinstance(index, int) or index < 0 or index >= len(job.tracks):
+            item["artwork"] = False
+            continue
+        if item.get("file_missing"):
             item["artwork"] = False
             continue
         item["artwork"] = cached_artwork_path(job.output_dir, job.tracks[index]) is not None

@@ -128,6 +128,16 @@ names are **never joined** into a malformed lookup string such as
   single external fetch instead of repeating it.
 - **Negative results are never persisted.** A later run may have network access
   or a newly indexed release, so a previous failure does not block a retry.
+- **Deleted downloads forget their artwork.** An entry is keyed by release
+  identity rather than by audio file, so a deleted download never makes a cached
+  cover *wrong* - it only leaves an image nothing in the folder references. A
+  retry that re-downloads a deleted track drops that track's release entry (the
+  image, its `*.src` marker and the in-process memo) so the fresh download gets
+  fresh artwork, and reclaims the disk the entry held. Artist profile images are
+  shared by every album of that artist, so they are dropped only when no other
+  track still needs them. Nothing is served from a pruned entry, so this is
+  housekeeping rather than correctness: whatever is pruned is simply fetched
+  again next time it is needed.
 
 ## Concurrency and rate limits
 
@@ -147,6 +157,11 @@ artwork is missing or fails to load, a clean placeholder is shown instead of a
 broken image. Artwork is served locally from the artwork cache
 (`GET /processing/<job_id>/<playlist_id>/artwork/<index>`); the pages do not
 block on, or depend on, artwork being available.
+
+A track whose audio file was deleted by hand shows the placeholder, not its
+cached cover: the row would otherwise display artwork for a download that is no
+longer there, and the artwork route answers `404` for that track until the retry
+downloads it again.
 
 ## Failure behavior
 
