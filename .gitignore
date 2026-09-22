@@ -68,3 +68,6 @@ Desktop.ini
 # ai agents
 tasks.md
 tasks/
+
+# Release notes drafts
+/release-notes/

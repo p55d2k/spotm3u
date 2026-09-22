@@ -66,17 +66,90 @@
         return Math.min(1, ((state.searched || 0) / total) * 0.5 + ((state.completed || 0) / total) * 0.5);
       }
 
-      function fmtRemaining(elapsedMs, fraction) {
-        if (!Number.isFinite(elapsedMs) || !Number.isFinite(fraction) || fraction <= 0) return "";
-        const seconds = Math.max(0, elapsedMs / 1000);
-        if (seconds < 1) return "";
-        const projectedTotalSeconds = seconds / fraction;
-        const remainingSeconds = projectedTotalSeconds - seconds;
-        if (remainingSeconds <= 0) return "";
-        const remaining = Math.max(1, Math.round(remainingSeconds));
-        if (remaining < 60) return "About " + remaining + " seconds remaining";
-        const minutes = Math.max(1, Math.round(remainingSeconds / 60));
-        return "About " + minutes + " minutes remaining";
+      const eta = {
+        samples: [],
+        anchorAt: null,
+        lastCompleted: null,
+
+        record(state, startedAtMs) {
+          const now = Date.now();
+          const completed = state.completed || 0;
+          if (this.anchorAt === null) {
+            this.anchorAt = startedAtMs > 0 ? startedAtMs : now;
+            this.samples.push({ t: this.anchorAt, completed: 0 });
+            this.lastCompleted = null;
+          }
+          if (completed !== this.lastCompleted) {
+            this.samples.push({ t: now, completed });
+            this.lastCompleted = completed;
+          }
+        },
+
+        secondsPerTrack(state, elapsedSecs) {
+          const deltas = [];
+          for (let i = 1; i < this.samples.length; i += 1) {
+            const dCompleted = this.samples[i].completed - this.samples[i - 1].completed;
+            const dt = (this.samples[i].t - this.samples[i - 1].t) / 1000;
+            if (dCompleted > 0 && dt > 0) {
+              deltas.push(dt / dCompleted);
+            }
+          }
+          if (deltas.length) {
+            // Exponentially weighted average: recent completions influence the
+            // estimate more than the first ones, so slow end-of-playlist
+            // downloads pull the rate up quickly.
+            const Alpha = 0.35;
+            let ema = deltas[0];
+            for (let i = 1; i < deltas.length; i += 1) {
+              ema = Alpha * deltas[i] + (1 - Alpha) * ema;
+            }
+            return ema;
+          }
+          const completed = state.completed || 0;
+          if (completed > 0) {
+            return elapsedSecs / completed;
+          }
+          return null;
+        },
+      };
+
+      const SecsPerTrackBaseline = 45;
+      function formatRemaining(remainingSeconds) {
+        let rest = Math.max(1, Math.round(remainingSeconds));
+        const days = Math.floor(rest / 86400);
+        rest %= 86400;
+        const hours = Math.floor(rest / 3600);
+        rest %= 3600;
+        const minutes = Math.floor(rest / 60);
+        const seconds = rest % 60;
+        const parts = [];
+        if (days) parts.push(days + "d");
+        if (hours) parts.push(hours + "h");
+        if (minutes) parts.push(minutes + "min");
+        if (!parts.length) parts.push(seconds + "s");
+        return "~ " + parts.join(" ") + " remaining";
+      }
+
+      function fmtRemaining(state, startedAtMs) {
+        const now = Date.now();
+        eta.record(state, startedAtMs);
+        const total = state.total || 0;
+        const remainingCount = total - (state.completed || 0);
+        if (total <= 0 || remainingCount <= 0) return "";
+        const elapsedSecs = (now - startedAtMs) / 1000;
+        if (!Number.isFinite(elapsedSecs) || elapsedSecs < 1) return "";
+        let secs = eta.secondsPerTrack(state, elapsedSecs);
+        if (!Number.isFinite(secs) || secs <= 0) {
+          // No completed track to measure yet (the very first ones are still
+          // being searched/resolved): use a neutral per-track baseline so the
+          // ETA is visible from the start and refines once completions arrive.
+          secs = SecsPerTrackBaseline;
+        }
+        // The countdown is frozen while the current track is in flight: the
+        // value only moves at a completion boundary. A slow last track therefore
+        // re-estimates in clear steps instead of drifting the ETA upward second
+        // by second, which read as a broken countdown.
+        return formatRemaining(secs * remainingCount);
       }
       const stageLabels = {
         queued: "Waiting to start",
@@ -259,7 +332,7 @@
           etaChip.hidden = true;
           return;
         }
-        const remaining = fmtRemaining(Date.now() - startedAt, progressFraction(state));
+        const remaining = fmtRemaining(state, startedAt);
         if (!remaining) {
           etaChip.hidden = true;
           return;

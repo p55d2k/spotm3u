@@ -70,6 +70,9 @@ class TrackJobState:
     local_path: str | None = None
     source_url: str | None = None
     resolution: str = ""
+    # Monotonic-epoch time (seconds) the current status began; lets the UI
+    # estimate how long the in-flight track has been stuck in this stage.
+    stage_started_at: float | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -81,6 +84,9 @@ class TrackJobState:
             "local_path": self.local_path,
             "source_url": self.source_url,
             "resolution": self.resolution,
+            "stage_started_at": (
+                int(self.stage_started_at * 1000) if self.stage_started_at is not None else None
+            ),
         }
 
 
@@ -398,6 +404,7 @@ class ProcessingJob:
                 current.local_path,
                 current.source_url,
                 current.resolution,
+                time.time(),
             )
         log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
         log.debug("stage=%s index=%d", status, index)
@@ -417,6 +424,7 @@ class ProcessingJob:
                     current.local_path,
                     current.source_url,
                     current.resolution,
+                    time.time(),
                 )
         TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).debug(
             "searched index=%d", index
@@ -437,6 +445,7 @@ class ProcessingJob:
                 str(result.local_path) if result.local_path is not None else None,
                 result.source_url,
                 result.status,
+                current.stage_started_at,
             )
         log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
         if result.successful:

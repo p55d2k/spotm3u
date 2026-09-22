@@ -91,6 +91,9 @@ def test_job_tracks_state_counts_and_m3u(tmp_path: Path) -> None:
         "failed",
     ]
     assert snapshot["tracks"][0]["local_path"] == str(local_file)
+    for state in snapshot["tracks"]:
+        started = state["stage_started_at"]
+        assert isinstance(started, int) and started > 0
 
     m3u = (tmp_path / "output" / "playlist.m3u").read_text(encoding="utf-8")
     assert str(local_file) in m3u
