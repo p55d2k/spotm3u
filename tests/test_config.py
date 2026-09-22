@@ -37,7 +37,10 @@ def test_defaults_without_a_config_file(tmp_path) -> None:
     assert config.pot_provider_home is None
     assert config.m3u_extended is True
     assert config.m3u_relative is False
+    assert config.metadata_enabled is True
+    assert config.metadata_tags is True
     assert config.artwork_verify_local is True
+    assert config.artwork_album_artwork is True
     assert config.artwork_artist_artwork is True
     assert config.lyrics_enabled is True
 
@@ -75,8 +78,13 @@ def test_load_config_parses_known_values(tmp_path) -> None:
         extended = true
         relative = true
 
+        [metadata]
+        enabled = false
+        tags = false
+
         [artwork]
         verify_local = false
+        album_artwork = false
         artist_artwork = false
 
         [lyrics]
@@ -105,7 +113,10 @@ def test_load_config_parses_known_values(tmp_path) -> None:
     assert config.pot_provider_url == "http://127.0.0.1:8080"
     assert config.m3u_extended is True
     assert config.m3u_relative is True
+    assert config.metadata_enabled is False
+    assert config.metadata_tags is False
     assert config.artwork_verify_local is False
+    assert config.artwork_album_artwork is False
     assert config.artwork_artist_artwork is False
     assert config.lyrics_enabled is False
 
@@ -264,6 +275,28 @@ def test_create_app_wires_artist_artwork(tmp_path, monkeypatch) -> None:
 
     create_app()
     assert metadata._ARTIST_ARTWORK_ENABLED is True
+
+
+def test_create_app_wires_embedding_options(tmp_path, monkeypatch) -> None:
+    from spotm3u import metadata
+
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app()
+    assert metadata.metadata_enabled() is True
+    assert metadata.id3_tags_enabled() is True
+    assert metadata.album_artwork_enabled() is True
+
+    create_app({"METADATA_ENABLED": False, "METADATA_TAGS": False, "ARTWORK_ALBUM_ARTWORK": False})
+    assert metadata.metadata_enabled() is False
+    assert metadata.id3_tags_enabled() is False
+    assert metadata.album_artwork_enabled() is False
+
+    create_app()
+    assert metadata.metadata_enabled() is True
+    assert metadata.id3_tags_enabled() is True
+    assert metadata.album_artwork_enabled() is True
 
 
 def test_create_app_wires_lyrics_enabled(tmp_path, monkeypatch) -> None:

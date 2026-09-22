@@ -48,8 +48,12 @@ class Config:
     max_results: int = 8
     max_search_workers: int = 4
     search_socket_timeout: int = 30
+    # [metadata]
+    metadata_enabled: bool = True
+    metadata_tags: bool = True
     # [artwork]
     artwork_verify_local: bool = True
+    artwork_album_artwork: bool = True
     artwork_artist_artwork: bool = True
     # [lyrics]
     lyrics_enabled: bool = True
@@ -83,7 +87,10 @@ class Config:
             "SEARCH_MAX_RESULTS": self.max_results,
             "SEARCH_MAX_WORKERS": self.max_search_workers,
             "SEARCH_SOCKET_TIMEOUT": self.search_socket_timeout,
+            "METADATA_ENABLED": self.metadata_enabled,
+            "METADATA_TAGS": self.metadata_tags,
             "ARTWORK_VERIFY_LOCAL": self.artwork_verify_local,
+            "ARTWORK_ALBUM_ARTWORK": self.artwork_album_artwork,
             "ARTWORK_ARTIST_ARTWORK": self.artwork_artist_artwork,
             "LYRICS_ENABLED": self.lyrics_enabled,
             "DOWNLOAD_QUALITY": self.audio_quality,
@@ -126,7 +133,10 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "search.max_results": "max_results",
     "search.max_search_workers": "max_search_workers",
     "search.socket_timeout": "search_socket_timeout",
+    "metadata.enabled": "metadata_enabled",
+    "metadata.tags": "metadata_tags",
     "artwork.verify_local": "artwork_verify_local",
+    "artwork.album_artwork": "artwork_album_artwork",
     "artwork.artist_artwork": "artwork_artist_artwork",
     "lyrics.enabled": "lyrics_enabled",
     "download.audio_quality": "audio_quality",

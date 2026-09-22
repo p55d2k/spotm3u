@@ -205,6 +205,15 @@ at debug level so normal downloads stay quiet.
 `[lyrics] enabled` in `config.toml` (default true) turns retrieval off. Fast
 mode skips metadata enrichment entirely, so it never requests lyrics.
 
+## Metadata Embedding Options
+
+Embedding is controllable so audio-only libraries can skip it: `[metadata]
+enabled` is a master switch that writes nothing at all, `[metadata] tags`
+skips the standard ID3 text fields, `[artwork] album_artwork` skips the cover,
+`[artwork] artist_artwork` skips the artist image, and `[lyrics] enabled` skips
+lyrics. A disabled option also skips its network lookups. None of them affect
+filenames, M3U generation, or whether a track resolves.
+
 ## M3U Writer
 
 Receives the final ordered local audio paths.

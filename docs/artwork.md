@@ -90,6 +90,19 @@ image is recorded as a non-fatal metadata error (`artist artwork not found`,
 and track generation never fails because of it. It is enabled by default and can
 be turned off with the `[artwork] artist_artwork` setting in `config.toml`.
 
+## Embedding options
+
+Both artwork frames are optional and can be turned off in `config.toml`:
+
+- `[artwork] album_artwork` (default `true`) — when `false`, no album cover is
+  looked up, downloaded or embedded. Embedded covers dominate the size of a
+  generated MP3, so this is the biggest space saving.
+- `[artwork] artist_artwork` (default `true`) — the artist profile image.
+
+Disabling either option skips its network lookups as well as its write, and the
+`[metadata] enabled` master switch skips both (see
+[downloads](downloads.md#embedded-metadata)).
+
 ## Multiple artists
 
 The structured multi-artist model (Task 39) is preserved. Artwork identity uses

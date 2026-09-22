@@ -339,6 +339,60 @@ def artist_artwork_enabled() -> bool:
     return _ARTIST_ARTWORK_ENABLED
 
 
+# When True (default) the front cover is looked up and embedded as the file's
+# album artwork. When False no cover lookup or embedding happens at all, which
+# keeps files smaller (embedded covers are the bulk of the metadata). Configured
+# through ``artwork.album_artwork`` in config.toml.
+_ALBUM_ARTWORK_ENABLED = True
+
+
+def set_album_artwork_enabled(enabled: bool) -> None:
+    """Enable or disable album cover lookup and embedding."""
+    global _ALBUM_ARTWORK_ENABLED
+    _ALBUM_ARTWORK_ENABLED = enabled
+
+
+def album_artwork_enabled() -> bool:
+    """Return whether album artwork embedding is currently enabled."""
+    return _ALBUM_ARTWORK_ENABLED
+
+
+# When True (default) the standard ID3 text fields (title, artists, album,
+# album artist, track/disc number, year, genre, comment) are written. When
+# False tags are left exactly as the downloader produced them, so a file can be
+# audio-only. Configured through ``metadata.tags`` in config.toml.
+_ID3_TAGS_ENABLED = True
+
+
+def set_id3_tags_enabled(enabled: bool) -> None:
+    """Enable or disable writing the standard ID3 text fields."""
+    global _ID3_TAGS_ENABLED
+    _ID3_TAGS_ENABLED = enabled
+
+
+def id3_tags_enabled() -> bool:
+    """Return whether standard ID3 text field writing is currently enabled."""
+    return _ID3_TAGS_ENABLED
+
+
+# Master switch for embedding anything into an audio file. When False, no text
+# fields, album cover, artist image or lyrics are written, whatever the
+# individual options say, which is the "just the audio, save the space" mode.
+# Configured through ``metadata.enabled`` in config.toml.
+_METADATA_ENABLED = True
+
+
+def set_metadata_enabled(enabled: bool) -> None:
+    """Enable or disable all metadata embedding into audio files."""
+    global _METADATA_ENABLED
+    _METADATA_ENABLED = enabled
+
+
+def metadata_enabled() -> bool:
+    """Return whether embedding metadata into audio files is enabled at all."""
+    return _METADATA_ENABLED
+
+
 def _normalize_album_for_search(album: str) -> str:
     """Normalize album title for search queries."""
     value = unicodedata.normalize("NFKC", album)
@@ -1216,47 +1270,53 @@ def enrich_metadata(
     artist_artwork_embedded = False
     artist_artwork_source: str | None = None
 
-    try:
-        fields_written.extend(_write_all_metadata(audio_path, track))
-    except Exception as exc:  # pragma: no cover - defensive behavior
-        errors.append(f"metadata write failed: {exc}")
+    embeddings_on = metadata_enabled()
 
-    if track.artists:
-        primary_artist = track.album_artist or track.artists[0]
-        artwork_data, source = _find_album_artwork(
-            download_path,
-            primary_artist,
-            track.album,
-            track.title,
-            audio_path,
-        )
-        if artwork_data:
-            try:
-                embedded = _embed_artwork(audio_path, artwork_data, _image_mime(artwork_data))
-            except (OSError, ValueError, RuntimeError) as exc:
-                logger.warning("Artwork embed failed path=%s: %s", audio_path, exc)
-                embedded = False
-            if embedded:
-                artwork_embedded = True
-                artwork_source = source
+    if embeddings_on and id3_tags_enabled():
+        try:
+            fields_written.extend(_write_all_metadata(audio_path, track))
+        except Exception as exc:  # pragma: no cover - defensive behavior
+            errors.append(f"metadata write failed: {exc}")
+
+    if embeddings_on and album_artwork_enabled():
+        if track.artists:
+            primary_artist = track.album_artist or track.artists[0]
+            artwork_data, source = _find_album_artwork(
+                download_path,
+                primary_artist,
+                track.album,
+                track.title,
+                audio_path,
+            )
+            if artwork_data:
+                try:
+                    embedded = _embed_artwork(audio_path, artwork_data, _image_mime(artwork_data))
+                except (OSError, ValueError, RuntimeError) as exc:
+                    logger.warning("Artwork embed failed path=%s: %s", audio_path, exc)
+                    embedded = False
+                if embedded:
+                    artwork_embedded = True
+                    artwork_source = source
+                else:
+                    errors.append("artwork embed failed")
+            elif source is not None:
+                errors.append(f"artwork not found: {source}")
             else:
-                errors.append("artwork embed failed")
-        elif source is not None:
-            errors.append(f"artwork not found: {source}")
+                errors.append("artwork not found: unknown")
         else:
-            errors.append("artwork not found: unknown")
-    else:
-        errors.append("missing album/artist for artwork lookup")
+            errors.append("missing album/artist for artwork lookup")
 
-    if _ARTIST_ARTWORK_ENABLED and track.artists:
+    if embeddings_on and artist_artwork_enabled() and track.artists:
         artist_artwork_embedded, artist_artwork_source = _embed_artist_artwork(
             audio_path, download_path, track.artists[0], errors
         )
 
-    # Lyrics are skipped entirely in fast mode (``set_lyrics_enabled``), which
-    # avoids the lyrics provider requests as well as the metadata write.
-    if lyrics_enabled() and track.title and _embed_track_lyrics(audio_path, track):
-        fields_written.append(_USLT_FRAME)
+    # Lyrics are skipped entirely in fast mode (``set_lyrics_enabled``) and by
+    # the metadata master switch, which avoids the lyrics provider requests as
+    # well as the metadata write.
+    if embeddings_on and lyrics_enabled() and track.title:
+        if _embed_track_lyrics(audio_path, track):
+            fields_written.append(_USLT_FRAME)
 
     return MetadataResult(
         path=audio_path,
@@ -1309,10 +1369,16 @@ __all__ = [
     "MetadataResult",
     "ArtworkCandidate",
     "MetadataError",
+    "album_artwork_enabled",
     "artist_artwork_enabled",
     "artwork_artist",
     "cached_artwork_path",
+    "id3_tags_enabled",
+    "metadata_enabled",
+    "set_album_artwork_enabled",
     "set_artist_artwork_enabled",
+    "set_id3_tags_enabled",
+    "set_metadata_enabled",
     "_artist_album_match",
     "_normalize_identity",
     "enrich_metadata",

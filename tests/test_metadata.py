@@ -1162,5 +1162,87 @@ def test_verify_local_disabled_serves_unmarked_cache_without_network(
     assert calls == []
 
 
+@pytest.fixture
+def embedding_toggles():
+    """Run a test with the embedding flags, restoring the defaults after."""
+    from spotm3u import metadata
+
+    yield
+    metadata.set_metadata_enabled(True)
+    metadata.set_id3_tags_enabled(True)
+    metadata.set_album_artwork_enabled(True)
+
+
+def test_album_artwork_can_be_disabled(tmp_path, monkeypatch, embedding_toggles):
+    """With album artwork off, no cover is looked up, downloaded or embedded."""
+    from spotm3u import metadata
+
+    metadata.set_album_artwork_enabled(False)
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("cover lookup must not run when album artwork is disabled")
+
+    monkeypatch.setattr("spotm3u.metadata._find_album_artwork", unexpected)
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+    track = Track("Song", ["Artist"], album="Album")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artwork_embedded is False
+    assert result.artwork_source is None
+    assert _apic_frames(mp3) == {}
+    assert not any(error.startswith("artwork") for error in result.errors)
+    assert "TIT2" in result.fields_written
+
+
+def test_id3_tags_can_be_disabled(tmp_path, monkeypatch, embedding_toggles):
+    """With tags off, the downloader's own frames are left exactly as they are."""
+    import mutagen.id3 as mutagen_id3
+
+    from spotm3u import metadata
+
+    metadata.set_id3_tags_enabled(False)
+    _install_artwork_requests(monkeypatch)
+    mp3 = tmp_path / "local.mp3"
+    _write_existing_metadata(mp3)
+    track = Track("Song", ["Artist"], album="Album")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    tags = mutagen_id3.ID3(str(mp3))
+    assert result.fields_written == ()
+    assert "TIT2" not in tags
+    assert str(tags["TXXX:Testing"].text[0]) == "kept"
+    assert result.artwork_embedded is True  # artwork is a separate option
+
+
+def test_metadata_master_switch_leaves_the_audio_untouched(
+    tmp_path, monkeypatch, embedding_toggles
+):
+    """The master switch embeds nothing at all: no tags, pictures or lyrics."""
+    from spotm3u import metadata
+
+    metadata.set_metadata_enabled(False)
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("no lookup may run when metadata embedding is disabled")
+
+    monkeypatch.setattr("spotm3u.metadata._find_album_artwork", unexpected)
+    monkeypatch.setattr("spotm3u.metadata._find_artist_artwork", unexpected)
+    monkeypatch.setattr("spotm3u.metadata.fetch_lyrics", unexpected)
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+    track = Track("Song", ["Artist"], album="Album")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.fields_written == ()
+    assert result.errors == ()
+    assert result.artwork_embedded is False
+    assert result.artist_artwork_embedded is False
+    assert mp3.read_bytes() == b"fake-mp3-data"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

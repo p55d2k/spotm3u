@@ -70,6 +70,19 @@
 # hung source cannot occupy a worker forever.
 # socket_timeout = 30
 
+[metadata]
+# Master switch for writing anything into the downloaded audio file. Set to
+# false for "just the audio": no text tags, album cover, artist image or
+# lyrics are embedded (nothing is downloaded for them either), so the MP3s stay
+# as small as possible. This overrides every per-feature option below.
+# enabled = true
+
+# When true (default), the standard ID3 text fields are written from the
+# playlist metadata: title, artists, album, album artist, track/disc number,
+# year, genre and comment. Set to false to leave the downloader's own tags
+# untouched. File names and the M3U are unaffected either way.
+# tags = true
+
 [artwork]
 # When true (default), album artwork for a track is verified against the
 # release identity (MusicBrainz / Cover Art Archive / iTunes) before any local
@@ -83,6 +96,11 @@
 # each MP3 as an ID3 artist picture (APIC type 8) in addition to the album
 # artwork, reusing one cached image per artist. Missing artist artwork never
 # affects the track. When false, no artist image lookup or embedding happens.
+# When true (default), the album front cover is embedded in the MP3 as the
+# album artwork. Embedded covers are much larger than tags or lyrics, so set
+# this to false to save space. No cover lookup or download happens either.
+# album_artwork = true
+
 # artist_artwork = true
 
 [lyrics]
@@ -92,7 +110,7 @@
 # enrichment: a track without lyrics, an unavailable provider, or a write
 # failure never fails the download, and existing metadata and artwork are kept.
 # Set to false to skip lyrics lookups entirely (fast mode does this too, since
-# it skips metadata enrichment).
+# it skips metadata enrichment, and so does [metadata] enabled = false).
 # enabled = true
 
 [download]

@@ -110,6 +110,31 @@ evidence of actual spoken dialogue; clear speech remains rejectable. A
 downloaded vocal version of an explicitly instrumental target fails recording
 validation and triggers candidate retry.
 
+## Embedded Metadata
+
+What is written into a generated MP3 is configurable, so a library that only
+wants audio can keep files as small as possible:
+
+- `[metadata] enabled` (default `true`) — master switch. When `false`, nothing
+  is embedded and no lookup or download runs for it: no text tags, album cover,
+  artist image or lyrics. It overrides the per-feature options below.
+- `[metadata] tags` (default `true`) — standard ID3 text fields (title,
+  artists, album, album artist, track/disc number, year, genre, comment). When
+  `false` the downloader's own tags are left untouched.
+- `[artwork] album_artwork` (default `true`) — embed the album front cover.
+  Embedded covers are by far the largest part of the metadata, so this is the
+  biggest space saving.
+- `[artwork] artist_artwork` (default `true`) — embed the artist profile image
+  (see [artwork](artwork.md)).
+- `[lyrics] enabled` (default `true`) — embed lyrics (see below).
+
+Disabling an option also skips its network lookups, so it saves time as well as
+space. Filenames, M3U generation and track resolution are unaffected: a track
+is never marked failed because metadata embedding is off.
+
+Fast mode skips metadata enrichment altogether, which is equivalent to turning
+the master switch off for the tracks it downloads.
+
 ## Lyrics
 
 After a track resolves, its lyrics are written into the file's standard lyrics
@@ -129,8 +154,9 @@ Lyrics are optional enrichment and never affect resolution:
 - an audio file that cannot hold the field is left untouched
 - existing metadata and embedded artwork are preserved
 
-Retrieval is enabled by `[lyrics] enabled` in `config.toml` (default true).
-Fast mode skips metadata enrichment altogether, so it never requests lyrics.
+Retrieval is enabled by `[lyrics] enabled` in `config.toml` (default true) and
+is skipped when the `[metadata] enabled` master switch is off. Fast mode skips
+metadata enrichment altogether, so it never requests lyrics.
 
 ## Cache
 

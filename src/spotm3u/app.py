@@ -18,7 +18,14 @@ from .jobs import JobManager, JobStartError, ProcessingJob
 from .log import PACKAGE_LOGGER, configure_logging
 from .lyrics import set_lyrics_enabled
 from .media_player import MediaPlayerError, add_to_media_player, media_player_available
-from .metadata import cached_artwork_path, set_artist_artwork_enabled, set_artwork_verify_local
+from .metadata import (
+    cached_artwork_path,
+    set_album_artwork_enabled,
+    set_artist_artwork_enabled,
+    set_artwork_verify_local,
+    set_id3_tags_enabled,
+    set_metadata_enabled,
+)
 from .models import Playlist
 from .normalization import sanitize_filename_component
 from .online import OnlineSourceSearcher, describe_youtube_setup, download_track
@@ -54,7 +61,10 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
+    set_metadata_enabled(bool(app.config.get("METADATA_ENABLED", True)))
+    set_id3_tags_enabled(bool(app.config.get("METADATA_TAGS", True)))
     set_artwork_verify_local(bool(app.config.get("ARTWORK_VERIFY_LOCAL", True)))
+    set_album_artwork_enabled(bool(app.config.get("ARTWORK_ALBUM_ARTWORK", True)))
     set_artist_artwork_enabled(bool(app.config.get("ARTWORK_ARTIST_ARTWORK", True)))
     set_lyrics_enabled(bool(app.config.get("LYRICS_ENABLED", True)))
 
