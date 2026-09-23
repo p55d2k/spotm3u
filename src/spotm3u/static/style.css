@@ -372,6 +372,23 @@ a.step-link:hover {
   text-decoration: none;
 }
 
+/* Leading icon for a step (Lucide, stroke-based; see _sidebar.html). It is
+   decorative, so state stays readable through the dot and the label. */
+.step-icon {
+  color: var(--color-text-faint);
+  flex: none;
+  height: 1rem;
+  width: 1rem;
+}
+
+.step.current .step-icon {
+  color: var(--color-accent);
+}
+
+.step.complete .step-icon {
+  color: var(--color-success-ink);
+}
+
 .step-dot {
   align-items: center;
   border: 1px solid var(--color-line-strong);

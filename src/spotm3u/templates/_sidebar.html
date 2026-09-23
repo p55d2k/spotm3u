@@ -14,6 +14,15 @@
 
   <div class="sidebar-block">
     <p class="sidebar-heading">Conversion</p>
+    {# Leading icon per step, keyed by step number. Inline Lucide shapes (MIT),
+       matching the stroke-based icons used elsewhere (see _status_icons.html).
+       The numbered dot beside each icon keeps carrying workflow state. #}
+    {% set step_icons = {
+      1: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+      2: '<path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/>',
+      3: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+      4: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    } %}
     <ol class="sidebar-steps">
       {% for name, number, href in [
         ("Upload", 1, url_for("index")),
@@ -28,6 +37,7 @@
           {% else %}
             <span class="step-link">
           {% endif %}
+          <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{ step_icons[number]|safe }}</svg>
           <span class="step-dot" aria-hidden="true">{{ number }}</span>
           <span class="step-name">{{ name }}</span>
           {% if href %}</a>{% else %}</span>{% endif %}
