@@ -11,7 +11,7 @@
     {% include "_header.html" %}
     <header class="content-head">
       <div class="content-head-text">
-        <p class="eyebrow">Check before downloading</p>
+        <p class="eyebrow">Check before saving</p>
         <h1 class="page-title">{{ playlist_name }}</h1>
       </div>
     </header>
@@ -38,12 +38,12 @@
       <section aria-labelledby="choice-heading">
         <h2 id="choice-heading">What would you like to do?</h2>
         <p class="field-help">
-          Downloading anyway gives you a playlist that will skip these tracks.
+          Saving anyway gives you a playlist that will skip these tracks.
           Downloading them again is the way to get the full playlist back.
         </p>
         <div class="result-actions">
           <a class="button" href="{{ result_url }}">Download missing tracks again</a>
-          <a class="button button-secondary" href="{{ confirm_url }}">Download playlist anyway</a>
+          <a class="button button-secondary" href="{{ confirm_url }}">Save playlist anyway</a>
         </div>
       </section>
     </main>

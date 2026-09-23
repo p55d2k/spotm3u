@@ -23,7 +23,7 @@
 
     <div class="import-layout">
       <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form" class="panel">
-        <h2 class="panel-heading" id="upload-heading">Upload your export</h2>
+        <h2 class="panel-heading" id="upload-heading">Import your export</h2>
         {% if error %}
         <p class="error" role="alert">{{ error }}</p>
         {% endif %}
@@ -32,7 +32,7 @@
           <span class="upload-title" id="upload-title">Drop your Exportify ZIP here</span>
           <span class="upload-or">or</span>
           <span class="button button-secondary button-small">Choose ZIP</span>
-          <span class="upload-filename" id="upload-filename">ZIP file from Exportify · up to your configured upload limit</span>
+          <span class="upload-filename" id="upload-filename">ZIP file from Exportify · up to your configured size limit</span>
           <input
             id="export-file"
             name="file"
@@ -55,12 +55,12 @@
               href="https://exportify.net/"
               target="_blank"
               rel="noopener noreferrer"
-            >Open Exportify<span class="visually-hidden"> (opens in a new tab)</span></a>
+            >Open Exportify<span class="visually-hidden"> (opens in your browser)</span></a>
           </li>
           <li><strong>Complete Spotify authentication in Exportify</strong></li>
           <li><strong>Press “Export All”</strong></li>
           <li><strong>Download the playlist export ZIP</strong></li>
-          <li><strong>Upload that ZIP here</strong></li>
+          <li><strong>Import that ZIP here</strong></li>
         </ol>
       </section>
     </div>

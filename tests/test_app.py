@@ -249,6 +249,41 @@ def test_the_import_page_uses_the_native_picker_when_the_bridge_is_present() -> 
     assert 'id="export-file"' in homepage
 
 
+def test_pages_name_their_actions_the_way_the_application_does() -> None:
+    templates = Path(create_app().root_path) / "templates"
+    steps = (templates / "_sidebar.html").read_text(encoding="utf-8")
+    result = (templates / "result.html").read_text(encoding="utf-8")
+    index = (templates / "index.html").read_text(encoding="utf-8")
+    playlists = (templates / "playlists.html").read_text(encoding="utf-8")
+    missing = (templates / "m3u_missing.html").read_text(encoding="utf-8")
+
+    # The workflow is Import -> Choose playlists -> Convert -> Done, and the
+    # controls speak the same words: this is an application window, not a
+    # browser tab that uploads and downloads pages.
+    assert '("Import", 1,' in steps
+    assert '("Convert", 3,' in steps
+    assert "Save playlist (M3U)" in result
+    assert "Import another ZIP" in result
+    assert "Import your export" in index
+    assert "Import that ZIP here" in index
+    assert "Import a different ZIP" in playlists
+    # A browser tab talks about uploading and downloading; the window talks
+    # about importing a file and saving a playlist.
+    assert "Upload another ZIP" not in result
+    assert "Download M3U playlist" not in result
+    assert "Cancel and upload a different ZIP" not in playlists
+    assert "up to your configured size limit" in index
+    assert "up to your configured upload limit" not in index
+    assert "or import a different export" in result
+    assert "or upload a different export" not in result
+    # The warning page saves the playlist; it also still downloads the missing
+    # audio files, which is a real download and keeps its own name.
+    assert "Save playlist anyway" in missing
+    assert "Check before saving" in missing
+    assert "Download playlist anyway" not in missing
+    assert "Download missing tracks again" in missing
+
+
 def test_live_pages_take_their_status_wording_from_one_shared_place() -> None:
     templates = Path(create_app().root_path) / "templates"
 
@@ -329,8 +364,10 @@ def test_playlist_selection_shows_clickable_playlist_cards(tmp_path) -> None:
     assert b"one" in response.data
     assert b"two" in response.data
     assert response.data.count(b'name="playlist_id"') == 2
-    assert b"Download selected" in response.data
-    assert b"Download all" in response.data
+    # The action converts the selected playlists; "download" would describe the
+    # track downloads rather than the batch conversion the button starts.
+    assert b"Convert selected" in response.data
+    assert b"Convert all" in response.data
     assert b"Search by playlist name" in response.data
 
 

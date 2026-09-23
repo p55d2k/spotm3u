@@ -43,8 +43,13 @@ as a transparent drag strip over a full-bleed content view. That same API
 (`WindowControls`) carries the two file operations that belong to the desktop
 rather than to a web page: the Exportify ZIP is picked in the OS file dialog
 (the chosen path stays in the shell and is collected by `POST /upload/picked`),
-and a generated M3U is saved through the OS save panel. `SPOTM3U_NO_WEBVIEW=1`
-skips the window and only serves,
+and a generated M3U is saved through the OS save panel. The window also gets a
+persistent WebView storage directory
+(`%LOCALAPPDATA%\SpotM3U`,
+`~/Library/Application Support/SpotM3U`, or `$XDG_DATA_HOME/spotm3u`;
+`SPOTM3U_WEBVIEW_STORAGE` overrides it), so the theme and a dismissed update
+notice survive a restart instead of resetting with pywebview's default private
+mode. `SPOTM3U_NO_WEBVIEW=1` skips the window and only serves,
 which is what the release smoke test uses. Developers are not required to use
 the desktop window; it never replaces the plain browser workflow above.
 

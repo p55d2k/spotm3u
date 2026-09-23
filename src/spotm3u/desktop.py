@@ -14,7 +14,9 @@ macOS instead re-enables the native traffic lights on the frameless NSWindow
 custom title-bar buttons can drive the native window on Windows/Linux, the ZIP
 to import can be picked in the OS file dialog, and the M3U download can be
 saved through the OS save panel. Only that API is exposed to the page, and the
-localhost URL stays hidden from normal users.
+localhost URL stays hidden from normal users. The window also gets a persistent
+WebView storage location, so the choices the pages keep (the theme, a dismissed
+update notice) survive a restart as they would in any desktop application.
 
 The WebView is a production shell only. Developers use ``uv run dev``, which
 starts the same Flask app in a normal browser, and never need the native window
@@ -61,6 +63,7 @@ WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
 WINDOW_MIN_SIZE = (800, 560)
 NO_WEBVIEW_ENV = "SPOTM3U_NO_WEBVIEW"
+WEBVIEW_STORAGE_ENV = "SPOTM3U_WEBVIEW_STORAGE"
 _ICON_RELATIVE = Path("assets") / "icon.png"
 # How long close() waits for the native window to actually go away before it
 # gives up and lets pywebview resolve the JS API call. See WindowControls.close.
@@ -464,6 +467,51 @@ def webview_start_kwargs() -> dict[str, str]:
     return {"icon": str(icon)}
 
 
+def webview_storage_path() -> Path:
+    """Where the WebView keeps cookies and local storage between launches.
+
+    A browser tab keeps its storage for as long as the tab lives and never has
+    to say where it is; the desktop shell owns that decision. pywebview's
+    default is private mode, which *deletes* the WebView's data store on every
+    launch (``clear_user_data`` on Windows, ``removeDataOfTypes_`` on macOS), so
+    the theme chosen in the sidebar and the dismissed update notice would come
+    back reset on every single run - behaviour no desktop application has.
+
+    The store lives in the platform's application-data directory:
+    ``%LOCALAPPDATA%\\SpotM3U`` on Windows,
+    ``~/Library/Application Support/SpotM3U`` on macOS, and ``$XDG_DATA_HOME``
+    (or ``~/.local/share``) on Linux. ``SPOTM3U_WEBVIEW_STORAGE`` overrides it.
+    """
+    override = os.environ.get(WEBVIEW_STORAGE_ENV)
+    if override:
+        return Path(override).expanduser()
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        root = Path(base) if base else Path.home() / "AppData" / "Local"
+        return root / "SpotM3U" / "webview"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "SpotM3U" / "webview"
+    data = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(data) / "spotm3u" / "webview"
+
+
+def webview_persistence_kwargs() -> dict[str, object]:
+    """``webview.start`` arguments that let the shell remember its own settings.
+
+    pywebview creates the storage directory itself and refuses to start when it
+    cannot, which would cost the user the whole window over a preference file.
+    A storage location that cannot be prepared is therefore reported and
+    skipped: the window opens, in private mode, exactly as it did before.
+    """
+    path = webview_storage_path()
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        _LOGGER.warning("could not prepare the WebView storage directory at %s", path)
+        return {}
+    return {"private_mode": False, "storage_path": str(path)}
+
+
 def show_window(url: str, app: Flask | None = None) -> None:
     """Show ``url`` in the native SpotM3U window and block until it closes.
 
@@ -477,7 +525,10 @@ def show_window(url: str, app: Flask | None = None) -> None:
     OS save panel. Only that API is exposed to the page, and the localhost URL
     stays hidden from normal users. The controls are also registered in the
     Flask config so the import route can collect the picked file (see
-    ``WindowControls.take_pending_import``).
+    ``WindowControls.take_pending_import``). The window is given a persistent
+    WebView storage location (see :func:`webview_storage_path`) so the small
+    choices the pages keep - the theme, a dismissed update notice - survive a
+    restart the way a desktop application's settings do.
     """
     import webview
 
@@ -510,7 +561,10 @@ def show_window(url: str, app: Flask | None = None) -> None:
     # for the window to appear; every other platform keeps the page-drawn bar.
     from .desktop_macos import configure_native_chrome
 
-    start_kwargs = webview_start_kwargs()
+    start_kwargs: dict[str, object] = {
+        **webview_start_kwargs(),
+        **webview_persistence_kwargs(),
+    }
     if sys.platform == "darwin":
         start_kwargs["func"] = lambda: configure_native_chrome(window)
     webview.start(**start_kwargs)

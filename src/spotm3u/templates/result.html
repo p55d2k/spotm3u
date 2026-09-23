@@ -55,7 +55,7 @@
       {% set failed_tracks = state.tracks | selectattr('resolution', 'in', ('failed', 'ambiguous')) | list %}
       <div class="result-actions">
         {% if state.m3u_path %}
-        <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}" data-save-m3u data-job-id="{{ job_id }}" data-playlist-id="{{ playlist_id }}">Download M3U playlist</a>
+        <a class="button" href="{{ url_for('download_m3u', job_id=job_id, playlist_id=playlist_id) }}" data-save-m3u data-job-id="{{ job_id }}" data-playlist-id="{{ playlist_id }}">Save playlist (M3U)</a>
         {% endif %}
         {% if retryable %}
         <form method="post" action="{{ url_for('retry_processing', job_id=job_id, playlist_id=playlist_id) }}">
@@ -146,7 +146,7 @@
         <p id="no-tracks-match" class="page-note" role="status" hidden>No tracks match this filter — choose All tracks to see the whole playlist.</p>
         {% else %}
         <p class="page-note" role="status">This playlist has no tracks to convert.</p>
-        <p class="field-help">Choose another playlist from this ZIP, or upload a different export, using the options below.</p>
+        <p class="field-help">Choose another playlist from this ZIP, or import a different export, using the options below.</p>
         {% endif %}
       </section>
 
@@ -155,7 +155,7 @@
         <p class="field-help">Choose another playlist from this ZIP, or start over with a different one.</p>
         <div class="result-actions">
           <a class="button" href="{{ url_for('playlists', job_id=job_id) }}">Convert another playlist</a>
-          <a class="button button-secondary" href="{{ url_for('index') }}">Upload another ZIP</a>
+          <a class="button button-secondary" href="{{ url_for('index') }}">Import another ZIP</a>
         </div>
       </section>
     </main>

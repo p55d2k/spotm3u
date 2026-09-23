@@ -25,12 +25,12 @@ control is used instead, and drag and drop works in both.
 
 The playlist selection page presents each parsed playlist as an independent
 button/card. Checkboxes also support Select all, Deselect all, and
-**Download selected playlists**. The batch flow reuses the single-playlist
+**Convert selected playlists**. The batch flow reuses the single-playlist
 resolver, cache, download, and M3U pipeline for every selected playlist while
 sharing resolved audio across the batch. Each playlist receives its own M3U
-download and completion status. After a result is available, **Download another playlist**
-returns to that same selection state for the upload job; the ZIP is not
-uploaded or parsed again. The existing M3U download remains available from
+save and completion status. After a result is available, **Convert another playlist**
+returns to that same selection state for the import job; the ZIP is not
+imported or parsed again. The existing M3U save remains available from
 each result.
 
 ![Playlist selection and batch controls](images/playlist-selection.png)
@@ -211,6 +211,14 @@ remembers the dismissal for that version, so the notice stops prompting once the
 installer is on disk. In a plain browser the asset URL opens in a new tab.
 Downloads travel over HTTPS to the GitHub release asset URL only and are never
 launched or extracted by the app.
+
+Small choices like that dismissed notice, and the sidebar's light/dark theme,
+live in the WebView's own storage. The desktop shell points that storage at the
+platform's application-data directory (`%LOCALAPPDATA%\SpotM3U` on Windows,
+`~/Library/Application Support/SpotM3U` on macOS, `$XDG_DATA_HOME/spotm3u` on
+Linux) instead of leaving pywebview in its default private mode, which clears
+the store on every launch; without it the theme and the dismissed notice would
+reset each time the application started.
 
 The check can be disabled wholesale with `[update] check = false` in
 `config.toml`, and its repository overridden with `[update] github_repo`.

@@ -96,6 +96,71 @@ def test_webview_start_kwargs(monkeypatch, platform_name, icon, expected) -> Non
     assert desktop.webview_start_kwargs() == expected
 
 
+@pytest.mark.parametrize(
+    ("platform_name", "environ", "expected"),
+    [
+        (
+            "darwin",
+            {},
+            Path.home() / "Library" / "Application Support" / "SpotM3U" / "webview",
+        ),
+        (
+            "win32",
+            {"LOCALAPPDATA": "/win/AppData/Local"},
+            Path("/win/AppData/Local") / "SpotM3U" / "webview",
+        ),
+        (
+            "linux",
+            {"XDG_DATA_HOME": "/data"},
+            Path("/data") / "spotm3u" / "webview",
+        ),
+    ],
+)
+def test_webview_storage_path_is_the_platform_application_data_directory(
+    monkeypatch, platform_name, environ, expected
+) -> None:
+    monkeypatch.delenv(desktop.WEBVIEW_STORAGE_ENV, raising=False)
+    for name in ("LOCALAPPDATA", "XDG_DATA_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(desktop.sys, "platform", platform_name)
+
+    assert desktop.webview_storage_path() == expected
+
+
+def test_webview_storage_path_can_be_overridden(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv(desktop.WEBVIEW_STORAGE_ENV, str(tmp_path / "store"))
+
+    assert desktop.webview_storage_path() == tmp_path / "store"
+
+
+def test_webview_persistence_keeps_settings_between_launches(monkeypatch, tmp_path) -> None:
+    store = tmp_path / "store"
+    monkeypatch.setattr(desktop, "webview_storage_path", lambda: store)
+
+    # Private mode is pywebview's default and clears the data store on every
+    # launch, which would reset the theme and the dismissed update notice each
+    # time the application starts.
+    assert desktop.webview_persistence_kwargs() == {
+        "private_mode": False,
+        "storage_path": str(store),
+    }
+    assert store.is_dir()
+
+
+def test_webview_persistence_is_skipped_when_the_directory_cannot_be_made(
+    monkeypatch, tmp_path
+) -> None:
+    blocked = tmp_path / "file"
+    blocked.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setattr(desktop, "webview_storage_path", lambda: blocked / "store")
+
+    # A preference store that cannot be prepared must not cost the user the
+    # window; the shell falls back to pywebview's private-mode default.
+    assert desktop.webview_persistence_kwargs() == {}
+
+
 def test_webview_enabled_defaults_to_true(monkeypatch) -> None:
     monkeypatch.delenv(desktop.NO_WEBVIEW_ENV, raising=False)
 
@@ -590,7 +655,12 @@ def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeyp
             created["start"] = kwargs
 
     monkeypatch.setitem(sys.modules, "webview", FakeWebview)
-    monkeypatch.setattr(desktop, "webview_start_kwargs", lambda: {})
+    monkeypatch.setattr(desktop, "webview_start_kwargs", lambda: {"icon": "icon.png"})
+    monkeypatch.setattr(
+        desktop,
+        "webview_persistence_kwargs",
+        lambda: {"private_mode": False, "storage_path": "/store"},
+    )
 
     desktop.show_window("http://127.0.0.1:5000/")
 
@@ -600,6 +670,11 @@ def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeyp
     assert kwargs["easy_drag"] is False
     assert controls.window is fake_window
     assert FakeWebview.settings["ALLOW_DOWNLOADS"] is True
+
+    # Both the platform icon and the shell's persistent storage reach start().
+    assert created["start"]["icon"] == "icon.png"
+    assert created["start"]["private_mode"] is False
+    assert created["start"]["storage_path"] == "/store"
 
     # show_window must have wired the OS maximize/restore events to the bridge.
     fake_window.events.maximized.fire()

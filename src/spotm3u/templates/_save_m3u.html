@@ -106,7 +106,7 @@
         );
       } catch (error) {
         console.error("saving the playlist failed", error);
-        feedback.error(SAVE_FAILED, "Try again, or download the file in a browser.");
+        feedback.error(SAVE_FAILED, "The playlist is still in the download folder.");
         return;
       } finally {
         // Both paths are settled, so the link stops looking busy before the

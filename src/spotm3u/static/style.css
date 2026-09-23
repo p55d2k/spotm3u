@@ -1073,6 +1073,12 @@ input[type="radio"] {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
 }
 
+/* The one breakpoint this layout needs. It is built for the application
+   window, not for a browser tab, so there is no ladder of them: the window
+   cannot be narrower than 800x560 (WINDOW_MIN_SIZE in desktop.py, applied to
+   the native window with setMinSize), the sidebar keeps its full width from
+   there up, and this stacking point sits inside that range. A browser run
+   narrower than the minimum is a developer convenience, not a target. */
 @media (max-width: 52rem) {
   .import-layout {
     grid-template-columns: 1fr;
@@ -1965,30 +1971,3 @@ form:has(.mode-option) > button {
   transform: translateX(-50%) translateY(-0.375rem);
 }
 
-/* ------------------------------------------------------------------ */
-/* Compact windows                                                     */
-/* ------------------------------------------------------------------ */
-
-@media (max-width: 46rem) {
-  :root {
-    --sidebar-w: 12.5rem;
-  }
-
-  main.page {
-    padding-left: var(--space-4);
-    padding-right: var(--space-4);
-  }
-
-  .content-head {
-    gap: var(--space-4);
-  }
-
-  .playlist-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .stats {
-    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
-  }
-}

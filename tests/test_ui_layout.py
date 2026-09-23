@@ -7,6 +7,11 @@ conversion page ended up with a 3900px track list that nothing could scroll to,
 while every other test in this suite passed. These checks measure the rendered
 result in a headless browser instead of trusting the rules, and skip where no
 browser is installed.
+
+The same measurements cover the shell at the sizes the native window actually
+has (``WINDOW_MIN_SIZE``, the default, and a large maximized one): the UI is
+built for the application window, so its hierarchy has to survive a resize
+instead of relying on the browser's own scrolling.
 """
 
 import html
@@ -79,7 +84,15 @@ def _browser() -> str:
     pytest.skip("no Chromium-based browser is installed")
 
 
-def _measure(tmp_path: Path, client, url: str) -> tuple[dict, list[str]]:
+def _measure(
+    tmp_path: Path,
+    client,
+    url: str,
+    *,
+    probe: str = _PROBE,
+    size: tuple[int, int] = (1200, 800),
+    budget: int = 2500,
+) -> tuple[dict, list[str] | None]:
     """Render ``url``, measure it in a headless browser, return the numbers."""
     browser = _browser()
     body = client.get(url, follow_redirects=True).get_data(as_text=True)
@@ -91,8 +104,10 @@ def _measure(tmp_path: Path, client, url: str) -> tuple[dict, list[str]]:
         body,
     )
     page = tmp_path / "probe.html"
-    page.write_text(body.replace("</body>", _PROBE % {"rows": _ROWS} + "</body>"), encoding="utf-8")
+    injected = probe % {"rows": _ROWS} if "%(rows)d" in probe else probe
+    page.write_text(body.replace("</body>", injected + "</body>"), encoding="utf-8")
 
+    completed = None
     for headless in ("--headless=new", "--headless"):
         completed = subprocess.run(
             [
@@ -100,8 +115,8 @@ def _measure(tmp_path: Path, client, url: str) -> tuple[dict, list[str]]:
                 headless,
                 "--disable-gpu",
                 "--no-sandbox",
-                "--window-size=1200,800",
-                "--virtual-time-budget=2500",
+                f"--window-size={size[0]},{size[1]}",
+                f"--virtual-time-budget={budget}",
                 "--dump-dom",
                 f"file://{page}",
             ],
@@ -111,13 +126,94 @@ def _measure(tmp_path: Path, client, url: str) -> tuple[dict, list[str]]:
             check=False,
         )
         measured = re.search(r'data-probe="([^"]+)"', completed.stdout)
-        labels = re.search(r'data-labels="([^"]+)"', completed.stdout)
-        if measured and labels:
+        if measured:
+            labels = re.search(r'data-labels="([^"]+)"', completed.stdout)
             return (
                 json.loads(html.unescape(measured.group(1))),
-                json.loads(html.unescape(labels.group(1))),
+                json.loads(html.unescape(labels.group(1))) if labels else None,
             )
     raise AssertionError(f"the browser produced no measurements:\n{completed.stderr[-2000:]}")
+
+
+_SHELL_PROBE = """
+<script>
+(() => {
+  // Anything that renders outside the window is a page laid out for a
+  // browser's scrolling viewport rather than for the application window.
+  const overflowing = [];
+  for (const element of document.querySelectorAll(".app-frame *")) {
+    const rect = element.getBoundingClientRect();
+    if (!rect.width && !rect.height) continue;
+    if (rect.right > window.innerWidth + 1 || rect.left < -1) {
+      overflowing.push(element.className || element.tagName);
+    }
+  }
+  const sidebar = document.querySelector(".app-sidebar");
+  const page = document.querySelector("main.page");
+  const action = page && page.querySelector(".button, button");
+  const actionRect = action ? action.getBoundingClientRect() : null;
+  document.documentElement.dataset.probe = JSON.stringify({
+    viewport: [window.innerWidth, window.innerHeight],
+    sidebarWidth: sidebar ? Math.round(sidebar.getBoundingClientRect().width) : 0,
+    sidebarVisible: sidebar ? sidebar.getBoundingClientRect().right > 0 : false,
+    pageWidth: page ? page.clientWidth : 0,
+    pageOverflow: page ? page.scrollWidth - page.clientWidth : 0,
+    action: actionRect
+      ? { left: Math.round(actionRect.left), right: Math.round(actionRect.right) }
+      : null,
+    overflowing: overflowing.slice(0, 6),
+  });
+})();
+</script>
+"""
+
+# The native window's minimum and default sizes, plus a large maximized one.
+_WINDOW_SIZES = ((800, 560), (1200, 800), (1920, 1080))
+
+
+def _shell_metrics(tmp_path, client, url: str, size: tuple[int, int]) -> dict:
+    metrics, _labels = _measure(tmp_path, client, url, probe=_SHELL_PROBE, size=size, budget=1200)
+    return metrics
+
+
+def _assert_shell_holds_together(metrics: dict, size: tuple[int, int]) -> None:
+    # The requested size really was applied, or every reading below would be
+    # measuring the same window three times. The engine reports the content
+    # viewport, which is a little shorter than the window itself.
+    assert abs(metrics["viewport"][0] - size[0]) <= 40
+    assert size[1] - 200 <= metrics["viewport"][1] <= size[1]
+    # Nothing spills out of the window horizontally at any size.
+    assert metrics["overflowing"] == []
+    assert metrics["pageOverflow"] <= 1
+    # The sidebar keeps its full width rather than collapsing into the content.
+    assert 230 <= metrics["sidebarWidth"] <= 260
+    assert metrics["sidebarVisible"] is True
+    assert metrics["pageWidth"] > 0
+    # The page's own primary action stays inside the window.
+    assert metrics["action"] is not None
+    assert metrics["action"]["left"] >= 0
+    assert metrics["action"]["right"] <= metrics["viewport"][0] + 1
+
+
+@pytest.mark.parametrize("index", [0, 2], ids=["minimum", "maximized"])
+def test_the_import_page_holds_its_hierarchy_at_any_window_size(
+    tmp_path, monkeypatch, index
+) -> None:
+    client, _job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    size = _WINDOW_SIZES[index]
+
+    _assert_shell_holds_together(_shell_metrics(tmp_path, client, "/", size), size)
+
+
+def test_the_playlist_page_holds_its_hierarchy_at_the_minimum_window_size(
+    tmp_path, monkeypatch
+) -> None:
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    size = _WINDOW_SIZES[0]
+
+    _assert_shell_holds_together(
+        _shell_metrics(tmp_path, client, f"/playlists/{job.job_id}", size), size
+    )
 
 
 def test_the_conversion_page_scrolls_its_whole_track_list(tmp_path, monkeypatch) -> None:

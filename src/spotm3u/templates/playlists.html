@@ -15,7 +15,7 @@
         <p class="eyebrow">Step 2 · Choose playlists</p>
         <h1 class="page-title">Select playlists</h1>
       </div>
-      <a class="back-link" href="{{ url_for('index') }}">{{ icon("arrow-left", "back-link-icon") }}Cancel and upload a different ZIP</a>
+      <a class="back-link" href="{{ url_for('index') }}">{{ icon("arrow-left", "back-link-icon") }}Import a different ZIP</a>
     </header>
 
     {% if error %}
@@ -30,8 +30,8 @@
         <div class="selection-actions">
           <button class="button-secondary" type="button" id="select-all">Select all</button>
           <button class="button-secondary" type="button" id="deselect-all">Deselect all</button>
-          <button class="button-secondary" type="button" id="download-all">Download all</button>
-          <button type="submit" id="batch-submit" disabled>Download selected</button>
+          <button class="button-secondary" type="button" id="download-all">Convert all</button>
+          <button type="submit" id="batch-submit" disabled>Convert selected</button>
         </div>
         <p id="playlist-count" class="field-help" role="status"></p>
       </div>
