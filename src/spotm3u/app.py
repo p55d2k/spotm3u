@@ -39,6 +39,7 @@ from .update import check_for_updates
 from .uploads import UploadError, default_upload_root, store_upload
 from .web_jobs import (
     _annotate_artwork,
+    _annotate_lyrics,
     _batch_status,
     _build_processing_job,
     _current_job_directory,
@@ -537,6 +538,7 @@ def create_app(config: dict | None = None) -> Flask:
             return redirect(url_for("processing", job_id=job_id, playlist_id=playlist_id))
         state = job.as_dict()
         _annotate_artwork(job, state)
+        _annotate_lyrics(state)
         return render_template(
             "result.html",
             job_id=job_id,
@@ -606,6 +608,7 @@ def create_app(config: dict | None = None) -> Flask:
             return jsonify({"error": "That playlist is not ready to import."}), 404
         state = job.as_dict()
         _annotate_artwork(job, state)
+        _annotate_lyrics(state)
         paths = [
             track["local_path"]
             for track in state["tracks"]

@@ -19,6 +19,7 @@ from .fast import FastSourceSearcher, FastTrackResolver
 from .ffmpeg import locate_ffmpeg_location
 from .jobs import ProcessingJob
 from .media_player import MediaPlayerError, add_to_media_player, library_player_name
+from .metadata import embedded_lyrics_form
 from .models import Playlist
 from .online import OnlineSourceSearcher, download_track
 from .online.cache import DownloadCache
@@ -229,6 +230,33 @@ def _annotate_artwork(job: ProcessingJob, state: dict[str, object]) -> None:
             item["artwork"] = False
             continue
         item["artwork"] = cached_artwork_path(job.output_dir, job.tracks[index]) is not None
+
+
+def _annotate_lyrics(state: dict[str, object]) -> None:
+    """Mark each track snapshot with how its embedded lyrics are stored.
+
+    ``"synced"`` when the lyrics frame carries timestamps, ``"plain"`` when it
+    does not, and ``None`` when the track has no embedded lyrics. Each track's
+    own ``local_path`` is read, so a track tagged by an earlier run or by hand is
+    reported as it really is, and a download that was deleted reports nothing.
+    Unlike artwork, no job lookup is needed for it.
+
+    Only the result pages call this: it is not part of the live progress view,
+    and the status endpoint is polled, so reading every file's tags on each poll
+    would be wasted work.
+    """
+    tracks = state.get("tracks")
+    if not isinstance(tracks, list):
+        return
+    for item in tracks:
+        if not isinstance(item, dict):
+            continue
+        local_path = item.get("local_path")
+        item["lyrics"] = (
+            embedded_lyrics_form(Path(local_path))
+            if isinstance(local_path, str) and not item.get("file_missing")
+            else None
+        )
 
 
 def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:

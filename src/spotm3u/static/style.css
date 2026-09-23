@@ -874,6 +874,20 @@ main.card > .batch-import-result {
 .tooltip.tooltip-below { transform: translate(-50%, 0); }
 
 .track-reason { color: var(--muted); font-size: 0.82rem; margin: 0.2rem 0 0; }
+
+/* Lyrics form of a track's embedded lyrics; no badge at all when it has none. */
+.lyrics-badge {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-weight: 650;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+.lyrics-badge-synced { color: var(--green); }
 .track-complete, .track-local, .track-downloaded { color: var(--green); }
 .track-searched { color: var(--muted); }
 .track-failed, .track-rejected, .track-missing, .track-uncertain { color: var(--red); }

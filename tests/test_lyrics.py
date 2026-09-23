@@ -13,16 +13,20 @@ import requests
 from spotm3u.audio import LocalAudioResolver
 from spotm3u.lyrics import (
     fetch_lyrics,
+    is_synced_lyrics,
     lyrics_search_term,
     normalize_lyrics,
     set_lyrics_enabled,
 )
-from spotm3u.metadata import MetadataResult, enrich_metadata
+from spotm3u.metadata import MetadataResult, embedded_lyrics_form, enrich_metadata
 from spotm3u.models import Track
 from spotm3u.online import SourceCandidate
 from spotm3u.resolution import TrackResolver
 
 LYRICS = "Today is gonna be the day\nThat they're gonna throw it back to you"
+SYNCED_LYRICS = (
+    "[00:06.21] Today is gonna be the day\n[00:11.00] That they're gonna throw it back to you"
+)
 TRACK = Track(
     title="Wonderwall",
     artists=["Oasis"],
@@ -72,6 +76,7 @@ def _uslt_texts(path: Path) -> list[str]:
 
 
 def test_lyrics_are_written_to_the_standard_lyrics_field(tmp_path, monkeypatch, lyrics_on):
+    """Plain lyrics go into the field and get no sidecar, which would be untimed."""
     calls = _stub_search(monkeypatch, LYRICS)
     path = _write_mp3(tmp_path)
 
@@ -79,9 +84,29 @@ def test_lyrics_are_written_to_the_standard_lyrics_field(tmp_path, monkeypatch, 
 
     assert "USLT" in result.fields_written
     assert _uslt_texts(path) == [LYRICS]
-    # One plain-lyrics lookup for "[title] [artist]".
-    assert [term for term, _kwargs in calls] == ["Wonderwall Oasis"]
-    assert calls[0][1] == {"plain_only": True}
+    assert not (tmp_path / "track.lrc").exists()
+    # One lookup for "[title] [artist]", asking the library for its default
+    # (prefer synced, fall back to plain) rather than plain-only.
+    assert calls == [("Wonderwall Oasis", {})]
+
+
+@pytest.mark.parametrize(
+    ("audio_name", "sidecar_name"),
+    [("track.mp3", "track.lrc"), ("song.flac", "song.lrc"), ("a.b.m4a", "a.b.lrc")],
+)
+def test_synced_lyrics_are_kept_and_written_to_a_sidecar(
+    tmp_path, monkeypatch, lyrics_on, audio_name, sidecar_name
+):
+    """Timestamps survive into the field, and LRC-reading players get a sidecar."""
+    _stub_search(monkeypatch, SYNCED_LYRICS)
+    path = _write_mp3(tmp_path, audio_name)
+
+    result = enrich_metadata(path, TRACK, tmp_path)
+
+    assert "USLT" in result.fields_written
+    assert _uslt_texts(path) == [SYNCED_LYRICS]
+    sidecar = tmp_path / sidecar_name
+    assert sidecar.read_text(encoding="utf-8") == SYNCED_LYRICS
 
 
 def test_missing_lyrics_leaves_the_lyrics_field_empty(tmp_path, monkeypatch, lyrics_on):
@@ -92,6 +117,7 @@ def test_missing_lyrics_leaves_the_lyrics_field_empty(tmp_path, monkeypatch, lyr
 
     assert "USLT" not in result.fields_written
     assert _uslt_texts(path) == []
+    assert not (tmp_path / "track.lrc").exists()
     assert "TIT2" in result.fields_written
 
 
@@ -105,6 +131,21 @@ def test_unusable_lyrics_result_is_ignored(tmp_path, monkeypatch, lyrics_on, unu
     assert isinstance(result, MetadataResult)
     assert "USLT" not in result.fields_written
     assert _uslt_texts(path) == []
+    assert not (tmp_path / "track.lrc").exists()
+
+
+def test_unwritable_sidecar_still_keeps_the_embedded_lyrics(tmp_path, monkeypatch, lyrics_on):
+    """A blocked sidecar path is contained: the lyrics frame is already written."""
+    _stub_search(monkeypatch, SYNCED_LYRICS)
+    path = _write_mp3(tmp_path)
+    # A directory where the .lrc file would go makes the write fail.
+    (tmp_path / "track.lrc").mkdir()
+
+    result = enrich_metadata(path, TRACK, tmp_path)
+
+    assert "USLT" in result.fields_written
+    assert _uslt_texts(path) == [SYNCED_LYRICS]
+    assert "TIT2" in result.fields_written
 
 
 def test_lyrics_library_failure_does_not_fail_enrichment(tmp_path, monkeypatch, lyrics_on):
@@ -153,6 +194,34 @@ def test_existing_metadata_and_artwork_are_preserved(tmp_path, monkeypatch, lyri
     assert [frame.data for frame in reread.getall("APIC")] == [cover]
 
 
+def test_embedded_lyrics_form_reports_what_the_file_holds(tmp_path, monkeypatch, lyrics_on):
+    """The reader answers from the file, not from what a run meant to write."""
+    _stub_search(monkeypatch, SYNCED_LYRICS)
+    synced_path = _write_mp3(tmp_path, "synced.mp3")
+    enrich_metadata(synced_path, TRACK, tmp_path)
+
+    _stub_search(monkeypatch, LYRICS)
+    plain_path = _write_mp3(tmp_path, "plain.mp3")
+    enrich_metadata(plain_path, TRACK, tmp_path)
+
+    untagged = _write_mp3(tmp_path, "untagged.mp3")
+
+    assert embedded_lyrics_form(synced_path) == "synced"
+    assert embedded_lyrics_form(plain_path) == "plain"
+    assert embedded_lyrics_form(untagged) is None
+    assert embedded_lyrics_form(tmp_path / "missing.mp3") is None
+
+
+def test_embedded_lyrics_form_ignores_an_empty_frame(tmp_path):
+    """An empty lyrics frame is no lyrics, not plain lyrics."""
+    path = _write_mp3(tmp_path)
+    tags = mutagen_id3.ID3()
+    tags["USLT"] = mutagen_id3.USLT(encoding=3, lang="eng", desc="", text="   \n")
+    tags.save(str(path))
+
+    assert embedded_lyrics_form(path) is None
+
+
 def test_lyrics_disabled_skips_retrieval_entirely(tmp_path, monkeypatch, lyrics_off):
     """Fast mode disables lyrics, so no lyrics request is made at all."""
     calls = _stub_search(monkeypatch, LYRICS)
@@ -163,6 +232,7 @@ def test_lyrics_disabled_skips_retrieval_entirely(tmp_path, monkeypatch, lyrics_
     assert calls == []
     assert "USLT" not in result.fields_written
     assert _uslt_texts(path) == []
+    assert not (tmp_path / "track.lrc").exists()
 
 
 def test_lyrics_failure_does_not_fail_the_download(tmp_path, monkeypatch, lyrics_on):
@@ -228,3 +298,20 @@ def test_lyrics_search_term_prefers_artist_and_falls_back_to_album():
 )
 def test_normalize_lyrics(raw, expected):
     assert normalize_lyrics(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("lyrics", "expected"),
+    [
+        (SYNCED_LYRICS, True),
+        ("[00:06.21]Hello", True),
+        ("[01:20]Hello", True),
+        ("[00:12.00][01:20.00]Repeated chorus", True),
+        (LYRICS, False),
+        ("[ar:Oasis]\n[ti:Wonderwall]", False),
+        ("[Verse 1]\nToday is gonna be the day", False),
+        ("", False),
+    ],
+)
+def test_is_synced_lyrics(lyrics, expected):
+    assert is_synced_lyrics(lyrics) is expected

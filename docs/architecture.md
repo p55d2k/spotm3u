@@ -218,12 +218,21 @@ search to the `syncedlyrics` library, which queries public lyrics providers
 itself. SpotM3U never searches the web for lyrics, scrapes lyrics sites, or
 hardcodes provider URLs and parsers.
 
-Plain lyrics found for a track are written into the standard lyrics field
-(ID3 `USLT`) alongside the existing tags, preserving all other metadata and
-embedded artwork. Retrieval is optional enrichment: a missing match, a provider
-or network failure, an unusable result, or an audio format that cannot hold the
-field leaves the track resolved and the lyrics field empty. Failures are logged
-at debug level so normal downloads stay quiet.
+The library is asked for its default target, which searches for synced lyrics
+first and falls back to plain text, so a result is either timestamped LRC or
+plain. Either form is written into the standard lyrics field (ID3 `USLT`) as
+retrieved, alongside the existing tags, preserving all other metadata and
+embedded artwork. Timestamped lyrics also get an `.lrc` sidecar next to the
+audio file (same stem, `song.mp3` -> `song.lrc`) for the players that read a
+sidecar rather than ID3 frames; plain lyrics get none, since there is nothing
+to time.
+
+Retrieval is optional enrichment: a missing match, a provider or network
+failure, an unusable result, or an audio format that cannot hold the field
+leaves the track resolved and the lyrics field empty. An unwritable sidecar is
+contained the same way — the embedded lyrics are already written, and a failure
+only costs the sidecar. Failures are logged at debug level so normal downloads
+stay quiet.
 
 `[lyrics] enabled` in `config.toml` (default true) turns retrieval off. Fast
 mode skips metadata enrichment entirely, so it never requests lyrics.

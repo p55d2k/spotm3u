@@ -791,6 +791,32 @@ def _run_local_match_job(tmp_path, monkeypatch):
     return client, job, music / "SpotM3U-downloads"
 
 
+def test_result_page_labels_the_embedded_lyrics_form(tmp_path, monkeypatch) -> None:
+    """The lyrics badge follows the file's tags, and needs an embedded frame."""
+    import mutagen.id3 as mutagen_id3
+
+    client, job, _download_dir = _run_local_match_job(tmp_path, monkeypatch)
+    path = Path(job.as_dict()["tracks"][0]["local_path"])
+    result_url = f"/processing/{job.job_id}/1/result"
+
+    # The lyrics library is stubbed to find nothing, so no lyrics were written.
+    response = client.get(result_url)
+    assert response.status_code == 200
+    assert b"lyrics-badge" not in response.data
+
+    plain = "Today is gonna be the day\nThat they're gonna throw it back to you"
+    synced = f"[00:06.21] {plain.splitlines()[0]}\n[00:11.00] {plain.splitlines()[1]}"
+    for text, badge in ((plain, b"Plain lyrics"), (synced, b"Synced lyrics")):
+        tags = mutagen_id3.ID3(str(path))
+        tags.delall("USLT")
+        tags["USLT"] = mutagen_id3.USLT(encoding=3, lang="eng", desc="", text=text)
+        tags.save(str(path))
+
+        response = client.get(result_url)
+
+        assert badge in response.data
+
+
 def test_artwork_route_returns_cached_image(tmp_path, monkeypatch) -> None:
     from spotm3u import artwork, artwork_cache
 

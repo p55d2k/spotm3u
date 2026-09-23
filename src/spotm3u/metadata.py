@@ -9,8 +9,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import mutagen.id3 as mutagen_id3
+from mutagen import MutagenError
 
 from .artwork import (
     _find_album_artwork,
@@ -19,7 +21,7 @@ from .artwork import (
     artist_artwork_enabled,
 )
 from .artwork_sources import _image_mime
-from .lyrics import fetch_lyrics, lyrics_enabled
+from .lyrics import fetch_lyrics, is_synced_lyrics, lyrics_enabled
 from .models import Track
 
 logger = logging.getLogger(__name__)
@@ -52,8 +54,13 @@ _ORIGINAL_COMM = COMM
 _ORIGINAL_USLT = USLT
 _ORIGINAL_APIC = APIC
 
-# Standard ID3 frame holding a track's plain (unsynchronised) lyrics.
+# Standard ID3 frame holding a track's lyrics. Timestamped (LRC) lyrics are
+# stored verbatim, so players that read timed lyrics can use the frame.
 _USLT_FRAME = "USLT"
+
+# Sidecar lyrics file written beside an audio file that has timestamped lyrics,
+# for the players that read an ``.lrc`` next to the track instead of ID3 frames.
+_LYRICS_SIDECAR_SUFFIX = ".lrc"
 
 
 def _id3_symbol(name: str):
@@ -306,8 +313,9 @@ def _embed_artwork(
 
 
 def _embed_lyrics(path: Path, lyrics: str) -> bool:
-    """Write plain lyrics into the file's standard lyrics frame.
+    """Write lyrics into the file's standard lyrics frame.
 
+    The text is stored as retrieved, so timestamped lyrics keep their LRC tags.
     Only the USLT frame is replaced, so every other field (including embedded
     album and artist artwork) is preserved.
     """
@@ -332,21 +340,71 @@ def _embed_lyrics(path: Path, lyrics: str) -> bool:
         return False
 
 
+def _write_lyrics_sidecar(path: Path, lyrics: str) -> bool:
+    """Write an ``.lrc`` sidecar beside ``path`` for the embedded lyrics.
+
+    Reuses the audio file's name (``song.mp3`` -> ``song.lrc``), which is the
+    convention LRC-aware players look for. A failure here is contained: the
+    lyrics frame is already written, so the track keeps its lyrics.
+    """
+    try:
+        path.with_suffix(_LYRICS_SIDECAR_SUFFIX).write_text(lyrics, encoding="utf-8")
+        return True
+    except OSError as exc:
+        logger.debug("Failed to write lyrics sidecar path=%s: %s", path, exc)
+        return False
+
+
 def _embed_track_lyrics(path: Path, track: Track) -> bool:
     """Retrieve and embed a track's lyrics, never failing the track.
 
     Lyrics are optional enrichment: retrieval, an unsupported audio format, or
     a metadata write problem are all contained here and reported through the
-    return value.
+    return value. Timestamped lyrics additionally get an ``.lrc`` sidecar —
+    there is nothing to put in one for plain text, which the lyrics frame
+    already holds. An existing sidecar is never deleted, matching how a missing
+    result leaves the lyrics frame from an earlier run in place.
     """
     try:
         lyrics = fetch_lyrics(track)
         if not lyrics:
             return False
-        return _embed_lyrics(path, lyrics)
+        embedded = _embed_lyrics(path, lyrics)
+        if is_synced_lyrics(lyrics):
+            _write_lyrics_sidecar(path, lyrics)
+        return embedded
     except Exception as exc:  # pragma: no cover - defensive behavior
         logger.debug("Lyrics enrichment failed path=%s: %s", path, exc)
         return False
+
+
+LyricsForm = Literal["synced", "plain"]
+
+
+def embedded_lyrics_form(path: Path) -> LyricsForm | None:
+    """Return how a file's embedded lyrics are stored, or ``None`` if it has none.
+
+    ``"synced"`` when the lyrics frame carries LRC timestamps and ``"plain"``
+    when it does not. The file is read directly rather than trusting what a run
+    intended to write, so a retagged or hand-tagged download is reported as it
+    really is. Only the lyrics frame is inspected: a sidecar ``.lrc`` is derived
+    from it and is not itself embedded lyrics.
+
+    A file that is gone or unreadable reports no lyrics: this only feeds a
+    label in the interface, so it must never raise. ``MutagenError`` is caught
+    because mutagen wraps the underlying ``FileNotFoundError`` in its own type.
+    """
+    ID3_cls = _id3_symbol("ID3")
+    ID3NoHeaderError_cls = _id3_symbol("ID3NoHeaderError")
+    try:
+        tags = ID3_cls(str(path))
+    except (ID3NoHeaderError_cls, OSError, ValueError, MutagenError):
+        return None
+    for frame in tags.getall(_USLT_FRAME):
+        text = getattr(frame, "text", None)
+        if isinstance(text, str) and text.strip():
+            return "synced" if is_synced_lyrics(text) else "plain"
+    return None
 
 
 def _embed_artist_artwork(
@@ -509,8 +567,10 @@ def enrich_metadata_batch(
 
 
 __all__ = [
+    "LyricsForm",
     "MetadataError",
     "MetadataResult",
+    "embedded_lyrics_form",
     "enrich_metadata",
     "enrich_metadata_batch",
     "id3_tags_enabled",

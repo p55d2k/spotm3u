@@ -111,6 +111,13 @@
               <div class="track-art-main">
                 <div class="track-head">
                   <strong class="track-title" data-tooltip="{{ track.title }}">{{ track.title }}</strong>
+                  {# Only for tracks whose file really holds lyrics; the badge
+                     says which form they take, not that a lookup succeeded. #}
+                  {% if track.lyrics == 'synced' %}
+                  <span class="lyrics-badge lyrics-badge-synced" title="Timed lyrics are embedded in this file">Synced lyrics</span>
+                  {% elif track.lyrics == 'plain' %}
+                  <span class="lyrics-badge" title="Untimed lyrics are embedded in this file">Plain lyrics</span>
+                  {% endif %}
                 </div>
                 {% if track.artists %}
                 <div class="track-artists" data-tooltip="{{ track.artists | join(', ') }}">{{ track.artists | join(', ') }}</div>

@@ -121,11 +121,15 @@
 [lyrics]
 # When true (default), each resolved track is looked up in public lyrics
 # providers through the syncedlyrics library and any lyrics found are embedded
-# in the audio file's lyrics metadata field (ID3 USLT). Lyrics are optional
-# enrichment: a track without lyrics, an unavailable provider, or a write
-# failure never fails the download, and existing metadata and artwork are kept.
-# Set to false to skip lyrics lookups entirely (fast mode does this too, since
-# it skips metadata enrichment, and so does [metadata] enabled = false).
+# in the audio file's lyrics metadata field (ID3 USLT). Synced (timed) lyrics
+# are preferred and fall back to plain text; when they are timed, the
+# timestamps are kept in the field and an .lrc sidecar is written next to the
+# audio file (song.mp3 -> song.lrc) for players that read a sidecar.
+# Lyrics are optional enrichment: a track without lyrics, an unavailable
+# provider, or a write failure never fails the download, and existing metadata
+# and artwork are kept. Set to false to skip lyrics lookups entirely (fast mode
+# does this too, since it skips metadata enrichment, and so does
+# [metadata] enabled = false).
 # enabled = true
 
 [download]

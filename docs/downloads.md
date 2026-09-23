@@ -182,9 +182,16 @@ field (ID3 `USLT`) as part of metadata enrichment.
 
 Lyrics are retrieved through the `syncedlyrics` library, which searches public
 lyrics providers itself. SpotM3U performs no web search of its own, scrapes no
-lyrics sites, and hardcodes no provider URLs or parsers. The library is asked
-for plain (unsynchronised) lyrics, which is what the standard lyrics field
-holds.
+lyrics sites, and hardcodes no provider URLs or parsers.
+
+**Synced lyrics are preferred.** The library looks for timed lyrics first and
+falls back to plain text, so a track gets the best form a provider has. When
+the lyrics are timed, the timestamps are kept in the lyrics field *and* an
+`.lrc` file is written next to the audio file (`song.mp3` -> `song.lrc`), which
+is what players that read a sidecar instead of ID3 frames look for. Plain
+lyrics go into the field only — there is nothing to time, so no sidecar is
+written. Deezer is not a lyrics source: its public API has no lyrics endpoint,
+and its only lyrics route is a private, broken web-player endpoint.
 
 Lyrics are optional enrichment and never affect resolution:
 
@@ -192,11 +199,18 @@ Lyrics are optional enrichment and never affect resolution:
 - an unavailable provider or a network failure is logged at debug level and ignored
 - a malformed or empty library result is discarded
 - an audio file that cannot hold the field is left untouched
+- a sidecar that cannot be written only costs the sidecar, not the embedded lyrics
 - existing metadata and embedded artwork are preserved
+- an `.lrc` from an earlier run is never deleted, and a track that finds no
+  lyrics keeps the ones already in it
 
 Retrieval is enabled by `[lyrics] enabled` in `config.toml` (default true) and
 is skipped when the `[metadata] enabled` master switch is off. Fast mode skips
 metadata enrichment altogether, so it never requests lyrics.
+
+The [result page](web.md) labels each track **Synced lyrics** or **Plain
+lyrics** (nothing when the file has no lyrics), read from the file itself, so
+the form a download really carries is visible without opening it.
 
 ## Cache
 
