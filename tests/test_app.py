@@ -164,8 +164,8 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
     assert len(status["playlists"]) == 2
     assert all(track["artwork"] for playlist in status["playlists"] for track in playlist["tracks"])
     assert client.get(f"/processing/{job_id}/batch/result").status_code == 200
-    assert (music / "SpotM3U-downloads" / "playlist-0.m3u").is_file()
-    assert (music / "SpotM3U-downloads" / "playlist-1.m3u").is_file()
+    assert (music / "SpotM3U" / "playlist-0.m3u").is_file()
+    assert (music / "SpotM3U" / "playlist-1.m3u").is_file()
     result = client.get(f"/processing/{job_id}/0/result")
     assert result.status_code == 200
     assert b"Local matches" in result.data
@@ -242,6 +242,65 @@ def _upload_and_select(tmp_path, client, playlist_id: str = "1") -> tuple[str, o
     return job_id, selection
 
 
+def test_default_download_dir_renames_the_older_folder(tmp_path) -> None:
+    """An upgrade finds its downloads under the new name, contents intact."""
+    music = tmp_path / "music"
+    legacy = music / "SpotM3U-downloads"
+    legacy.mkdir(parents=True)
+    (legacy / "Artist - Song.mp3").write_bytes(b"audio")
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+
+    resolved = web_jobs._download_dir(app)
+
+    assert resolved == music / "SpotM3U"
+    assert (music / "SpotM3U" / "Artist - Song.mp3").read_bytes() == b"audio"
+    assert not legacy.exists()
+
+
+def test_default_download_dir_keeps_both_when_the_new_one_exists(tmp_path) -> None:
+    """Two folders are never merged: the new one is used, the older is untouched."""
+    music = tmp_path / "music"
+    legacy = music / "SpotM3U-downloads"
+    legacy.mkdir(parents=True)
+    (legacy / "Artist - Old.mp3").write_bytes(b"old")
+    (music / "SpotM3U").mkdir()
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+
+    resolved = web_jobs._download_dir(app)
+
+    assert resolved == music / "SpotM3U"
+    assert (legacy / "Artist - Old.mp3").is_file()
+
+
+def test_default_download_dir_keeps_using_a_folder_that_cannot_be_renamed(
+    tmp_path, monkeypatch
+) -> None:
+    """A failed rename must not hide a user's existing downloads."""
+    music = tmp_path / "music"
+    legacy = music / "SpotM3U-downloads"
+    legacy.mkdir(parents=True)
+
+    def deny_rename(self, target):
+        raise OSError("cross-device link")
+
+    monkeypatch.setattr(Path, "rename", deny_rename)
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
+
+    assert web_jobs._download_dir(app) == legacy
+    assert legacy.is_dir()
+
+
+def test_configured_download_dir_is_never_migrated(tmp_path) -> None:
+    """An explicit download_dir names the folder the user chose."""
+    music = tmp_path / "music"
+    legacy = music / "SpotM3U-downloads"
+    legacy.mkdir(parents=True)
+    app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music, "DOWNLOAD_DIR": str(legacy)})
+
+    assert web_jobs._download_dir(app) == legacy
+    assert legacy.is_dir()
+
+
 def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
@@ -257,7 +316,7 @@ def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> N
     assert state["playlist"]["id"] == "1"
     assert state["playlist"]["total_tracks"] == 1
     assert state["status"] in {"running", "completed"}
-    assert state["output_dir"] == str(tmp_path / "music" / "SpotM3U-downloads")
+    assert state["output_dir"] == str(tmp_path / "music" / "SpotM3U")
 
     client.application.config["JOB_MANAGER"].get(job_id).wait(timeout=10)
     status = client.get(f"/processing/{job_id}/1/status")
@@ -267,7 +326,7 @@ def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> N
     assert final["completed"] == 1
     assert final["failed"] == 1
     assert final["tracks"][0]["status"] == "failed"
-    assert final["m3u_path"] == str(tmp_path / "music" / "SpotM3U-downloads" / "playlist.m3u")
+    assert final["m3u_path"] == str(tmp_path / "music" / "SpotM3U" / "playlist.m3u")
 
 
 def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
@@ -285,7 +344,7 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     assert final["status"] == "completed"
     assert final["successful"] == 1
     assert final["failed"] == 0
-    m3u_path = tmp_path / "music" / "SpotM3U-downloads" / "playlist.m3u"
+    m3u_path = tmp_path / "music" / "SpotM3U" / "playlist.m3u"
     assert str(music / "Artist - First.mp3") in m3u_path.read_text(encoding="utf-8")
 
 
@@ -415,7 +474,7 @@ def test_result_page_offers_a_retry_after_the_download_folder_is_emptied(
     assert b"no longer in the download folder" not in fresh.data
     assert b"unresolved track" not in fresh.data
 
-    local_file.unlink()  # the user deleted everything from SpotM3U-downloads
+    local_file.unlink()  # the user deleted everything from SpotM3U
 
     stale = client.get(f"/processing/{job_id}/1/result")
 
@@ -621,7 +680,7 @@ def test_result_page_offers_retry_for_unresolved_tracks(tmp_path, monkeypatch) -
     job = app.config["JOB_MANAGER"].get(job_id)
     job.wait(timeout=10)
     assert job.status == "completed"
-    assert (music / "SpotM3U-downloads" / "playlist.m3u").is_file()
+    assert (music / "SpotM3U" / "playlist.m3u").is_file()
 
 
 class AmbiguousResolver:
@@ -740,7 +799,7 @@ def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
         playlist_id="1",
         playlist_name="two",
         tracks=[Track("First", ["Artist"], duration_ms=200_000)],
-        output_dir=music / "SpotM3U-downloads",
+        output_dir=music / "SpotM3U",
         resolver_factory=lambda: BlockingResolver(),
     )
     playlist.submit(job)
@@ -788,7 +847,7 @@ def _run_local_match_job(tmp_path, monkeypatch):
     client.post(f"/processing/{job_id}/1/start")
     job = client.application.config["JOB_MANAGER"].get(job_id)
     job.wait(timeout=10)
-    return client, job, music / "SpotM3U-downloads"
+    return client, job, music / "SpotM3U"
 
 
 def test_result_page_labels_the_embedded_lyrics_form(tmp_path, monkeypatch) -> None:

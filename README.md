@@ -173,9 +173,11 @@ No Spotify account credentials or API key are needed by SpotM3U.
 ![SpotM3U playlist selection](docs/images/playlist-selection.png)
 
 The M3U references existing files and successfully downloaded MP3s. The
-download directory defaults to `~/Music/SpotM3U-downloads/` and can be changed
-in `config.toml`. Configuration is optional; see the commented
-[config.toml](config.toml) example.
+download directory defaults to `~/Music/SpotM3U/` and can be changed in
+`config.toml`. Upgrading from a release that used `~/Music/SpotM3U-downloads/`
+renames that folder on the next run, so existing downloads stay in place.
+Configuration is optional; see the commented [config.toml](config.toml)
+example.
 
 YouTube downloads can require a signed-in browser session. Configure
 `download.cookies_from_browser` only when needed; browser cookies are read

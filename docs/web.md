@@ -150,8 +150,7 @@ to the refreshed result page when the retry settles. A retry is rejected while
 the job is still running and is a no-op when nothing is unresolved.
 
 A track only counts as resolved while its audio file is still on disk. When a
-finished run's downloads were deleted by hand (an emptied `SpotM3U-downloads`
-folder), the result page marks those tracks *missing from disk*, explains that
+finished run's downloads were deleted by hand (an emptied `SpotM3U` folder), the result page marks those tracks *missing from disk*, explains that
 they are no longer in the download folder, adds them to the retry count, and
 shows **File missing from disk — retry to download it again** on the affected
 rows. The batch result page shows the same notice per playlist, and the retry
@@ -294,8 +293,10 @@ directory so the playlist continues to reference real local files.
 ## Download Directory
 
 Downloads are stored persistently under `DOWNLOAD_DIR` config, defaulting to
-`<MUSIC_LIBRARY>/SpotM3U-downloads/`. This keeps files so the M3U can load
-them and lets later runs match them locally instead of re-downloading.
+`<MUSIC_LIBRARY>/SpotM3U/`. This keeps files so the M3U can load them and lets
+later runs match them locally instead of re-downloading. The former default
+`<MUSIC_LIBRARY>/SpotM3U-downloads/` is renamed to the new name when a download
+directory is resolved (see [downloads](downloads.md)).
 
 ## Important
 

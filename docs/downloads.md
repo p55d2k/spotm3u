@@ -9,7 +9,19 @@ Downloaded audio becomes local MP3 files that can be referenced by the generated
 ## Download Directory
 
 Downloads and the generated M3U are written to `DOWNLOAD_DIR`, which defaults
-to `<MUSIC_LIBRARY>/SpotM3U-downloads/`.
+to `<MUSIC_LIBRARY>/SpotM3U/`.
+
+Earlier releases used `<MUSIC_LIBRARY>/SpotM3U-downloads/`. A folder left under
+that name is renamed to `SpotM3U` the first time a download directory is
+resolved, so downloading after an upgrade keeps using the files that are
+already there. Three details of that migration:
+
+- it only applies to the default location — an explicit `download_dir` is used
+exactly as configured and never moved
+- nothing is merged: when `<MUSIC_LIBRARY>/SpotM3U/` already exists the legacy
+  folder is left untouched, and the new folder is used
+- a rename that fails (a read-only or cross-device music library) leaves the
+  legacy folder in place and uses it, so existing downloads stay visible
 
 This is a persistent location, not a temporary job folder, so the M3U keeps
 working and downloaded files can be matched by the local resolver on later

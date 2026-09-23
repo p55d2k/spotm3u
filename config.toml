@@ -30,9 +30,11 @@
 # music_library = "~/Music"
 
 # Where downloaded MP3s and the generated playlist.m3u are written.
-# Defaults to <music_library>/SpotM3U-downloads.
-# Windows example: "~/Music/SpotM3U-downloads"
-# download_dir = "~/Music/SpotM3U-downloads"
+# Defaults to <music_library>/SpotM3U. Earlier releases used
+# <music_library>/SpotM3U-downloads, which is renamed to the new name the first
+# time a download directory is resolved; a path set here is used as given.
+# Windows example: "~/Music/SpotM3U"
+# download_dir = "~/Music/SpotM3U"
 
 # How many tracks are resolved in parallel (search phase only).
 # resolve_workers = 3

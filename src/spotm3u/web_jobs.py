@@ -28,6 +28,12 @@ from .uploads import cleanup_jobs
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
+# Folder the default download location uses inside the music library. Earlier
+# releases used the legacy name, which is renamed on first use (see
+# ``_migrate_legacy_download_dir``).
+_DOWNLOAD_DIR_NAME = "SpotM3U"
+_LEGACY_DOWNLOAD_DIR_NAME = "SpotM3U-downloads"
+
 
 def _job_directory(upload_root: Path | str, job_id: str) -> Path | None:
     """Resolve a generated job identifier without accepting filesystem paths."""
@@ -296,16 +302,46 @@ def _requested_fast_mode(app: Flask) -> bool:
     return any(str(value).strip().casefold() in {"1", "true", "on", "yes"} for value in values)
 
 
+def _migrate_legacy_download_dir(app: Flask, music_library: Path) -> Path:
+    """Return the default download folder, renaming an older one if it is there.
+
+    Only the *default* location is migrated: an explicit ``download_dir`` names
+    the folder the user chose, so it is used exactly as given and never moved.
+    A rename is skipped when the new folder already exists, so the two are never
+    merged, and a rename that fails (a read-only or cross-device library) leaves
+    the legacy folder in place and uses it as is — losing sight of a user's
+    existing downloads would be worse than an unexpected folder name.
+    """
+    default = music_library / _DOWNLOAD_DIR_NAME
+    legacy = music_library / _LEGACY_DOWNLOAD_DIR_NAME
+    if default.exists() or not legacy.is_dir():
+        return default
+    try:
+        legacy.rename(default)
+    except OSError as exc:
+        app.logger.warning(
+            "Could not rename downloads folder %s to %s, using it as is: %s",
+            legacy,
+            default,
+            exc,
+        )
+        return legacy
+    app.logger.info("Renamed downloads folder %s to %s", legacy, default)
+    return default
+
+
 def _download_dir(app: Flask) -> Path:
     """Resolve the persistent directory for downloaded MP3s and the M3U.
 
     Defaults to a stable subfolder inside the music library so downloads
-    survive and can be matched by the local resolver on later runs.
+    survive and can be matched by the local resolver on later runs. The default
+    folder was called ``SpotM3U-downloads`` in earlier releases; a folder left
+    under that name is renamed once so an upgrade keeps its downloads.
     """
     configured = app.config.get("DOWNLOAD_DIR")
     if configured:
         return Path(configured).expanduser()
-    return Path(app.config["MUSIC_LIBRARY"]).expanduser() / "SpotM3U-downloads"
+    return _migrate_legacy_download_dir(app, Path(app.config["MUSIC_LIBRARY"]).expanduser())
 
 
 def _build_processing_job(

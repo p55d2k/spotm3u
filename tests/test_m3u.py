@@ -149,7 +149,7 @@ def test_check_playlist_reports_files_missing_from_disk(tmp_path: Path) -> None:
 
 
 def test_check_playlist_resolves_relative_entries_against_the_playlist(tmp_path: Path) -> None:
-    downloads = tmp_path / "SpotM3U-downloads"
+    downloads = tmp_path / "SpotM3U"
     downloads.mkdir()
     audio = downloads / "Artist - Song.mp3"
     audio.write_bytes(b"audio")
@@ -196,7 +196,7 @@ def test_missing_names_are_unique_and_capped(tmp_path: Path) -> None:
 
 
 def test_written_playlist_is_checked_by_its_own_output(tmp_path: Path) -> None:
-    audio = tmp_path / "SpotM3U-downloads" / "Artist - Song.mp3"
+    audio = tmp_path / "SpotM3U" / "Artist - Song.mp3"
     audio.parent.mkdir()
     audio.write_bytes(b"audio")
     playlist = audio.parent / "playlist.m3u"
