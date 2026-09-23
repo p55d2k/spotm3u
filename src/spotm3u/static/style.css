@@ -72,14 +72,22 @@
   --color-danger: #c0382b;
   --color-danger-subtle: #fbe9e7;
   --color-danger-ink: #9c2b20;
+  /* Translucent edges for tinted surfaces; one alpha per role so the error,
+     success, warning and accent borders read as a single family. */
+  --color-accent-border: rgb(35 100 230 / 0.22);
+  --color-success-border: rgb(24 121 78 / 0.22);
+  --color-warning-border: rgb(154 98 6 / 0.22);
+  --color-danger-border: rgb(192 56 43 / 0.22);
   --color-muted-button: #f2f4f7;
   --color-input: #ffffff;
   --state-hover: rgb(27 32 41 / 0.06);
   --state-active: rgb(27 32 41 / 0.09);
   --state-selected: #e8f0fd;
+  --state-accent-hover: rgb(35 100 230 / 0.14);
   --track: #e8ecf2;
   --scrollbar-thumb: #c9cfd8;
   --shadow-panel: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-raised: 0 3px 8px rgb(16 24 40 / 0.1);
   --shadow-popover: 0 8px 24px rgb(16 24 40 / 0.14);
   --focus-ring: 0 0 0 3px rgb(35 100 230 / 0.32);
   --focus-ring-error: 0 0 0 3px rgb(192 56 43 / 0.28);
@@ -110,14 +118,21 @@
   --color-danger: #ea6a5c;
   --color-danger-subtle: #3b211f;
   --color-danger-ink: #f2998f;
+  /* The same border roles as the light theme, tuned for dark surfaces. */
+  --color-accent-border: rgb(77 141 255 / 0.4);
+  --color-success-border: rgb(70 176 124 / 0.36);
+  --color-warning-border: rgb(217 163 60 / 0.36);
+  --color-danger-border: rgb(234 106 92 / 0.4);
   --color-muted-button: #232936;
   --color-input: #1d232e;
   --state-hover: rgb(231 234 240 / 0.07);
   --state-active: rgb(231 234 240 / 0.12);
   --state-selected: #223550;
+  --state-accent-hover: rgb(77 141 255 / 0.18);
   --track: #2a313d;
   --scrollbar-thumb: #3a4250;
   --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-raised: 0 4px 10px rgb(0 0 0 / 0.4);
   --shadow-popover: 0 10px 28px rgb(0 0 0 / 0.5);
   --focus-ring: 0 0 0 3px rgb(77 141 255 / 0.4);
   --focus-ring-error: 0 0 0 3px rgb(234 106 92 / 0.35);
@@ -321,7 +336,7 @@ main.page > * {
 .nav-icon {
   align-items: center;
   display: inline-flex;
-  font-size: 0.85rem;
+  font-size: var(--text-md);
   height: 1.25rem;
   justify-content: center;
   width: 1.25rem;
@@ -552,7 +567,7 @@ body.has-native-titlebar .titlebar {
   display: inline-flex;
   height: 1.75rem;
   justify-content: center;
-  margin: 0 0.125rem;
+  margin: 0 var(--space-1);
   padding: 0;
   width: 2.25rem;
 }
@@ -697,7 +712,7 @@ main.page section > h2 {
 .error,
 .track-reason {
   background: var(--color-danger-subtle);
-  border: 1px solid rgb(192 56 43 / 0.18);
+  border: 1px solid var(--color-danger-border);
   border-radius: var(--radius-s);
   color: var(--color-danger-ink);
   font-size: var(--text-sm);
@@ -728,7 +743,7 @@ button {
   justify-content: center;
   line-height: 1;
   min-height: 2.375rem;
-  padding: 0.6875rem 1rem;
+  padding: var(--space-3) var(--space-4);
   transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
@@ -772,7 +787,7 @@ button.button-secondary:hover {
 .button-small {
   font-size: var(--text-sm);
   min-height: 2rem;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
 }
 
 input[type="text"],
@@ -783,7 +798,7 @@ input[type="file"] {
   border-radius: var(--radius-s);
   color: var(--color-text);
   font-size: var(--text-md);
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   width: 100%;
 }
 
@@ -838,7 +853,7 @@ input[type="radio"] {
   counter-increment: steps;
   display: block;
   margin-bottom: var(--space-4);
-  padding-left: 2rem;
+  padding-left: var(--space-8);
   position: relative;
 }
 
@@ -982,12 +997,12 @@ input[type="radio"] {
 
 .playlist-card:hover {
   border-color: var(--color-accent);
-  box-shadow: 0 3px 8px rgb(16 24 40 / 0.1);
+  box-shadow: var(--shadow-raised);
   transform: translateY(-1px);
 }
 
 .playlist-card input[type="checkbox"] {
-  margin: 0.15rem 0 0;
+  margin: var(--space-1) 0 0;
   position: absolute;
   right: var(--space-4);
   top: var(--space-4);
@@ -1026,7 +1041,7 @@ input[type="radio"] {
 }
 
 .mode-option input[type="checkbox"] {
-  margin: 0.2rem 0 0;
+  margin: var(--space-1) 0 0;
 }
 
 .mode-option-text {
@@ -1058,7 +1073,7 @@ form:has(.mode-option) > button {
 .download {
   align-items: center;
   background: var(--color-success-subtle);
-  border: 1px solid rgb(24 121 78 / 0.18);
+  border: 1px solid var(--color-success-border);
   border-radius: var(--radius-m);
   color: var(--color-success-ink);
   display: flex;
@@ -1121,7 +1136,7 @@ form:has(.mode-option) > button {
   flex: none;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  padding: 0.3rem 0.625rem;
+  padding: var(--space-1) var(--space-2);
   white-space: nowrap;
 }
 
@@ -1282,7 +1297,7 @@ form:has(.mode-option) > button {
 .track-reason {
   margin-top: var(--space-1);
   margin-left: 0;
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
 }
 
 .track-icon {
@@ -1378,25 +1393,25 @@ form:has(.mode-option) > button {
 
 .lyrics-badge {
   background: var(--color-warning-subtle);
-  border: 1px solid rgb(154 98 6 / 0.16);
+  border: 1px solid var(--color-warning-border);
   border-radius: var(--radius-full, 999px);
   color: var(--color-warning-ink);
   flex: none;
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  padding: 0.15rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   white-space: nowrap;
 }
 
 .lyrics-badge-synced {
   background: var(--color-success-subtle);
-  border-color: rgb(24 121 78 / 0.16);
+  border-color: var(--color-success-border);
   color: var(--color-success-ink);
 }
 
 .batch-import {
   background: var(--color-success-subtle);
-  border: 1px solid rgb(24 121 78 / 0.22);
+  border: 1px solid var(--color-success-border);
   border-radius: var(--radius-xl);
   padding: var(--space-6);
 }
@@ -1445,7 +1460,7 @@ form:has(.mode-option) > button {
 }
 
 .import-list li.import-error {
-  border-color: rgb(192 56 43 / 0.3);
+  border-color: var(--color-danger-border);
 }
 
 .import-list li.import-error .import-detail {
@@ -1459,7 +1474,7 @@ form:has(.mode-option) > button {
 .update-banner {
   align-items: center;
   background: var(--color-accent-subtle);
-  border-bottom: 1px solid rgb(35 100 230 / 0.2);
+  border-bottom: 1px solid var(--color-accent-border);
   color: var(--color-accent-ink);
   display: flex;
   flex: none;
@@ -1495,7 +1510,7 @@ form:has(.mode-option) > button {
 }
 
 .update-banner-dismiss:hover {
-  background: rgb(35 100 230 / 0.14);
+  background: var(--state-accent-hover);
   color: var(--color-accent-ink);
 }
 
@@ -1554,7 +1569,7 @@ form:has(.mode-option) > button {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -1578,7 +1593,7 @@ form:has(.mode-option) > button {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   min-height: 2rem;
-  padding: 0.375rem 0.625rem;
+  padding: var(--space-2);
   white-space: nowrap;
 }
 
@@ -1595,7 +1610,7 @@ form:has(.mode-option) > button {
   font-weight: var(--weight-medium);
   left: 0;
   opacity: 0;
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   pointer-events: none;
   position: fixed;
   transform: translateX(-50%) translateY(0.375rem);
