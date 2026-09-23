@@ -23,6 +23,12 @@ and matches them against the exported track metadata. It is a separate,
 independent strategy from online source selection — a track found locally never
 goes through the online pipeline.
 
+The scanned extensions are configurable: `[library] extensions` in
+`config.toml` lists them (comma-separated, case-insensitive, dot optional), and
+an empty value keeps the built-in list. Widen it when a track is reported
+missing although the file is in the library in a format the default list does
+not cover.
+
 ## Online source selection
 
 For tracks without a local match, the online pipeline is:

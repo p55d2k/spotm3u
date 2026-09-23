@@ -52,6 +52,15 @@
 # SPOTM3U_LOG_FILE overrides the location; setting it also enables file logging
 # in development runs.
 
+[library]
+# Audio file extensions local matching scans for in [web] music_library, as a
+# comma-separated list. Matching is case-insensitive and a leading dot is
+# optional, so "mp3" and ".MP3" are the same extension. Add a format your
+# player supports when a track is reported missing even though the file is
+# there; the built-in list is aac, aiff, alac, flac, m4a, mp2, mp3, ogg, opus,
+# wav and wma. An empty value keeps that built-in list.
+# extensions = "aac,aiff,alac,flac,m4a,mp2,mp3,ogg,opus,wav,wma"
+
 [upload]
 # Maximum accepted ZIP size in bytes (default 50 MiB = 52428800).
 # max_upload_size = 52428800

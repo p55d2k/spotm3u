@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from spotm3u.app import create_app
+from spotm3u.audio.resolver import AUDIO_EXTENSIONS
 from spotm3u.config import (
     _FIELD_ATTRIBUTES,
     DEFAULT_MAX_JOB_AGE,
@@ -14,6 +15,7 @@ from spotm3u.config import (
     ConfigError,
     discover_config_path,
     load_config,
+    parse_audio_extensions,
 )
 
 # The repository's own ``config.toml`` is a documented, entirely optional
@@ -408,6 +410,28 @@ def test_config_file_sets_artwork_limits(tmp_path, monkeypatch) -> None:
     assert artwork_sources._MUSICBRAINZ_ARTIST_LIMIT == 4
     assert artwork_sources._ARTIST_VERIFICATION_LIMIT == 2
     assert artwork_cache._ARTWORK_MEMORY_LIMIT == 64
+
+
+def test_library_extensions_default_to_the_built_in_scan_list() -> None:
+    mapping = Config().to_app_config()
+
+    assert mapping["LIBRARY_EXTENSIONS"] == frozenset(AUDIO_EXTENSIONS)
+
+
+def test_config_file_sets_library_extensions(tmp_path) -> None:
+    path = write_config(tmp_path, '[library]\nextensions = "MP3, .Flac"\n')
+
+    config = load_config(path)
+
+    assert config.library_extensions == "MP3, .Flac"
+    # Case and a missing leading dot are normalized here, so the resolver only
+    # ever sees dot-prefixed lowercase extensions.
+    assert config.to_app_config()["LIBRARY_EXTENSIONS"] == frozenset({".mp3", ".flac"})
+
+
+def test_parse_audio_extensions_tolerates_separators_and_casing() -> None:
+    assert parse_audio_extensions("MP3, .Flac  ogg") == frozenset({".mp3", ".flac", ".ogg"})
+    assert parse_audio_extensions("") == frozenset()
 
 
 def test_config_file_sets_timeout_settings(tmp_path) -> None:

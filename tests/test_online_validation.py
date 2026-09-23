@@ -43,6 +43,10 @@ def test_music_video_is_not_rejected() -> None:
 def test_missing_metadata_is_accepted() -> None:
     assert validate_source_candidate(TRACK, source(duration_s=None)).status == "accepted"
     assert validate_source_candidate(TRACK, source(uploader=None, artist=None)).status == "accepted"
+    assert (
+        validate_source_candidate(TRACK, source(artist=None, uploader=None, duration_s=None)).status
+        == "accepted"
+    )
 
 
 def test_wrong_artist_is_rejected_but_ambiguous_title_is_tolerated() -> None:

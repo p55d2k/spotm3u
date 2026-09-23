@@ -69,6 +69,19 @@ def test_resolver_matches_single_char_cjk_title_inside_longer_word(tmp_path: Pat
     assert result.resolved.local_path == expected
 
 
+def test_resolver_scans_only_the_extensions_it_is_given(tmp_path: Path) -> None:
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "Artist - Song Name.ape").write_bytes(b"audio")
+    track = Track(title="Song Name", artists=["Artist"])
+
+    default = LocalAudioResolver(music_dir).resolve(track)
+    configured = LocalAudioResolver(music_dir, extensions={".ape"}).resolve(track)
+
+    assert default.status == "missing"
+    assert configured.status == "matched"
+
+
 def test_resolver_parallel_resolve_all_preserves_order(tmp_path: Path) -> None:
     music_dir = tmp_path / "music"
     music_dir.mkdir()

@@ -10,10 +10,13 @@ file exists purely for user customization.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .audio.resolver import AUDIO_EXTENSIONS
 
 DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 DEFAULT_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
@@ -22,6 +25,10 @@ DEFAULT_MAX_JOB_AGE = 24 * 60 * 60
 SUPPORTED_COOKIE_BROWSERS = frozenset(
     {"brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"}
 )
+# The audio extensions local matching scans, rendered as the comma-separated
+# list ``config.toml`` documents. The resolver remains the source of truth for
+# what the default list is.
+DEFAULT_LIBRARY_EXTENSIONS = ",".join(sorted(AUDIO_EXTENSIONS))
 
 
 class ConfigError(ValueError):
@@ -39,6 +46,8 @@ class Config:
     download_dir: str | None = None
     resolve_workers: int = 3
     log_level: str | None = None
+    # [library]
+    library_extensions: str = DEFAULT_LIBRARY_EXTENSIONS
     # [upload]
     max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE
     max_decompressed_size: int = DEFAULT_MAX_DECOMPRESSED_SIZE
@@ -96,6 +105,7 @@ class Config:
             "SEARCH_MAX_RESULTS": self.max_results,
             "SEARCH_MAX_WORKERS": self.max_search_workers,
             "SEARCH_SOCKET_TIMEOUT": self.search_socket_timeout,
+            "LIBRARY_EXTENSIONS": parse_audio_extensions(self.library_extensions),
             "FAST_MODE": self.fast_mode,
             "METADATA_ENABLED": self.metadata_enabled,
             "METADATA_TAGS": self.metadata_tags,
@@ -143,6 +153,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "web.download_dir": "download_dir",
     "web.resolve_workers": "resolve_workers",
     "web.log_level": "log_level",
+    "library.extensions": "library_extensions",
     "upload.max_upload_size": "max_upload_size",
     "upload.max_decompressed_size": "max_decompressed_size",
     "upload.max_archive_entries": "max_archive_entries",
@@ -212,6 +223,21 @@ def load_config(path: str | Path | None = None) -> Config:
     return Config(**merged)
 
 
+def parse_audio_extensions(value: str) -> frozenset[str]:
+    """Return the audio extensions a config value lists, dot-prefixed and lowercase.
+
+    Accepts the comma- or whitespace-separated list documented in
+    ``config.toml`` and tolerates a missing leading dot (``"mp3"`` and
+    ``".mp3"`` are the same extension). The local resolver falls back to its
+    built-in list when this is empty.
+    """
+    return frozenset(
+        extension if extension.startswith(".") else f".{extension}"
+        for extension in (part.strip().casefold() for part in re.split(r"[,\s]+", value))
+        if extension
+    )
+
+
 def _coerce(expected: type, key: str, value: Any) -> Any:
     if expected is bool:
         if not isinstance(value, bool):
@@ -258,6 +284,7 @@ def load_user_config() -> Config:
 __all__ = [
     "Config",
     "ConfigError",
+    "DEFAULT_LIBRARY_EXTENSIONS",
     "DEFAULT_MAX_ARCHIVE_ENTRIES",
     "DEFAULT_MAX_DECOMPRESSED_SIZE",
     "DEFAULT_MAX_JOB_AGE",
@@ -265,4 +292,5 @@ __all__ = [
     "discover_config_path",
     "load_config",
     "load_user_config",
+    "parse_audio_extensions",
 ]

@@ -746,12 +746,3 @@ def create_app(config: dict | None = None) -> Flask:
         ), 413
 
     return app
-
-
-app = create_app()
-
-
-def run() -> None:
-    """Run the development web server."""
-    _sweep_old_jobs(app, log=True)
-    app.run(port=app.config.get("PORT", 5001), debug=True)

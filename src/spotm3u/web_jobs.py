@@ -275,7 +275,7 @@ def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:
     return index
 
 
-def _sweep_old_jobs(app: Flask, *, log: bool = False) -> None:
+def _sweep_old_jobs(app: Flask) -> None:
     """Remove abandoned upload job directories that are past their age limit."""
     try:
         removed = cleanup_jobs(
@@ -283,7 +283,7 @@ def _sweep_old_jobs(app: Flask, *, log: bool = False) -> None:
             max_age_seconds=app.config["MAX_JOB_AGE"],
             active_job_ids=app.config["JOB_MANAGER"].active_job_ids(),
         )
-        if log and removed:
+        if removed:
             app.logger.info("Removed %d abandoned upload job(s)", removed)
     except (OSError, ValueError):
         app.logger.exception("Unable to sweep abandoned upload jobs")
@@ -370,7 +370,9 @@ def _build_processing_job(
     pot_provider_home = app.config.get("YTDLP_POT_PROVIDER_HOME")
 
     def resolver_factory() -> TrackResolver:
-        local_resolver = LocalAudioResolver(music_library)
+        local_resolver = LocalAudioResolver(
+            music_library, extensions=app.config.get("LIBRARY_EXTENSIONS")
+        )
         searcher = OnlineSourceSearcher(
             max_results=max_results,
             max_search_workers=max_search_workers,

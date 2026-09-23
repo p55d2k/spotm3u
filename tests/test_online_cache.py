@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from spotm3u.audio import LocalAudioResolver
 from spotm3u.models import Track
 from spotm3u.online import DownloadCache, SourceCandidate, cache_metadata_key, source_identity
@@ -130,7 +132,20 @@ def install_cache_validation(monkeypatch):
     )
 
 
-def test_near_match_with_different_title_core_is_not_reused(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "lookup_track",
+    [
+        pytest.param(
+            Track("Champagne Supernova", ["Oasis"], duration_ms=200_000), id="different-title"
+        ),
+        pytest.param(
+            Track("Wonderwall", ["Other Artist"], duration_ms=200_000), id="different-artist"
+        ),
+        pytest.param(Track("Wonderwall", ["Oasis"], duration_ms=300_000), id="different-duration"),
+    ],
+)
+def test_a_metadata_mismatch_is_not_reused(tmp_path, monkeypatch, lookup_track):
+    """A different source URL is only reused for the same recording."""
     install_cache_validation(monkeypatch)
     cache = DownloadCache(tmp_path / "downloads")
     path = cache.download_dir / "entry.mp3"
@@ -140,51 +155,7 @@ def test_near_match_with_different_title_core_is_not_reused(tmp_path, monkeypatc
         path,
     )
 
-    assert (
-        cache.lookup(
-            Track("Champagne Supernova", ["Oasis"], duration_ms=200_000),
-            "https://www.youtube.com/watch?v=zyx6543210",
-        )
-        is None
-    )
-
-
-def test_different_artist_is_not_reused(tmp_path, monkeypatch):
-    install_cache_validation(monkeypatch)
-    cache = DownloadCache(tmp_path / "downloads")
-    path = cache.download_dir / "entry.mp3"
-    cache.store(
-        Track("Song", ["Artist"], duration_ms=200_000),
-        "https://www.youtube.com/watch?v=abc123XYZ",
-        path,
-    )
-
-    assert (
-        cache.lookup(
-            Track("Song", ["Other Artist"], duration_ms=200_000),
-            "https://www.youtube.com/watch?v=zyx6543210",
-        )
-        is None
-    )
-
-
-def test_duration_conflict_blocks_metadata_reuse(tmp_path, monkeypatch):
-    install_cache_validation(monkeypatch)
-    cache = DownloadCache(tmp_path / "downloads")
-    path = cache.download_dir / "entry.mp3"
-    cache.store(
-        Track("Song", ["Artist"], duration_ms=200_000),
-        "https://www.youtube.com/watch?v=abc123XYZ",
-        path,
-    )
-
-    assert (
-        cache.lookup(
-            Track("Song", ["Artist"], duration_ms=300_000),
-            "https://www.youtube.com/watch?v=zyx6543210",
-        )
-        is None
-    )
+    assert cache.lookup(lookup_track, "https://www.youtube.com/watch?v=zyx6543210") is None
 
 
 def test_stored_source_is_reused_across_resolver_instances(tmp_path, monkeypatch):

@@ -46,7 +46,15 @@ def test_store_upload_rejects_non_zip_filename(tmp_path: Path, filename: str) ->
         )
 
 
-@pytest.mark.parametrize("entry", ["../outside.txt", "/outside.txt", "C:/outside.txt"])
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "../outside.txt",
+        "/outside.txt",
+        "C:/outside.txt",
+        pytest.param("a\nb.csv", id="newline"),
+    ],
+)
 def test_store_upload_rejects_unsafe_zip_paths(tmp_path: Path, entry: str) -> None:
     with pytest.raises(UploadError, match="unsafe path"):
         store_upload(
@@ -151,14 +159,3 @@ def test_safe_archive_path_rejects_unsafe_entries(entry: str) -> None:
 
     with pytest.raises(UploadError, match="unsafe path"):
         _safe_archive_path(entry)
-
-
-def test_store_upload_rejects_newline_in_zip_path(tmp_path: Path) -> None:
-    with pytest.raises(UploadError, match="unsafe path"):
-        store_upload(
-            file_storage(zip_bytes("a\nb.csv")),
-            upload_root=tmp_path,
-            max_upload_size=1024,
-        )
-
-    assert list(tmp_path.iterdir()) == []

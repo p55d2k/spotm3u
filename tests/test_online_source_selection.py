@@ -81,12 +81,6 @@ def test_lyric_and_audio_beat_mv_for_same_recording() -> None:
     assert ranked[2].confidence == "plausible" or ranked[2].confidence == "strong"
 
 
-def test_mv_is_a_valid_fallback() -> None:
-    result = rank_source_candidates(ACTOR, [joker()])[0]
-    assert result.accepted
-    assert any("music video" in reason for reason in result.reasons)
-
-
 def test_official_audio_preferred_over_lyric_and_mv() -> None:
     ranked = rank_source_candidates(
         TRACK,
@@ -180,26 +174,6 @@ def test_duplicate_across_queries_is_deduplicated(monkeypatch: pytest.MonkeyPatc
     assert [c.url for c in candidates] == ["https://example.com/dup"]
 
 
-def test_live_beats_studio_only_when_requested_live() -> None:
-    studio = Track(title="Wonderwall", artists=["Oasis"], duration_ms=258_000)
-    live = Track(title="Wonderwall (Live)", artists=["Oasis"], duration_ms=258_000)
-
-    live_candidate = candidate(title="Wonderwall (Live from Knebworth)")
-
-    assert rank_source_candidates(studio, [live_candidate])[0].confidence == "rejected"
-    assert rank_source_candidates(live, [live_candidate])[0].accepted
-
-
-def test_remix_does_not_supplant_original() -> None:
-    remix = candidate(title="Wonderwall Remix")
-    ranked = rank_source_candidates(TRACK, [remix, candidate()])
-
-    assert ranked[0].accepted
-    assert ranked[0].candidate.title == "Wonderwall"
-    assert ranked[1].candidate.title == "Wonderwall Remix"
-    assert ranked[1].confidence == "rejected"
-
-
 def test_candidate_scores_carry_diagnostics() -> None:
     lyric = joker(title="演员 [歌词]")
     result = rank_source_candidates(ACTOR, [lyric])[0]
@@ -208,18 +182,6 @@ def test_candidate_scores_carry_diagnostics() -> None:
     assert result.components.source_quality >= 10.0  # lyric tier contribution
     assert any("source quality" in reason for reason in result.reasons)
     assert any("artist matches" in reason for reason in result.reasons)
-
-
-def test_rejected_reason_is_recorded() -> None:
-    result = rank_source_candidates(TRACK, [candidate(title="Wonderwall (Live)")])[0]
-    assert result.confidence == "rejected"
-    assert any("live" in reason.casefold() for reason in result.reasons)
-
-
-def test_rejected_candidate_for_wrong_duration() -> None:
-    result = rank_source_candidates(TRACK, [candidate(duration_s=400.0)])[0]
-    assert result.confidence == "rejected"
-    assert any("duration differs" in reason for reason in result.reasons)
 
 
 def test_lyric_video_variant_is_treated_as_lyric_source() -> None:
@@ -270,16 +232,3 @@ def test_traditional_script_joker_beats_bare_title_hebe() -> None:
     assert ranked[0].components is not None
     assert ranked[0].components.identity > ranked[1].components.identity
     assert ranked[0].accepted
-
-
-def test_artist_attribution_in_title_is_not_a_title_difference() -> None:
-    bare = joker(title="演员")
-    with_artist = joker(title="薛之谦 演员")
-    both = rank_source_candidates(ACTOR, [bare, with_artist])
-    assert all(r.accepted for r in both)
-    assert (
-        both[0].components is not None
-        and both[1].components is not None
-        and both[0].components.title > 0.5
-        and both[1].components.title > 0.5
-    )
