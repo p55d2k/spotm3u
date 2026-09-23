@@ -223,6 +223,30 @@ def test_surfaces_stay_flat_square_and_unshaded() -> None:
     assert "translateY(-1px)" not in css
 
 
+def test_non_primary_buttons_beat_the_primary_hover() -> None:
+    """Window controls and the toast action are not the primary action.
+
+    The base ``button`` rule paints any bare <button> with the accent, and its
+    ``button:hover`` match is more specific than a single class, so a component
+    hover has to be qualified with its element - exactly as the secondary and
+    ghost variants are. Without that the minimize, maximize and close controls
+    (and the toast action) repaint with the primary accent on hover.
+    """
+    css = (Path(create_app().static_folder) / "style.css").read_text(encoding="utf-8")
+
+    for selector in (
+        'button.titlebar-button:hover:not([disabled]):not([aria-disabled="true"])',
+        'button.titlebar-button:active:not([disabled]):not([aria-disabled="true"])',
+        'button.titlebar-button-close:hover:not([disabled]):not([aria-disabled="true"])',
+        'button.toast-action:hover:not([disabled]):not([aria-disabled="true"])',
+        'button.toast-action:active:not([disabled]):not([aria-disabled="true"])',
+    ):
+        assert selector in css
+    # The unqualified forms would lose to the base hover, so they must be gone.
+    assert ".titlebar-button:hover {" not in css
+    assert ".toast-action:hover {" not in css
+
+
 def test_artwork_styles_support_light_and_dark_themes() -> None:
     import pathlib
 

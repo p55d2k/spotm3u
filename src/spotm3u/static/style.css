@@ -3,7 +3,6 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Typography scale */
   --text-xs: 0.75rem;
@@ -11,7 +10,6 @@
   --text-md: 0.875rem;
   --text-base: 0.9375rem;
   --text-lg: 1.0625rem;
-  --text-title: 1.375rem;
   --text-title-lg: 1.625rem;
   --weight-regular: 400;
   --weight-medium: 500;
@@ -28,8 +26,6 @@
   --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-  --space-10: 2.5rem;
-  --space-12: 3rem;
 
   /* Radius scale. A desktop utility keeps surfaces nearly square, so the
      scale tops out at 8px; --radius-full is for something that is genuinely
@@ -47,7 +43,6 @@
   /* Clearance the native macOS traffic lights need above the sidebar brand. */
   --traffic-gap: 2.5rem;
   --content-max: 78rem;
-  --tab-width: 15.25rem;
 
   /* Light theme */
   --color-bg: #f5f6f8;
@@ -87,7 +82,6 @@
   --state-hover: rgb(27 32 41 / 0.06);
   --state-active: rgb(27 32 41 / 0.09);
   --state-selected: #e8f0fd;
-  --state-accent-hover: rgb(35 100 230 / 0.14);
   --track: #e8ecf2;
   --scrollbar-thumb: #c9cfd8;
   /* Only an overlay casts a shadow; an ordinary surface separates with a
@@ -136,7 +130,6 @@
   --state-hover: rgb(231 234 240 / 0.07);
   --state-active: rgb(231 234 240 / 0.12);
   --state-selected: #223550;
-  --state-accent-hover: rgb(77 141 255 / 0.18);
   --track: #2a313d;
   --scrollbar-thumb: #3a4250;
   --shadow-popover: 0 10px 28px rgb(0 0 0 / 0.5);
@@ -596,12 +589,15 @@ body.has-native-titlebar .titlebar {
   width: 2.25rem;
 }
 
-.titlebar-button:hover {
+/* Qualified with the element and its container, because the button system's
+   bare ``button:hover`` rule is more specific than a lone class and would
+   otherwise repaint these window controls with the primary accent. */
+.titlebar-controls button.titlebar-button:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--state-hover);
   color: var(--color-text);
 }
 
-.titlebar-button:active {
+.titlebar-controls button.titlebar-button:active:not([disabled]):not([aria-disabled="true"]) {
   background: var(--state-active);
 }
 
@@ -610,7 +606,7 @@ body.has-native-titlebar .titlebar {
   opacity: 0.45;
 }
 
-.titlebar-button-close:hover {
+.titlebar-controls button.titlebar-button-close:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--color-danger);
   color: var(--color-on-accent);
 }
@@ -669,8 +665,7 @@ body.has-native-titlebar .titlebar {
   margin: 0;
 }
 
-.content-intro,
-.intro {
+.content-intro {
   color: var(--color-text-muted);
   font-size: var(--text-md);
   margin: var(--space-3) 0 0;
@@ -728,7 +723,6 @@ main.page section > h2 {
 }
 
 .page-note {
-  align-items: center;
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-s);
@@ -736,10 +730,6 @@ main.page section > h2 {
   font-size: var(--text-sm);
   margin: var(--space-4) 0 0;
   padding: var(--space-3) var(--space-4);
-}
-
-.page-note[hidden] {
-  display: none;
 }
 
 /* The empty state: a plain bordered block that names what is missing and what
@@ -1045,11 +1035,20 @@ button.button-danger:active:not([disabled]):not([aria-disabled="true"]) {
   background: var(--color-danger-active);
 }
 
-/* The one size modifier, shared by every variant. */
+/* The two size modifiers, shared by every variant. */
 .button-small {
   font-size: var(--text-sm);
   min-height: 2rem;
   padding: var(--space-2) var(--space-3);
+}
+
+/* An icon-only control: square, and the same height as .button-small so it
+   lines up with the text buttons beside it. */
+.button-icon {
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0;
+  width: 2rem;
 }
 
 input[type="text"],
@@ -1127,7 +1126,6 @@ input[type="radio"] {
 }
 
 .steps li {
-  align-items: flex-start;
   counter-increment: steps;
   display: block;
   margin-bottom: var(--space-3);
@@ -1762,7 +1760,6 @@ form:has(.mode-option) > button {
 }
 
 .import-list {
-  gap: var(--space-2);
   list-style: none;
   margin: var(--space-4) 0 0;
 }
@@ -1823,26 +1820,6 @@ form:has(.mode-option) > button {
   display: flex;
   flex: none;
   gap: var(--space-2);
-}
-
-.update-banner-dismiss {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-s);
-  color: var(--color-accent-ink);
-  cursor: pointer;
-  display: inline-flex;
-  font-size: var(--text-md);
-  height: 1.5rem;
-  justify-content: center;
-  padding: 0;
-  width: 1.5rem;
-}
-
-.update-banner-dismiss:hover {
-  background: var(--state-accent-hover);
-  color: var(--color-accent-ink);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1960,13 +1937,16 @@ form:has(.mode-option) > button {
   white-space: nowrap;
 }
 
-.toast-action:hover {
+/* Qualified for the same reason as the window controls: the button system's
+   bare ``button:hover`` rule would otherwise paint this quieter hover with the
+   primary accent. */
+.app-toast button.toast-action:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--state-hover);
   border-color: var(--color-line-strong);
   color: var(--color-text);
 }
 
-.toast-action:active {
+.app-toast button.toast-action:active:not([disabled]):not([aria-disabled="true"]) {
   background: var(--state-active);
 }
 

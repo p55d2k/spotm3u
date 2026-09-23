@@ -234,5 +234,12 @@ def test_homepage_includes_update_banner() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert b"data-update-banner" in response.data
+    # The strip itself ships in the page, not just the script that drives it:
+    # a script querying an element that is never rendered is how the banner
+    # silently stopped appearing once already.
+    assert b'class="update-banner" data-update-banner hidden' in response.data
+    assert b"data-update-latest>" in response.data
+    assert b"data-update-current>" in response.data
+    assert b"data-update-download>" in response.data
+    assert b"data-update-dismiss" in response.data
     assert b"/update/check" in response.data

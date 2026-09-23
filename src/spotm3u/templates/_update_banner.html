@@ -4,7 +4,34 @@
    without a native save panel; in a plain browser the asset URL opens in a new
    tab. After a successful download the banner clears itself (and stays
    dismissed for that version) and the shared toast (see _feedback.html) tells
-   the user to quit the app and open the downloaded installer. #}
+   the user to quit the app and open the downloaded installer.
+
+   The markup below is what the script fills in; it ships hidden so no page
+   ever flashes an empty strip while the check is in flight. #}
+{% from "_icons.html" import icon %}
+<div class="update-banner" data-update-banner hidden>
+  <span class="update-banner-text">
+    <strong>SpotM3U <span data-update-latest></span> is available</strong>
+    You are on <span data-update-current></span>
+  </span>
+  <span class="update-banner-actions">
+    <a
+      class="button button-secondary button-small"
+      href="https://github.com/p55d2k/spotm3u/releases"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-update-release
+    >Release notes</a>
+    <button class="button button-small" type="button" data-update-download>Download update</button>
+    <button
+      class="button button-ghost button-icon"
+      type="button"
+      data-update-dismiss
+      aria-label="Dismiss update notice"
+      title="Dismiss"
+    >{{ icon("close") }}</button>
+  </span>
+</div>
 <script>
   (() => {
     const banner = document.querySelector("[data-update-banner]");
