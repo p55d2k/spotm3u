@@ -171,16 +171,6 @@ class LocalAudioResolver:
         self._token_index = {token: frozenset(indices) for token, indices in token_index.items()}
         self._bigram_index = {gram: frozenset(indices) for gram, indices in bigram_index.items()}
 
-    @staticmethod
-    def _dedupe(paths: list[Path] | tuple[Path, ...]) -> tuple[Path, ...]:
-        seen: set[Path] = set()
-        ordered: list[Path] = []
-        for path in paths:
-            if path not in seen:
-                seen.add(path)
-                ordered.append(path)
-        return tuple(ordered)
-
     def _match_candidates(self, track: Track) -> tuple[Path, ...]:
         title_key = normalize(track.title)
         if not title_key:

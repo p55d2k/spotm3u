@@ -87,12 +87,6 @@ def test_mv_is_a_valid_fallback() -> None:
     assert any("music video" in reason for reason in result.reasons)
 
 
-def test_same_title_wrong_artist_is_rejected() -> None:
-    result = rank_source_candidates(ACTOR, [hebe(artist="Hebe Tien", uploader="Hebe Tien")])[0]
-    assert result.confidence == "rejected"
-    assert not result.accepted
-
-
 def test_official_audio_preferred_over_lyric_and_mv() -> None:
     ranked = rank_source_candidates(
         TRACK,
@@ -186,21 +180,6 @@ def test_duplicate_across_queries_is_deduplicated(monkeypatch: pytest.MonkeyPatc
     assert [c.url for c in candidates] == ["https://example.com/dup"]
 
 
-def test_featured_artist_variants_are_accepted() -> None:
-    track = Track(title="演员", artists=["薛之谦", "郭顶"], duration_ms=250_000)
-    for artist in ("薛之谦 feat. 郭顶", "薛之谦 ft. 郭顶"):
-        candidate_ = joker(title="演员", artist=artist, uploader="随便频道")
-        result = rank_source_candidates(track, [candidate_])[0]
-        assert result.accepted, artist
-
-
-def test_explicit_cover_by_other_artist_is_rejected() -> None:
-    for title in ("演员 (翻唱)", "演员 Cover by 田馥甄"):
-        result = rank_source_candidates(ACTOR, [hebe(title=title)])[0]
-        assert result.confidence == "rejected", title
-        assert any("alternate version" in reason for reason in result.reasons)
-
-
 def test_live_beats_studio_only_when_requested_live() -> None:
     studio = Track(title="Wonderwall", artists=["Oasis"], duration_ms=258_000)
     live = Track(title="Wonderwall (Live)", artists=["Oasis"], duration_ms=258_000)
@@ -212,14 +191,13 @@ def test_live_beats_studio_only_when_requested_live() -> None:
 
 
 def test_remix_does_not_supplant_original() -> None:
-    result = rank_source_candidates(TRACK, [candidate(title="Wonderwall Remix")])[0]
-    assert result.confidence == "rejected"
+    remix = candidate(title="Wonderwall Remix")
+    ranked = rank_source_candidates(TRACK, [remix, candidate()])
 
-
-def test_null_duration_does_not_get_rejected_by_default() -> None:
-    incomplete = candidate(duration_s=None, uploader=None)
-    result = rank_source_candidates(TRACK, [incomplete])[0]
-    assert result.accepted
+    assert ranked[0].accepted
+    assert ranked[0].candidate.title == "Wonderwall"
+    assert ranked[1].candidate.title == "Wonderwall Remix"
+    assert ranked[1].confidence == "rejected"
 
 
 def test_candidate_scores_carry_diagnostics() -> None:

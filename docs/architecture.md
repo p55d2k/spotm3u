@@ -207,7 +207,7 @@ classification and single-flight/locking code as normal mode.
 
 Selecting it is explicit: `ProcessingJob.fast_mode` is set from the `[fast]
 enabled` configuration or the per-run toggle on the processing page, and the
-resolver factory in `app.py` builds either `FastTrackResolver` (with
+resolver factory in `web_jobs.py` builds either `FastTrackResolver` (with
 `verify=False` downloads) or the normal `TrackResolver`. Normal mode's
 behaviour is unchanged.
 

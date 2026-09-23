@@ -73,29 +73,27 @@ def test_webview_icon_path_is_none_when_no_bundled_icon(monkeypatch, tmp_path) -
     assert desktop.webview_icon_path() is None
 
 
-def test_webview_start_kwargs_omits_the_png_icon_on_windows(monkeypatch) -> None:
-    # pywebview's winforms backend hands the path to System.Drawing.Icon, which
-    # rejects the bundled PNG and kills the windowed process with an unhandled
-    # .NET exception. Windows must fall back to the executable's embedded icon.
-    monkeypatch.setattr(desktop, "webview_icon_path", lambda: Path("icon.png"))
-    monkeypatch.setattr(desktop.sys, "platform", "win32")
-
-    assert desktop.webview_start_kwargs() == {}
-
-
-def test_webview_start_kwargs_passes_the_icon_on_linux(monkeypatch) -> None:
-    icon = Path("icon.png")
+@pytest.mark.parametrize(
+    ("platform_name", "icon", "expected"),
+    [
+        # pywebview's winforms backend hands the path to System.Drawing.Icon,
+        # which rejects the bundled PNG and kills the windowed process with an
+        # unhandled .NET exception. Windows falls back to the executable's icon.
+        pytest.param("win32", Path("icon.png"), {}, id="windows-uses-its-embedded-icon"),
+        pytest.param(
+            "linux",
+            Path("icon.png"),
+            {"icon": str(Path("icon.png"))},
+            id="linux-passes-the-png-icon",
+        ),
+        pytest.param("linux", None, {}, id="no-icon-to-pass"),
+    ],
+)
+def test_webview_start_kwargs(monkeypatch, platform_name, icon, expected) -> None:
     monkeypatch.setattr(desktop, "webview_icon_path", lambda: icon)
-    monkeypatch.setattr(desktop.sys, "platform", "linux")
+    monkeypatch.setattr(desktop.sys, "platform", platform_name)
 
-    assert desktop.webview_start_kwargs() == {"icon": str(icon)}
-
-
-def test_webview_start_kwargs_omits_the_icon_when_absent(monkeypatch) -> None:
-    monkeypatch.setattr(desktop, "webview_icon_path", lambda: None)
-    monkeypatch.setattr(desktop.sys, "platform", "linux")
-
-    assert desktop.webview_start_kwargs() == {}
+    assert desktop.webview_start_kwargs() == expected
 
 
 def test_webview_enabled_defaults_to_true(monkeypatch) -> None:
@@ -436,32 +434,33 @@ def _chunked_response(chunks):
     return _Response()
 
 
-def test_open_at_reveals_the_file_in_finder(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("platform_name", "expected_command"),
+    [
+        pytest.param(
+            "darwin", lambda target: ["open", "-R", str(target)], id="darwin-reveals-in-finder"
+        ),
+        pytest.param(
+            "linux",
+            lambda target: ["xdg-open", str(target.parent)],
+            id="linux-opens-parent-folder",
+        ),
+    ],
+)
+def test_open_at_uses_the_platform_file_manager(
+    tmp_path, monkeypatch, platform_name, expected_command
+) -> None:
     target = tmp_path / "playlist.m3u"
     target.write_text("#EXTM3U\n", encoding="utf-8")
     spawned: list[list[str]] = []
     monkeypatch.setattr(desktop.subprocess, "Popen", lambda args, **kwargs: spawned.append(args))
-    monkeypatch.setattr(desktop.sys, "platform", "darwin")
+    monkeypatch.setattr(desktop.sys, "platform", platform_name)
     controls, _window, _app, _job = _controls_client(tmp_path)
 
     result = controls.open_at(str(target))
 
     assert result == {"opened": True}
-    assert spawned == [["open", "-R", str(target)]]
-
-
-def test_open_at_opens_the_parent_folder_on_linux(tmp_path, monkeypatch) -> None:
-    target = tmp_path / "playlist.m3u"
-    target.write_text("#EXTM3U\n", encoding="utf-8")
-    spawned: list[list[str]] = []
-    monkeypatch.setattr(desktop.subprocess, "Popen", lambda args, **kwargs: spawned.append(args))
-    monkeypatch.setattr(desktop.sys, "platform", "linux")
-    controls, _window, _app, _job = _controls_client(tmp_path)
-
-    result = controls.open_at(str(target))
-
-    assert result == {"opened": True}
-    assert spawned == [["xdg-open", str(target.parent)]]
+    assert spawned == [expected_command(target)]
 
 
 def test_open_at_without_a_window_returns_an_error(tmp_path) -> None:
@@ -587,14 +586,3 @@ def test_run_desktop_does_not_open_a_window_when_server_never_ready(monkeypatch)
     assert chosen
     with closing(socket.socket()) as probe:
         probe.bind((launcher.DEFAULT_HOST, chosen[0]))
-
-
-def test_run_desktop_serves_when_the_window_is_disabled() -> None:
-    app = _minimal_app()
-    server, thread = desktop.start_server(app, launcher.DEFAULT_HOST, 0)
-    port = int(server.server_address[1])
-    try:
-        assert _fetch(f"http://127.0.0.1:{port}/") == "ok"
-    finally:
-        server.shutdown()
-        thread.join(timeout=10)

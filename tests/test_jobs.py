@@ -100,8 +100,8 @@ def test_snapshot_flags_completed_tracks_whose_file_was_deleted(tmp_path: Path) 
 
 
 def test_retry_forgets_artwork_of_downloads_that_were_deleted(tmp_path: Path) -> None:
-    from spotm3u import metadata
-    from spotm3u.metadata import cached_artwork_path
+    from spotm3u import artwork, artwork_cache
+    from spotm3u.artwork import cached_artwork_path
 
     deleted = Track("A", ["Artist"], album="Album A")
     kept = Track("B", ["Other Artist"], album="Album B")
@@ -109,18 +109,22 @@ def test_retry_forgets_artwork_of_downloads_that_were_deleted(tmp_path: Path) ->
     files = {"A": tmp_path / "Artist - A.mp3", "B": tmp_path / "Other Artist - B.mp3"}
     output = tmp_path / "output"
     for track in tracks:
-        artist = metadata.artwork_artist(track) or ""
-        metadata._save_cached_artwork(
-            output, metadata._cache_key(artist, track.album or "", track.title), b"image-bytes"
+        artist = artwork.artwork_artist(track) or ""
+        artwork_cache._save_cached_artwork(
+            output, artwork_cache._cache_key(artist, track.album or "", track.title), b"image-bytes"
         )
-        artist_key = metadata._artist_cache_key(artist)
-        metadata._write_cached_image(metadata._artist_cache_dir(output), artist_key, b"artist")
-        metadata._write_cached_source(metadata._artist_cache_dir(output), artist_key, "deezer")
+        artist_key = artwork_cache._artist_cache_key(artist)
+        artwork_cache._write_cached_image(
+            artwork_cache._artist_cache_dir(output), artist_key, b"artist"
+        )
+        artwork_cache._write_cached_source(
+            artwork_cache._artist_cache_dir(output), artist_key, "deezer"
+        )
 
     def artist_image(track: Track) -> Path:
-        path = metadata._cached_artwork_path(
-            metadata._artist_cache_dir(output),
-            metadata._artist_cache_key(metadata.artwork_artist(track) or ""),
+        path = artwork_cache._cached_artwork_path(
+            artwork_cache._artist_cache_dir(output),
+            artwork_cache._artist_cache_key(artwork.artwork_artist(track) or ""),
         )
         assert path is not None
         return path

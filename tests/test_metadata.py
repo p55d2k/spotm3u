@@ -5,16 +5,19 @@ from pathlib import Path
 import pytest
 import requests
 
-from spotm3u.metadata import (
-    MetadataResult,
-    _artist_album_match,
-    _cache_key,
-    _embed_artwork,
+from spotm3u import artwork, artwork_cache, artwork_sources, metadata
+from spotm3u.artwork import (
     _find_album_artwork,
-    _normalize_album_for_search,
-    _write_all_metadata,
     artwork_artist,
     cached_artwork_path,
+    prune_missing_artwork,
+)
+from spotm3u.artwork_cache import _cache_key
+from spotm3u.artwork_sources import _artist_album_match, _normalize_album_for_search
+from spotm3u.metadata import (
+    MetadataResult,
+    _embed_artwork,
+    _write_all_metadata,
     enrich_metadata,
 )
 from spotm3u.models import Track
@@ -61,7 +64,7 @@ def _install_fake_requests(monkeypatch, response_data=None, status_code=200):
             )
         return FakeResponse({"content": b"fake-image-data"}, 200)
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
 
 
 def _mock_id3_operations(monkeypatch):
@@ -182,7 +185,7 @@ def test_itunes_fallback_is_used_when_musicbrainz_has_no_cover(tmp_path, monkeyp
         image.content = b"itunes-image"
         return image
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
     data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
 
     assert data == b"itunes-image"
@@ -228,7 +231,7 @@ def _song_search_requests(monkeypatch, results):
         image.content = b"song-image"
         return image
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
 
 
 def test_song_fallback_is_used_when_album_is_missing(tmp_path, monkeypatch):
@@ -327,7 +330,7 @@ def test_release_artwork_must_match_artist_and_album(tmp_path, monkeypatch):
             return FakeResponse()
         return FakeResponse()
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
     data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
 
     assert data is None
@@ -338,7 +341,7 @@ def test_external_api_failure_is_graceful(tmp_path, monkeypatch):
     def unreachable(*_args, **_kwargs):
         raise requests.ConnectionError("offline")
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", unreachable)
 
     data, source = _find_album_artwork(tmp_path, "Artist", "", "Home")
 
@@ -361,7 +364,7 @@ def test_malformed_api_response_is_graceful(tmp_path, monkeypatch):
     def fake_get(url, **kwargs):
         return FakeResponse()
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
 
     data, source = _find_album_artwork(tmp_path, "Artist", "Album", "Home")
 
@@ -382,17 +385,16 @@ def test_multiple_artists_never_form_one_lookup_string():
 
 
 def test_duplicate_tracks_from_same_album_share_cached_artwork(tmp_path, monkeypatch):
-    from spotm3u import metadata
 
     calls: list[str] = []
     _install_fake_requests(monkeypatch)
-    base_get = metadata.requests.get
+    base_get = artwork_sources.requests.get
 
     def counting_get(url, **kwargs):
         calls.append(url)
         return base_get(url, **kwargs)
 
-    monkeypatch.setattr(metadata.requests, "get", counting_get)
+    monkeypatch.setattr(artwork_sources.requests, "get", counting_get)
 
     data1, source1 = _find_album_artwork(
         tmp_path, "Oasis", "(What's the Story) Morning Glory?", "Song 1"
@@ -455,7 +457,7 @@ def test_concurrent_lookups_share_one_fetch(tmp_path, monkeypatch):
         image.content = b"concurrent-image"
         return image
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
 
     results: dict[int, tuple[bytes | None, str | None]] = {}
 
@@ -478,13 +480,12 @@ def test_concurrent_lookups_share_one_fetch(tmp_path, monkeypatch):
 
 
 def test_cached_artwork_path_returns_file_when_present(tmp_path):
-    from spotm3u import metadata
 
     track = Track("Home", ["Artist"], album="Album")
     assert cached_artwork_path(tmp_path, track) is None
 
-    cache_path = metadata._cached_artwork_path(
-        metadata._cache_dir(tmp_path), metadata._cache_key("Artist", "Album", "Home")
+    cache_path = artwork_cache._cached_artwork_path(
+        artwork_cache._cache_dir(tmp_path), artwork_cache._cache_key("Artist", "Album", "Home")
     )
     cache_path.write_bytes(b"image-bytes")
     assert cached_artwork_path(tmp_path, track).read_bytes() == b"image-bytes"
@@ -492,31 +493,32 @@ def test_cached_artwork_path_returns_file_when_present(tmp_path):
 
 def _write_artwork_entry(tmp_path, track, *, source="coverartarchive"):
     """Write a cached release image (and artist image) for one track."""
-    from spotm3u import metadata
 
     artist = artwork_artist(track)
     key = _cache_key(artist or "", track.album or "", track.title)
-    metadata._save_cached_artwork(tmp_path, key, b"image-bytes")
-    metadata._write_artwork_source(tmp_path, key, source)
-    artist_key = metadata._artist_cache_key(artist or "")
-    metadata._write_cached_image(metadata._artist_cache_dir(tmp_path), artist_key, b"artist")
-    metadata._write_cached_source(metadata._artist_cache_dir(tmp_path), artist_key, "deezer")
+    artwork_cache._save_cached_artwork(tmp_path, key, b"image-bytes")
+    artwork_cache._write_artwork_source(tmp_path, key, source)
+    artist_key = artwork_cache._artist_cache_key(artist or "")
+    artwork_cache._write_cached_image(
+        artwork_cache._artist_cache_dir(tmp_path), artist_key, b"artist"
+    )
+    artwork_cache._write_cached_source(
+        artwork_cache._artist_cache_dir(tmp_path), artist_key, "deezer"
+    )
     return key, artist_key
 
 
 def _entry_paths(tmp_path, key, artist_key):
-    from spotm3u import metadata
 
-    cache = metadata._cache_dir(tmp_path)
+    cache = artwork_cache._cache_dir(tmp_path)
     return (
-        metadata._cached_artwork_path(cache, key),
-        metadata._artwork_source_path(cache, key),
-        metadata._cached_artwork_path(metadata._artist_cache_dir(tmp_path), artist_key),
+        artwork_cache._cached_artwork_path(cache, key),
+        artwork_cache._artwork_source_path(cache, key),
+        artwork_cache._cached_artwork_path(artwork_cache._artist_cache_dir(tmp_path), artist_key),
     )
 
 
 def test_prune_missing_artwork_removes_the_release_entry(tmp_path):
-    from spotm3u.metadata import prune_missing_artwork
 
     track = Track("Home", ["Artist"], album="Album")
     key, artist_key = _write_artwork_entry(tmp_path, track)
@@ -532,7 +534,6 @@ def test_prune_missing_artwork_removes_the_release_entry(tmp_path):
 
 
 def test_prune_missing_artwork_keeps_artists_that_still_have_a_track(tmp_path):
-    from spotm3u.metadata import prune_missing_artwork
 
     deleted = Track("Home", ["Artist"], album="Album")
     kept = Track("Other", ["Artist"], album="Another Album")
@@ -552,7 +553,6 @@ def test_prune_missing_artwork_keeps_artists_that_still_have_a_track(tmp_path):
 
 
 def test_prune_missing_artwork_leaves_other_identities_alone(tmp_path):
-    from spotm3u.metadata import prune_missing_artwork
 
     deleted = Track("Home", ["Artist"], album="Album")
     untouched = Track("Song", ["Someone Else"], album="Their Album")
@@ -570,7 +570,6 @@ def test_prune_missing_artwork_leaves_other_identities_alone(tmp_path):
 
 
 def test_prune_missing_artwork_without_a_cache_entry_removes_nothing(tmp_path):
-    from spotm3u.metadata import prune_missing_artwork
 
     track = Track("Home", ["Artist"], album="Album")
 
@@ -579,17 +578,15 @@ def test_prune_missing_artwork_without_a_cache_entry_removes_nothing(tmp_path):
 
 
 def test_prune_missing_artwork_forgets_the_in_process_memo(tmp_path):
-    from spotm3u import metadata
-    from spotm3u.metadata import prune_missing_artwork
 
     track = Track("Home", ["Artist"], album="Album")
     key, _artist_key = _write_artwork_entry(tmp_path, track)
-    memory_key = metadata._artwork_memory_key(tmp_path, key)
-    metadata._ARTWORK_MEMORY[memory_key] = (b"image-bytes", "cache")
+    memory_key = artwork_cache._artwork_memory_key(tmp_path, key)
+    artwork_cache._ARTWORK_MEMORY[memory_key] = (b"image-bytes", "cache")
 
     prune_missing_artwork(tmp_path, [track])
 
-    assert memory_key not in metadata._ARTWORK_MEMORY
+    assert memory_key not in artwork_cache._ARTWORK_MEMORY
 
 
 def test_enrich_metadata_uses_song_fallback_without_album(tmp_path, monkeypatch):
@@ -834,7 +831,6 @@ def _write_embedded_cover(
 
 def test_verified_release_cover_overrides_local_embedded_art(tmp_path, monkeypatch):
     """A local file's embedded cover must not win over a verified release cover."""
-    from spotm3u import metadata
 
     _install_fake_requests(monkeypatch)
     mp3 = tmp_path / "local.mp3"
@@ -847,17 +843,16 @@ def test_verified_release_cover_overrides_local_embedded_art(tmp_path, monkeypat
     key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
     cache = tmp_path / "artwork_cache"
     assert (cache / f"{key}.jpg").read_bytes() == b"fake-image-data"
-    assert metadata._read_artwork_source(tmp_path, key) == "coverartarchive"
+    assert artwork_cache._read_artwork_source(tmp_path, key) == "coverartarchive"
 
 
 def test_local_embedded_art_is_fallback_when_release_lookup_fails(tmp_path, monkeypatch):
     """Offline, the best local evidence is still embedded instead of leaving the track artless."""
-    from spotm3u import metadata
 
     def unreachable(*_args, **_kwargs):
         raise requests.ConnectionError("offline")
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", unreachable)
     mp3 = tmp_path / "local.mp3"
     _write_embedded_cover(mp3, b"local-cover")
 
@@ -866,12 +861,11 @@ def test_local_embedded_art_is_fallback_when_release_lookup_fails(tmp_path, monk
     assert data == b"local-cover"
     assert source == "embedded:image/jpeg"
     key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
-    assert metadata._read_artwork_source(tmp_path, key) == "embedded:image/jpeg"
+    assert artwork_cache._read_artwork_source(tmp_path, key) == "embedded:image/jpeg"
 
 
 def test_legacy_unmarked_cache_entry_is_reverified(tmp_path, monkeypatch):
     """Old caches written before source tracking may hold a wrong cover; re-verify them."""
-    from spotm3u import metadata
 
     cache = tmp_path / "artwork_cache"
     cache.mkdir()
@@ -884,12 +878,11 @@ def test_legacy_unmarked_cache_entry_is_reverified(tmp_path, monkeypatch):
     assert data == b"fake-image-data"
     assert source == "coverartarchive"
     assert (cache / f"{key}.jpg").read_bytes() == b"fake-image-data"
-    assert metadata._read_artwork_source(tmp_path, key) == "coverartarchive"
+    assert artwork_cache._read_artwork_source(tmp_path, key) == "coverartarchive"
 
 
 def test_verified_cache_entry_is_not_refetched(tmp_path, monkeypatch):
     """A cache entry recorded from a verified lookup is authoritative and needs no network."""
-    from spotm3u import metadata
 
     cache = tmp_path / "artwork_cache"
     cache.mkdir()
@@ -898,13 +891,13 @@ def test_verified_cache_entry_is_not_refetched(tmp_path, monkeypatch):
     (cache / f"{key}.src").write_text("itunes")
     _install_fake_requests(monkeypatch)
     calls: list[str] = []
-    base_get = metadata.requests.get
+    base_get = artwork_sources.requests.get
 
     def counting_get(url, **kwargs):
         calls.append(url)
         return base_get(url, **kwargs)
 
-    monkeypatch.setattr(metadata.requests, "get", counting_get)
+    monkeypatch.setattr(artwork_sources.requests, "get", counting_get)
 
     data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
 
@@ -915,59 +908,54 @@ def test_verified_cache_entry_is_not_refetched(tmp_path, monkeypatch):
 
 def test_embedded_artwork_rejects_ambiguous_multiple_frames(tmp_path):
     """Multiple APIC frames with none marked as front cover must not be guessed."""
-    from spotm3u import metadata
 
     mp3 = tmp_path / "multi.mp3"
     _write_embedded_cover(mp3, b"back-cover", ptype=4, desc="Back")
     _write_embedded_cover(mp3, b"artist-photo", ptype=8, append=True, desc="Artist")
 
-    assert metadata._embedded_artwork(mp3) is None
+    assert artwork._embedded_artwork(mp3) is None
 
 
 def test_embedded_artwork_accepts_single_untyped_frame(tmp_path):
     """A sole APIC frame is treated as the cover even when its type is unset."""
-    from spotm3u import metadata
 
     mp3 = tmp_path / "single.mp3"
     _write_embedded_cover(mp3, b"sole-cover", mime="image/png", ptype=0)
 
-    assert metadata._embedded_artwork(mp3) == (b"sole-cover", "image/png")
+    assert artwork._embedded_artwork(mp3) == (b"sole-cover", "image/png")
 
 
 def test_embedded_artwork_prefers_largest_front_cover(tmp_path):
     """When several frames are front covers, the highest-resolution one wins."""
-    from spotm3u import metadata
 
     mp3 = tmp_path / "best.mp3"
     _write_embedded_cover(mp3, b"small", ptype=3, desc="Small")
     _write_embedded_cover(mp3, b"large-high-res-cover", ptype=3, append=True, desc="Large")
 
-    assert metadata._embedded_artwork(mp3) == (b"large-high-res-cover", "image/jpeg")
+    assert artwork._embedded_artwork(mp3) == (b"large-high-res-cover", "image/jpeg")
 
 
 @pytest.fixture
 def verify_local_toggle():
     """Run a test with the artwork verification flag, restoring the default after."""
-    from spotm3u import metadata
 
     yield
-    metadata.set_artwork_verify_local(True)
+    artwork.set_artwork_verify_local(True)
 
 
 def test_verify_local_disabled_uses_embedded_art_without_network(
     tmp_path, monkeypatch, verify_local_toggle
 ):
     """With verify_local off, a file that already has a cover does no network lookup."""
-    from spotm3u import metadata
 
-    metadata.set_artwork_verify_local(False)
+    artwork.set_artwork_verify_local(False)
     calls: list[str] = []
 
     def failing_get(url, **kwargs):
         calls.append(url)
         raise AssertionError(f"network must not be consulted: {url}")
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", failing_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", failing_get)
     mp3 = tmp_path / "local.mp3"
     _write_embedded_cover(mp3, b"local-cover")
 
@@ -1051,7 +1039,7 @@ def _install_artwork_requests(
             return _FakeImageResponse(b"album-image")
         return _FakeImageResponse(artist_image)
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
     return calls
 
 
@@ -1079,10 +1067,9 @@ def _write_existing_metadata(path: Path) -> None:
 @pytest.fixture
 def artist_artwork_toggle():
     """Run a test with the artist-artwork flag, restoring the default after."""
-    from spotm3u import metadata
 
     yield
-    metadata.set_artist_artwork_enabled(True)
+    artwork.set_artist_artwork_enabled(True)
 
 
 def test_artist_artwork_is_embedded_when_available(tmp_path, monkeypatch, artist_artwork_toggle):
@@ -1163,7 +1150,7 @@ def test_artist_artwork_network_failure_is_non_fatal(tmp_path, monkeypatch, arti
     def unreachable(*_args, **_kwargs):
         raise requests.ConnectionError("offline")
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", unreachable)
     track = Track("Song", ["Artist"], album="Album")
     mp3 = tmp_path / "track.mp3"
     mp3.write_bytes(b"fake-mp3-data")
@@ -1216,9 +1203,8 @@ def test_same_artist_artwork_is_downloaded_once(tmp_path, monkeypatch, artist_ar
 
 def test_artist_artwork_can_be_disabled(tmp_path, monkeypatch, artist_artwork_toggle):
     """With artist artwork off, no artist lookup happens at all."""
-    from spotm3u import metadata
 
-    metadata.set_artist_artwork_enabled(False)
+    artwork.set_artist_artwork_enabled(False)
     calls: list[str] = []
 
     def fake_get(url, params=None, headers=None, timeout=None):
@@ -1226,7 +1212,7 @@ def test_artist_artwork_can_be_disabled(tmp_path, monkeypatch, artist_artwork_to
         assert "api.deezer.com" not in url, "artist lookup must not run when disabled"
         return _FakeJsonResponse({})
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", fake_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
     mp3 = tmp_path / "local.mp3"
     _write_existing_metadata(mp3)
     track = Track("Song", ["Artist"], album="Album")
@@ -1242,9 +1228,8 @@ def test_verify_local_disabled_serves_unmarked_cache_without_network(
     tmp_path, monkeypatch, verify_local_toggle
 ):
     """With verify_local off, legacy unmarked cache entries are served as-is."""
-    from spotm3u import metadata
 
-    metadata.set_artwork_verify_local(False)
+    artwork.set_artwork_verify_local(False)
     cache = tmp_path / "artwork_cache"
     cache.mkdir()
     key = _cache_key("Dua Lipa", "Future Nostalgia", "Levitating")
@@ -1255,7 +1240,7 @@ def test_verify_local_disabled_serves_unmarked_cache_without_network(
         calls.append(url)
         raise AssertionError(f"network must not be consulted: {url}")
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", failing_get)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", failing_get)
 
     data, source = _find_album_artwork(tmp_path, "Dua Lipa", "Future Nostalgia", "Levitating")
 
@@ -1267,24 +1252,22 @@ def test_verify_local_disabled_serves_unmarked_cache_without_network(
 @pytest.fixture
 def embedding_toggles():
     """Run a test with the embedding flags, restoring the defaults after."""
-    from spotm3u import metadata
 
     yield
     metadata.set_metadata_enabled(True)
     metadata.set_id3_tags_enabled(True)
-    metadata.set_album_artwork_enabled(True)
+    artwork.set_album_artwork_enabled(True)
 
 
 def test_album_artwork_can_be_disabled(tmp_path, monkeypatch, embedding_toggles):
     """With album artwork off, no cover is looked up, downloaded or embedded."""
-    from spotm3u import metadata
 
-    metadata.set_album_artwork_enabled(False)
+    artwork.set_album_artwork_enabled(False)
 
     def unexpected(*_args, **_kwargs):
         raise AssertionError("cover lookup must not run when album artwork is disabled")
 
-    monkeypatch.setattr("spotm3u.metadata._find_album_artwork", unexpected)
+    monkeypatch.setattr("spotm3u.artwork._find_album_artwork", unexpected)
     mp3 = tmp_path / "track.mp3"
     mp3.write_bytes(b"fake-mp3-data")
     track = Track("Song", ["Artist"], album="Album")
@@ -1301,8 +1284,6 @@ def test_album_artwork_can_be_disabled(tmp_path, monkeypatch, embedding_toggles)
 def test_id3_tags_can_be_disabled(tmp_path, monkeypatch, embedding_toggles):
     """With tags off, the downloader's own frames are left exactly as they are."""
     import mutagen.id3 as mutagen_id3
-
-    from spotm3u import metadata
 
     metadata.set_id3_tags_enabled(False)
     _install_artwork_requests(monkeypatch)
@@ -1323,15 +1304,14 @@ def test_metadata_master_switch_leaves_the_audio_untouched(
     tmp_path, monkeypatch, embedding_toggles
 ):
     """The master switch embeds nothing at all: no tags, pictures or lyrics."""
-    from spotm3u import metadata
 
     metadata.set_metadata_enabled(False)
 
     def unexpected(*_args, **_kwargs):
         raise AssertionError("no lookup may run when metadata embedding is disabled")
 
-    monkeypatch.setattr("spotm3u.metadata._find_album_artwork", unexpected)
-    monkeypatch.setattr("spotm3u.metadata._find_artist_artwork", unexpected)
+    monkeypatch.setattr("spotm3u.artwork._find_album_artwork", unexpected)
+    monkeypatch.setattr("spotm3u.artwork._find_artist_artwork", unexpected)
     monkeypatch.setattr("spotm3u.metadata.fetch_lyrics", unexpected)
     mp3 = tmp_path / "track.mp3"
     mp3.write_bytes(b"fake-mp3-data")

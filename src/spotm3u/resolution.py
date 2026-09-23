@@ -100,10 +100,6 @@ class ResolutionReport:
         return tuple(result for result in self.results if result.successful)
 
     @property
-    def unsuccessful(self) -> tuple[TrackResolution, ...]:
-        return tuple(result for result in self.results if not result.successful)
-
-    @property
     def counts(self) -> dict[str, int]:
         return {
             status: sum(result.status == status for result in self.results)

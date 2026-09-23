@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .artwork import artwork_artist, prune_missing_artwork
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
-from .metadata import artwork_artist, prune_missing_artwork
 from .models import Track
 from .resolution import (
     PreparedTrack,

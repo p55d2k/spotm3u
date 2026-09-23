@@ -89,13 +89,3 @@ def sanitize_filename_component(value: str | None) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*]', " ", str(value))
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ._")
     return cleaned or "Unknown"
-
-
-def build_output_basename(title: str, artists: list[str] | str | None) -> str:
-    """Build the conventional ``title - artist`` audio filename stem."""
-    artist_text = ", ".join(artists) if isinstance(artists, list) else (artists or "")
-    title_part = sanitize_filename_component(title)
-    artist_part = sanitize_filename_component(artist_text.replace(";", ", "))
-    return (
-        f"{title_part} - {artist_part}" if artist_part and artist_part != title_part else title_part
-    )

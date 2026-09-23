@@ -57,6 +57,7 @@ class Config:
     artwork_verify_local: bool = True
     artwork_album_artwork: bool = True
     artwork_artist_artwork: bool = True
+    artwork_request_timeout: int = 15
     # [lyrics]
     lyrics_enabled: bool = True
     # [download]
@@ -69,12 +70,14 @@ class Config:
     cookies_from_browser: str | None = None
     pot_provider_url: str | None = None
     pot_provider_home: str | None = None
+    pot_provider_timeout: int = 5
     # [m3u]
     m3u_extended: bool = True
     m3u_relative: bool = False
     # [update]
     check_updates: bool = True
     update_check_interval_hours: int = 24
+    update_request_timeout: int = 10
     github_repo: str = "p55d2k/spotm3u"
 
     def to_app_config(self) -> dict[str, Any]:
@@ -95,6 +98,7 @@ class Config:
             "ARTWORK_VERIFY_LOCAL": self.artwork_verify_local,
             "ARTWORK_ALBUM_ARTWORK": self.artwork_album_artwork,
             "ARTWORK_ARTIST_ARTWORK": self.artwork_artist_artwork,
+            "ARTWORK_REQUEST_TIMEOUT": self.artwork_request_timeout,
             "LYRICS_ENABLED": self.lyrics_enabled,
             "DOWNLOAD_QUALITY": self.audio_quality,
             "DOWNLOAD_MAX_WORKERS": self.max_download_workers,
@@ -105,10 +109,12 @@ class Config:
             "YTDLP_COOKIES_FROM_BROWSER": self.cookies_from_browser,
             "YTDLP_POT_PROVIDER_URL": self.pot_provider_url,
             "YTDLP_POT_PROVIDER_HOME": self.pot_provider_home,
+            "YTDLP_POT_PROVIDER_TIMEOUT": self.pot_provider_timeout,
             "M3U_EXTENDED": self.m3u_extended,
             "M3U_RELATIVE": self.m3u_relative,
             "UPDATE_CHECK": self.check_updates,
             "UPDATE_CHECK_INTERVAL_HOURS": self.update_check_interval_hours,
+            "UPDATE_REQUEST_TIMEOUT": self.update_request_timeout,
             "UPDATE_REPO": self.github_repo,
         }
         if self.log_level:
@@ -142,6 +148,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "artwork.verify_local": "artwork_verify_local",
     "artwork.album_artwork": "artwork_album_artwork",
     "artwork.artist_artwork": "artwork_artist_artwork",
+    "artwork.request_timeout": "artwork_request_timeout",
     "lyrics.enabled": "lyrics_enabled",
     "download.audio_quality": "audio_quality",
     "download.workers": "max_download_workers",
@@ -152,10 +159,12 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "download.cookies_from_browser": "cookies_from_browser",
     "download.pot_provider_url": "pot_provider_url",
     "download.pot_provider_home": "pot_provider_home",
+    "download.pot_provider_timeout": "pot_provider_timeout",
     "m3u.extended": "m3u_extended",
     "m3u.relative": "m3u_relative",
     "update.check": "check_updates",
     "update.check_interval_hours": "update_check_interval_hours",
+    "update.request_timeout": "update_request_timeout",
     "update.github_repo": "github_repo",
 }
 

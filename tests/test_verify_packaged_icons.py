@@ -92,47 +92,62 @@ def test_windows_bundle_accepts_the_generated_icon(tmp_path, monkeypatch, genera
     assert summary == f"SpotM3U.exe embeds all {len(members)} icon sizes from {ico.name}"
 
 
-def test_windows_bundle_rejects_a_missing_size(tmp_path, monkeypatch, generated_ico) -> None:
+@pytest.mark.parametrize(
+    ("resize_members", "message"),
+    [
+        pytest.param(
+            lambda members: members[:-1],  # the 256x256 member is gone
+            r"does not embed the icon sizes \[256\]",
+            id="missing-size",
+        ),
+        pytest.param(
+            lambda members: [*members, (20, b"\x89PNG stale artwork")],
+            r"embeds icon sizes \[20\]",
+            id="stale-extra-size",
+        ),
+    ],
+)
+def test_windows_bundle_rejects_a_size_set_that_differs(
+    tmp_path, monkeypatch, generated_ico, resize_members, message
+) -> None:
     ico = generated_ico
-    members = checker.read_ico(ico.read_bytes())[:-1]  # the 256x256 member is gone
+    members = resize_members(checker.read_ico(ico.read_bytes()))
     _patch_resources(monkeypatch, _group_icon(members), _image_map(members))
 
-    with pytest.raises(SystemExit, match=r"does not embed the icon sizes \[256\]"):
+    with pytest.raises(SystemExit, match=message):
         checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
 
 
-def test_windows_bundle_rejects_a_stale_icon(tmp_path, monkeypatch, generated_ico) -> None:
-    ico = generated_ico
-    members = checker.read_ico(ico.read_bytes()) + [(20, b"\x89PNG stale artwork")]
-    _patch_resources(monkeypatch, _group_icon(members), _image_map(members))
-
-    with pytest.raises(SystemExit, match=r"embeds icon sizes \[20\]"):
-        checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
-
-
-def test_windows_bundle_rejects_a_different_image_payload(
-    tmp_path, monkeypatch, generated_ico
+@pytest.mark.parametrize(
+    ("alter_payloads", "message"),
+    [
+        pytest.param(
+            lambda _group, _members, images: (
+                _group,
+                {**images, 1: b"\x89PNG different artwork"},
+            ),
+            "differs from",
+            id="different-image-payload",
+        ),
+        pytest.param(
+            lambda _group, members, images: (
+                _group_icon([(members[0][0], members[0][1][:-1]), *members[1:]]),
+                images,
+            ),
+            "differs from",
+            id="declared-size-differs",
+        ),
+    ],
+)
+def test_windows_bundle_rejects_payloads_that_do_not_match(
+    tmp_path, monkeypatch, generated_ico, alter_payloads, message
 ) -> None:
     ico = generated_ico
     members = checker.read_ico(ico.read_bytes())
-    images = _image_map(members)
-    images[1] = b"\x89PNG different artwork"
-    _patch_resources(monkeypatch, _group_icon(members), images)
+    group, images = alter_payloads(_group_icon(members), members, _image_map(members))
+    _patch_resources(monkeypatch, group, images)
 
-    with pytest.raises(SystemExit, match="differs from"):
-        checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
-
-
-def test_windows_bundle_rejects_a_declared_size_that_differs(
-    tmp_path, monkeypatch, generated_ico
-) -> None:
-    ico = generated_ico
-    members = checker.read_ico(ico.read_bytes())
-    size, data = members[0]
-    truncated = _group_icon([(size, data[:-1]), *members[1:]])
-    _patch_resources(monkeypatch, truncated, _image_map(members))
-
-    with pytest.raises(SystemExit, match="differs from"):
+    with pytest.raises(SystemExit, match=message):
         checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
 
 
@@ -189,16 +204,19 @@ def _linux_bundle(tmp_path: Path, *, internal: bool = True) -> Path:
     return bundle
 
 
-def test_linux_bundle_accepts_the_collected_master_artwork(tmp_path) -> None:
-    summary = checker.verify_linux_bundle(_linux_bundle(tmp_path))
-
-    assert summary == "_internal/icon.png is the 1024x1024 master artwork"
-
-
-def test_linux_bundle_accepts_an_icon_beside_the_executable(tmp_path) -> None:
-    summary = checker.verify_linux_bundle(_linux_bundle(tmp_path, internal=False))
-
-    assert summary == "icon.png is the 1024x1024 master artwork"
+@pytest.mark.parametrize(
+    ("internal", "summary"),
+    [
+        pytest.param(
+            True,
+            "_internal/icon.png is the 1024x1024 master artwork",
+            id="inside-internal",
+        ),
+        pytest.param(False, "icon.png is the 1024x1024 master artwork", id="beside-executable"),
+    ],
+)
+def test_linux_bundle_accepts_the_master_artwork(tmp_path, internal, summary) -> None:
+    assert checker.verify_linux_bundle(_linux_bundle(tmp_path, internal=internal)) == summary
 
 
 def test_linux_bundle_rejects_a_missing_window_icon(tmp_path) -> None:

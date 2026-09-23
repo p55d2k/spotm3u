@@ -155,95 +155,93 @@ def test_validate_app_accepts_complete_bundle(tmp_path) -> None:
     verify_macos_bundle.validate_app(_fake_app(tmp_path))
 
 
-def test_validate_app_rejects_missing_executable(tmp_path) -> None:
+def _break_plist(app: Path, mutate) -> None:
+    """Rewrite the bundle's Info.plist after applying ``mutate`` to its keys."""
+    plist_path = app / "Contents" / "Info.plist"
+    plist = plistlib.loads(plist_path.read_bytes())
+    mutate(plist)
+    plist_path.write_bytes(plistlib.dumps(plist))
+
+
+def _drop_plist_key(app: Path, key: str) -> None:
+    _break_plist(app, lambda plist: plist.pop(key, None))
+
+
+def _set_plist_key(app: Path, key: str, value: object) -> None:
+    def set_key(plist: dict) -> None:
+        plist[key] = value
+
+    _break_plist(app, set_key)
+
+
+@pytest.mark.parametrize(
+    ("break_bundle", "message"),
+    [
+        pytest.param(
+            lambda app: (app / "Contents" / "MacOS" / "SpotM3U").unlink(),
+            "executable",
+            id="missing-executable",
+        ),
+        pytest.param(
+            lambda app: shutil.rmtree(app / "Contents" / "Resources" / "ffmpeg"),
+            "ffmpeg",
+            id="missing-ffmpeg",
+        ),
+        pytest.param(
+            lambda app: (
+                app / "Contents" / "Resources" / "spotm3u" / "templates" / "index.html"
+            ).unlink(),
+            "resource",
+            id="missing-resource",
+        ),
+        pytest.param(
+            lambda app: (app / "Contents" / "Resources" / "icon.icns").unlink(),
+            "icon",
+            id="missing-icon",
+        ),
+        pytest.param(
+            lambda app: (app / "Contents" / "Resources" / "icon.icns").write_bytes(b"not an icns"),
+            "icon container",
+            id="malformed-icns",
+        ),
+        pytest.param(
+            lambda app: (app / "Contents" / "Resources" / "icon.icns").write_bytes(
+                _icns_payload()[:-4]
+            ),
+            "truncated",
+            id="truncated-icns",
+        ),
+        pytest.param(
+            lambda app: _drop_plist_key(app, "CFBundleIconFile"),
+            "CFBundleIconFile",
+            id="plist-without-icon-name",
+        ),
+        pytest.param(
+            lambda app: _set_plist_key(app, "CFBundleIconFile", "missing.icns"),
+            "missing icon",
+            id="icon-name-not-bundled",
+        ),
+        # PyInstaller sets LSBackgroundOnly for console EXEs; macOS then presents
+        # the app without its icon, which is the bug the spec now overrides.
+        pytest.param(
+            lambda app: _set_plist_key(app, "LSBackgroundOnly", True),
+            "LSBackgroundOnly",
+            id="background-only",
+        ),
+        # Without NSHighResolutionCapable macOS treats the app as low resolution
+        # and scales the icon instead of drawing its native representations.
+        pytest.param(
+            lambda app: _drop_plist_key(app, "NSHighResolutionCapable"),
+            "NSHighResolutionCapable",
+            id="no-high-resolution-flag",
+        ),
+    ],
+)
+def test_validate_app_rejects_a_broken_bundle(tmp_path, break_bundle, message) -> None:
     app = _fake_app(tmp_path)
-    (app / "Contents" / "MacOS" / "SpotM3U").unlink()
+    break_bundle(app)
 
-    with pytest.raises(SystemExit, match="executable"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_missing_ffmpeg(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    shutil.rmtree(app / "Contents" / "Resources" / "ffmpeg")
-
-    with pytest.raises(SystemExit, match="ffmpeg"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_missing_resource(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    (app / "Contents" / "Resources" / "spotm3u" / "templates" / "index.html").unlink()
-
-    with pytest.raises(SystemExit, match="resource"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_missing_icon(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    (app / "Contents" / "Resources" / "icon.icns").unlink()
-
-    with pytest.raises(SystemExit, match="icon"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_a_malformed_icns(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    (app / "Contents" / "Resources" / "icon.icns").write_bytes(b"not an icns")
-
-    with pytest.raises(SystemExit, match="icon container"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_a_truncated_icns(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    (app / "Contents" / "Resources" / "icon.icns").write_bytes(_icns_payload()[:-4])
-
-    with pytest.raises(SystemExit, match="truncated"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_a_plist_without_an_icon_name(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
-    del plist["CFBundleIconFile"]
-    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
-
-    with pytest.raises(SystemExit, match="CFBundleIconFile"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_an_icon_name_that_is_not_bundled(tmp_path) -> None:
-    app = _fake_app(tmp_path)
-    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
-    plist["CFBundleIconFile"] = "missing.icns"
-    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
-
-    with pytest.raises(SystemExit, match="missing icon"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_a_background_only_app(tmp_path) -> None:
-    # PyInstaller sets LSBackgroundOnly for console EXEs; macOS then presents
-    # the app without its icon, which is the bug the spec now overrides.
-    app = _fake_app(tmp_path)
-    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
-    plist["LSBackgroundOnly"] = True
-    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
-
-    with pytest.raises(SystemExit, match="LSBackgroundOnly"):
-        verify_macos_bundle.validate_app(app)
-
-
-def test_validate_app_rejects_a_bundle_without_high_resolution_support(tmp_path) -> None:
-    # Without NSHighResolutionCapable macOS treats the app as low resolution and
-    # scales the icon instead of drawing its native-resolution representations.
-    app = _fake_app(tmp_path)
-    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
-    del plist["NSHighResolutionCapable"]
-    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
-
-    with pytest.raises(SystemExit, match="NSHighResolutionCapable"):
+    with pytest.raises(SystemExit, match=message):
         verify_macos_bundle.validate_app(app)
 
 

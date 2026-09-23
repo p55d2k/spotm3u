@@ -17,7 +17,7 @@ def no_network_artwork(monkeypatch):
     def unreachable(*_args, **_kwargs):
         raise requests.ConnectionError("network disabled in tests")
 
-    monkeypatch.setattr("spotm3u.metadata.requests.get", unreachable)
+    monkeypatch.setattr("spotm3u.artwork_sources.requests.get", unreachable)
 
 
 @pytest.fixture(autouse=True)

@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import jinja2
 
-JINJA_ENVIRONMENT = None
-
 
 def _build_jinja(package_dir: Path) -> jinja2.Environment:
     import jinja2
@@ -30,18 +28,21 @@ def _build_jinja(package_dir: Path) -> jinja2.Environment:
     return env
 
 
-def render_header(*, dark: bool = False) -> str:
+def render_header() -> str:
     repo_root = Path(__file__).resolve().parents[1]
     package_dir = repo_root / "src" / "spotm3u"
     env = _build_jinja(package_dir)
 
     template = env.get_template("_header.html")
     request = type("Request", (), {"endpoint": "index"})()
+    # ``workflow_stage`` is deliberately not passed: the template treats any
+    # *defined* value as an explicit stage override, so passing ``None`` made it
+    # compare ``None`` against the step numbers and fail. Leaving it undefined
+    # is what the app does for the pages whose stage comes from the endpoint,
+    # and the template derives ``current_stage`` itself.
     context = {
         "request": request,
         "url_for": _url_for_stub,
-        "workflow_stage": None,
-        "current_stage": 1,
     }
     rendered = template.render(**context)
     return rendered

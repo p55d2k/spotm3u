@@ -1,3 +1,4 @@
+import logging
 import sys
 import time
 import types
@@ -7,7 +8,7 @@ from urllib.error import URLError
 import pytest
 
 from spotm3u.models import Track
-from spotm3u.online import DownloadError, download_track, downloader
+from spotm3u.online import DownloadError, download_track, downloader, youtube_setup
 
 TRACK = Track(title="Song / Name", artists=["An Artist"], spotify_id="track-1")
 YOUTUBE_URL = "https://youtube.com/watch?v=example"
@@ -623,109 +624,139 @@ class _Response:
 
 
 def test_http_provider_ping_is_validated_before_yt_dlp(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader, "version", lambda name: "2.0.0")
-    monkeypatch.setattr(
-        downloader, "urlopen", lambda request, timeout: _Response(b'{"version": "2.0.0"}')
-    )
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "version", lambda name: "2.0.0")
+    requested = []
 
-    downloader._validate_pot_provider("http://127.0.0.1:4416", None)
+    def fake_urlopen(request, timeout):
+        requested.append(request.full_url)
+        return _Response(b'{"version": "2.0.0"}')
+
+    monkeypatch.setattr(youtube_setup, "urlopen", fake_urlopen)
+
+    youtube_setup._validate_pot_provider("http://127.0.0.1:4416", None)
+
+    # Validation must actually probe the provider before yt-dlp runs, so the
+    # ``/ping`` request is part of the contract rather than an implementation
+    # detail: without this the test passes even if nothing is checked at all.
+    assert requested == ["http://127.0.0.1:4416/ping"]
 
 
-def test_http_provider_minor_version_difference_is_allowed(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader, "version", lambda name: "2.0.0")
-    monkeypatch.setattr(
-        downloader, "urlopen", lambda request, timeout: _Response(b'{"version": "2.1.3"}')
-    )
+def test_http_provider_minor_version_difference_is_allowed(monkeypatch, caplog):
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "version", lambda name: "2.0.0")
+    requested = []
 
-    downloader._validate_pot_provider("http://127.0.0.1:4416", None)
+    def fake_urlopen(request, timeout):
+        requested.append(request.full_url)
+        return _Response(b'{"version": "2.1.3"}')
+
+    monkeypatch.setattr(youtube_setup, "urlopen", fake_urlopen)
+
+    with caplog.at_level(logging.WARNING, logger=youtube_setup.__name__):
+        youtube_setup._validate_pot_provider("http://127.0.0.1:4416", None)
+
+    assert requested == ["http://127.0.0.1:4416/ping"]
+    # A minor difference is tolerated but never silent: the mismatch is
+    # reported, unlike the matching version covered above.
+    assert "differs" in caplog.text
 
 
 def test_http_provider_major_version_mismatch_is_a_setup_error(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader, "version", lambda name: "2.0.0")
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "version", lambda name: "2.0.0")
     monkeypatch.setattr(
-        downloader, "urlopen", lambda request, timeout: _Response(b'{"version": "1.9.0"}')
+        youtube_setup, "urlopen", lambda request, timeout: _Response(b'{"version": "1.9.0"}')
     )
 
     with pytest.raises(DownloadError, match="incompatible"):
-        downloader._validate_pot_provider("http://127.0.0.1:4416", None)
+        youtube_setup._validate_pot_provider("http://127.0.0.1:4416", None)
 
 
 def test_unreachable_http_provider_is_reported_without_leaking_url(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
 
     def boom(request, timeout):
         raise URLError("offline")
 
-    monkeypatch.setattr(downloader, "urlopen", boom)
+    monkeypatch.setattr(youtube_setup, "urlopen", boom)
 
     with pytest.raises(DownloadError, match="not running or reachable") as failure:
-        downloader._validate_pot_provider("http://user:secret@127.0.0.1:4416", None)
+        youtube_setup._validate_pot_provider("http://user:secret@127.0.0.1:4416", None)
     assert "secret" not in str(failure.value)
 
 
+def test_provider_probe_uses_the_configured_timeout(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(request, timeout):
+        seen["timeout"] = timeout
+        return _Response(b'{"version": "2.0.0"}')
+
+    monkeypatch.setattr(youtube_setup, "urlopen", fake_urlopen)
+    monkeypatch.setattr(youtube_setup, "_POT_PROVIDER_TIMEOUT", 2.5)
+
+    youtube_setup._fetch_provider_ping("http://127.0.0.1:4416")
+
+    assert seen["timeout"] == 2.5
+
+
 def test_invalid_http_provider_url_is_rejected(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
 
     with pytest.raises(DownloadError, match="invalid"):
-        downloader._validate_pot_provider("ftp://127.0.0.1", None)
+        youtube_setup._validate_pot_provider("ftp://127.0.0.1", None)
 
 
 def test_missing_bgutil_plugin_is_a_setup_error(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: None)
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: None)
 
     with pytest.raises(DownloadError, match="plugin is not installed"):
-        downloader._validate_pot_provider("http://127.0.0.1:4416", None)
+        youtube_setup._validate_pot_provider("http://127.0.0.1:4416", None)
 
 
 def test_script_provider_requires_built_script_and_runtime(tmp_path, monkeypatch):
+    """A built script is accepted only with its runtime, and nothing else is probed."""
     (tmp_path / "build").mkdir()
     (tmp_path / "build" / "generate_once.js").write_text("", encoding="utf-8")
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    (tmp_path / "evil").write_text("", encoding="utf-8")
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    probed = []
 
-    downloader._validate_pot_provider(None, str(tmp_path))
+    def fake_which(name):
+        probed.append(name)
+        return "/usr/bin/" + name
+
+    monkeypatch.setattr(youtube_setup.shutil, "which", fake_which)
+
+    youtube_setup._validate_pot_provider(None, str(tmp_path))
+
+    # ``which`` is consulted only once the built script for that runtime
+    # exists, so this proves both halves of the check ran -- and that validation
+    # probed no runtime other than the expected one, which is why the node
+    # candidate being first means deno is never looked up.
+    assert probed == ["node"]
 
 
 def test_script_provider_without_built_script_is_a_setup_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup.shutil, "which", lambda name: "/usr/bin/" + name)
 
     with pytest.raises(DownloadError, match="not usable"):
-        downloader._validate_pot_provider(None, str(tmp_path))
-
-
-def test_script_provider_does_not_run_arbitrary_paths(tmp_path, monkeypatch):
-    """Validation must only look for the expected built artifacts."""
-    (tmp_path / "build").mkdir()
-    (tmp_path / "build" / "generate_once.js").write_text("", encoding="utf-8")
-    seen = []
-
-    def fake_which(name):
-        seen.append(name)
-        return "/usr/bin/" + name
-
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader.shutil, "which", fake_which)
-
-    downloader._validate_pot_provider(None, str(tmp_path))
-
-    assert set(seen) <= {"node", "deno"}
+        youtube_setup._validate_pot_provider(None, str(tmp_path))
 
 
 # --- Diagnostics helper -----------------------------------------------------
 
 
 def test_describe_youtube_setup_reports_healthy_provider(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader, "version", lambda name: "2.0.0")
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "version", lambda name: "2.0.0")
     monkeypatch.setattr(
-        downloader, "urlopen", lambda request, timeout: _Response(b'{"version": "2.0.0"}')
+        youtube_setup, "urlopen", lambda request, timeout: _Response(b'{"version": "2.0.0"}')
     )
 
-    report = downloader.describe_youtube_setup(
+    report = youtube_setup.describe_youtube_setup(
         cookies_from_browser="chrome",
         pot_provider_url="http://user:secret@127.0.0.1:4416",
     )
@@ -741,14 +772,16 @@ def test_describe_youtube_setup_reports_healthy_provider(monkeypatch):
 
 
 def test_describe_youtube_setup_reports_unreachable_provider_without_raising(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
 
     def boom(request, timeout):
         raise URLError("offline")
 
-    monkeypatch.setattr(downloader, "urlopen", boom)
+    monkeypatch.setattr(youtube_setup, "urlopen", boom)
 
-    report = downloader.describe_youtube_setup(pot_provider_url="http://user:secret@127.0.0.1:4416")
+    report = youtube_setup.describe_youtube_setup(
+        pot_provider_url="http://user:secret@127.0.0.1:4416"
+    )
 
     assert report["http_provider"]["reachable"] is False
     assert "secret" not in repr(report)
@@ -757,19 +790,19 @@ def test_describe_youtube_setup_reports_unreachable_provider_without_raising(mon
 def test_describe_youtube_setup_reports_script_provider(tmp_path, monkeypatch):
     (tmp_path / "build").mkdir()
     (tmp_path / "build" / "generate_once.js").write_text("", encoding="utf-8")
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
-    monkeypatch.setattr(downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup.shutil, "which", lambda name: "/usr/bin/" + name)
 
-    report = downloader.describe_youtube_setup(pot_provider_home=str(tmp_path))
+    report = youtube_setup.describe_youtube_setup(pot_provider_home=str(tmp_path))
 
     assert report["script_provider"]["available"] is True
     assert report["script_provider"]["runtime"] == "node"
 
 
 def test_describe_youtube_setup_notes_missing_browser(monkeypatch):
-    monkeypatch.setattr(downloader, "find_spec", lambda name: object())
+    monkeypatch.setattr(youtube_setup, "find_spec", lambda name: object())
 
-    report = downloader.describe_youtube_setup()
+    report = youtube_setup.describe_youtube_setup()
 
     assert report["cookies_from_browser"] is None
     assert any("cookies_from_browser" in note for note in report["notes"])

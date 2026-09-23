@@ -26,10 +26,6 @@ def _otool(path: Path) -> list[str]:
     return bundle._dylib_deps(path)
 
 
-def _is_darwin_with_ffmpeg() -> bool:
-    return sys.platform == "darwin" and os.environ.get("SPOTM3U_SKIP_FFMPEG_INTEG") is None
-
-
 def test_homebrew_dep_only_matches_homebrew_prefixes() -> None:
     assert bundle._homebrew_dep("/opt/homebrew/lib/libavcodec.dylib")
     assert bundle._homebrew_dep("/usr/local/lib/foo.dylib")

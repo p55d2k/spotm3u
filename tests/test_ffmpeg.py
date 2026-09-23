@@ -36,24 +36,39 @@ def test_bundle_roots_prefers_meipass_then_internal(monkeypatch, tmp_path):
     assert roots == (meipass, exe.parent / "_internal", exe.parent)
 
 
-def test_locate_is_none_in_development(monkeypatch):
-    monkeypatch.setattr(ffmpeg, "is_frozen", lambda: False)
-
-    assert ffmpeg.locate_ffmpeg_location() is None
-
-
-def test_locate_prefers_bundled_ffmpeg_when_frozen(monkeypatch, tmp_path):
-    bundled = _make_bundle(monkeypatch, tmp_path)
-
-    assert ffmpeg.locate_ffmpeg_location() == str(bundled)
-
-
-def test_locate_ignores_empty_bundled_directory(monkeypatch, tmp_path):
+def _empty_bundle(monkeypatch, tmp_path) -> None:
     (tmp_path / "ffmpeg").mkdir()
     monkeypatch.setattr(ffmpeg, "is_frozen", lambda: True)
     monkeypatch.setattr(ffmpeg, "bundle_roots", lambda: (tmp_path,))
 
+
+@pytest.mark.parametrize(
+    "prepare",
+    [
+        pytest.param(
+            lambda monkeypatch, _tmp_path: monkeypatch.setattr(ffmpeg, "is_frozen", lambda: False),
+            id="development",
+        ),
+        pytest.param(_empty_bundle, id="empty-bundled-directory"),
+    ],
+)
+def test_locate_is_none_without_a_bundled_ffmpeg(monkeypatch, tmp_path, prepare):
+    prepare(monkeypatch, tmp_path)
+
     assert ffmpeg.locate_ffmpeg_location() is None
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        pytest.param(("ffmpeg", "ffprobe"), id="posix-names"),
+        pytest.param(("ffmpeg.exe", "ffprobe.exe"), id="windows-names"),
+    ],
+)
+def test_locate_uses_the_bundled_ffmpeg(monkeypatch, tmp_path, contents):
+    bundled = _make_bundle(monkeypatch, tmp_path, contents=contents)
+
+    assert ffmpeg.locate_ffmpeg_location() == str(bundled)
 
 
 def test_locate_finds_ffmpeg_in_onedir_internal(monkeypatch, tmp_path):
@@ -63,12 +78,6 @@ def test_locate_finds_ffmpeg_in_onedir_internal(monkeypatch, tmp_path):
     (bundled / "ffprobe.exe").write_bytes(b"binary")
     monkeypatch.setattr(ffmpeg, "is_frozen", lambda: True)
     monkeypatch.setattr(ffmpeg, "bundle_roots", lambda: (tmp_path / "_internal", tmp_path))
-
-    assert ffmpeg.locate_ffmpeg_location() == str(bundled)
-
-
-def test_locate_accepts_windows_executable_names(monkeypatch, tmp_path):
-    bundled = _make_bundle(monkeypatch, tmp_path, contents=("ffmpeg.exe", "ffprobe.exe"))
 
     assert ffmpeg.locate_ffmpeg_location() == str(bundled)
 

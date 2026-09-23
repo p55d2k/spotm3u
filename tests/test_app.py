@@ -6,7 +6,7 @@ from zipfile import ZipFile
 
 from werkzeug.datastructures import MultiDict
 
-from spotm3u import app as app_module
+from spotm3u import web_jobs
 from spotm3u.app import create_app
 from spotm3u.media_player import MediaPlayerError, MediaPlayerResult
 
@@ -131,7 +131,11 @@ def test_batch_selection_processes_all_playlists(tmp_path, monkeypatch) -> None:
         "spotm3u.app.cached_artwork_path",
         lambda _download_dir, _track: music / "artwork.jpg",
     )
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr(
+        "spotm3u.web_jobs.cached_artwork_path",
+        lambda _download_dir, _track: music / "artwork.jpg",
+    )
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     upload = client.post(
         "/upload",
@@ -241,7 +245,7 @@ def _upload_and_select(tmp_path, client, playlist_id: str = "1") -> tuple[str, o
 def test_start_processing_runs_job_and_exposes_state(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -270,7 +274,7 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -322,7 +326,7 @@ def test_checked_fast_mode_toggle_wins_over_the_hidden_fallback(tmp_path, monkey
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -340,21 +344,21 @@ def test_start_processing_honours_fast_mode(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("fast mode must not enrich metadata")
 
     monkeypatch.setattr("spotm3u.resolution.enrich_metadata", forbidden)
     built: list[bool] = []
-    resolver_class = app_module.FastTrackResolver
+    resolver_class = web_jobs.FastTrackResolver
 
     class SpyFastResolver(resolver_class):
         def __init__(self, *args, **kwargs):
             built.append(True)
             super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr(app_module, "FastTrackResolver", SpyFastResolver)
+    monkeypatch.setattr(web_jobs, "FastTrackResolver", SpyFastResolver)
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -377,7 +381,7 @@ def test_start_processing_uses_the_configured_fast_mode_and_form_can_override(
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app(
         {"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music, "FAST_MODE": True}
     ).test_client()
@@ -400,7 +404,7 @@ def test_result_page_offers_a_retry_after_the_download_folder_is_emptied(
     # selected playlist resolves against it and the job finishes cleanly.
     local_file = music / "Artist - First.mp3"
     local_file.write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
     client.post(f"/processing/{job_id}/1/start")
@@ -429,7 +433,7 @@ def test_result_page_offers_a_retry_after_the_download_folder_is_emptied(
 def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -445,7 +449,7 @@ def test_start_processing_refuses_second_start(tmp_path, monkeypatch) -> None:
 def test_status_endpoint_requires_matching_playlist(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -472,7 +476,7 @@ def test_download_dir_override_respected(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     download_dir = tmp_path / "custom-downloads"
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app(
         {
             "UPLOAD_ROOT": tmp_path,
@@ -496,7 +500,7 @@ def test_download_dir_override_respected(tmp_path, monkeypatch) -> None:
 def test_download_m3u_route_returns_playlist(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -517,7 +521,7 @@ def test_download_m3u_route_warns_when_referenced_files_are_gone(tmp_path, monke
     music.mkdir()
     audio = music / "Artist - First.mp3"
     audio.write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -547,7 +551,7 @@ def test_download_m3u_route_serves_a_playlist_whose_files_are_all_present(
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -563,7 +567,7 @@ def test_download_m3u_route_serves_a_playlist_whose_files_are_all_present(
 def test_download_m3u_route_requires_completed_job(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -576,7 +580,7 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - First.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -597,7 +601,7 @@ def test_result_page_shows_summary_and_reasons(tmp_path, monkeypatch) -> None:
 def test_result_page_offers_retry_for_unresolved_tracks(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
     client = app.test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
@@ -637,7 +641,7 @@ class AmbiguousResolver:
 def test_result_page_filters_failed_and_ambiguous_tracks(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.TrackResolver", AmbiguousResolver)
+    monkeypatch.setattr("spotm3u.web_jobs.TrackResolver", AmbiguousResolver)
     app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
     client = app.test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
@@ -661,7 +665,7 @@ def test_result_page_filters_failed_and_ambiguous_tracks(tmp_path, monkeypatch) 
 def test_result_page_filter_ignores_tracks_that_only_failed_to_match(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
     client = app.test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
@@ -684,7 +688,7 @@ def test_result_page_hides_filter_and_retry_when_every_track_resolved(
     music.mkdir()
     # Playlist 1 is "two", whose only track is "Second" by "Artist".
     (music / "Artist - Second.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
     client = app.test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
@@ -715,7 +719,7 @@ def test_retry_route_rejects_unknown_job(tmp_path) -> None:
 def test_result_page_redirects_while_job_running(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     app = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music})
     client = app.test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
@@ -757,7 +761,9 @@ def test_result_page_exposes_rejected_reasons(tmp_path, monkeypatch) -> None:
         def search(self, track):
             return ()
 
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: RejectingCandidates())
+    monkeypatch.setattr(
+        "spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: RejectingCandidates()
+    )
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -775,7 +781,7 @@ def _run_local_match_job(tmp_path, monkeypatch):
     music = tmp_path / "music"
     music.mkdir()
     (music / "Artist - Second.mp3").write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
 
@@ -786,13 +792,15 @@ def _run_local_match_job(tmp_path, monkeypatch):
 
 
 def test_artwork_route_returns_cached_image(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork, artwork_cache
 
     client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
     track = job.tracks[0]
-    artwork_path = metadata._cached_artwork_path(
-        metadata._cache_dir(download_dir),
-        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    artwork_path = artwork_cache._cached_artwork_path(
+        artwork_cache._cache_dir(download_dir),
+        artwork_cache._cache_key(
+            artwork.artwork_artist(track) or "", track.album or "", track.title
+        ),
     )
     artwork_path.write_bytes(b"cached-artwork-bytes")
 
@@ -820,13 +828,15 @@ def test_artwork_route_404_for_unknown_index(tmp_path, monkeypatch) -> None:
 
 
 def test_result_page_shows_artwork_image_when_available(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork, artwork_cache
 
     client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
     track = job.tracks[0]
-    artwork_path = metadata._cached_artwork_path(
-        metadata._cache_dir(download_dir),
-        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    artwork_path = artwork_cache._cached_artwork_path(
+        artwork_cache._cache_dir(download_dir),
+        artwork_cache._cache_key(
+            artwork.artwork_artist(track) or "", track.album or "", track.title
+        ),
     )
     artwork_path.write_bytes(b"cached-artwork-bytes")
 
@@ -838,13 +848,15 @@ def test_result_page_shows_artwork_image_when_available(tmp_path, monkeypatch) -
 
 
 def test_artwork_is_hidden_for_a_download_that_was_deleted(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork, artwork_cache
 
     client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
     track = job.tracks[0]
-    artwork_path = metadata._cached_artwork_path(
-        metadata._cache_dir(download_dir),
-        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    artwork_path = artwork_cache._cached_artwork_path(
+        artwork_cache._cache_dir(download_dir),
+        artwork_cache._cache_key(
+            artwork.artwork_artist(track) or "", track.album or "", track.title
+        ),
     )
     artwork_path.write_bytes(b"cached-artwork-bytes")
 
@@ -864,13 +876,15 @@ def test_artwork_is_hidden_for_a_download_that_was_deleted(tmp_path, monkeypatch
 
 
 def test_status_reports_no_artwork_for_a_deleted_download(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork, artwork_cache
 
     client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
     track = job.tracks[0]
-    metadata._cached_artwork_path(
-        metadata._cache_dir(download_dir),
-        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    artwork_cache._cached_artwork_path(
+        artwork_cache._cache_dir(download_dir),
+        artwork_cache._cache_key(
+            artwork.artwork_artist(track) or "", track.album or "", track.title
+        ),
     ).write_bytes(b"cached-artwork-bytes")
 
     assert (
@@ -926,7 +940,7 @@ def test_result_page_hides_add_to_media_player_without_resolved_tracks(
     monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     job_id, _selection = _upload_and_select(tmp_path, client)
     client.post(f"/processing/{job_id}/1/start")
@@ -954,6 +968,7 @@ def test_add_to_media_player_reuses_the_generated_playlist(tmp_path, monkeypatch
         )
 
     monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+    monkeypatch.setattr("spotm3u.web_jobs.add_to_media_player", fake_add)
 
     response = client.post(f"/processing/{job.job_id}/1/media-player")
 
@@ -969,13 +984,15 @@ def test_add_to_media_player_reuses_the_generated_playlist(tmp_path, monkeypatch
 
 def test_add_to_media_player_keeps_artwork_on_result_page(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("spotm3u.app.media_player_available", lambda: True)
-    from spotm3u import metadata
+    from spotm3u import artwork, artwork_cache
 
     client, job, download_dir = _run_local_match_job(tmp_path, monkeypatch)
     track = job.tracks[0]
-    artwork_path = metadata._cached_artwork_path(
-        metadata._cache_dir(download_dir),
-        metadata._cache_key(metadata.artwork_artist(track) or "", track.album or "", track.title),
+    artwork_path = artwork_cache._cached_artwork_path(
+        artwork_cache._cache_dir(download_dir),
+        artwork_cache._cache_key(
+            artwork.artwork_artist(track) or "", track.album or "", track.title
+        ),
     )
     artwork_path.write_bytes(b"cached-artwork-bytes")
     captured = {}
@@ -989,6 +1006,7 @@ def test_add_to_media_player_keeps_artwork_on_result_page(tmp_path, monkeypatch)
         )
 
     monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+    monkeypatch.setattr("spotm3u.web_jobs.add_to_media_player", fake_add)
 
     response = client.post(f"/processing/{job.job_id}/1/media-player")
 
@@ -1006,6 +1024,7 @@ def test_add_to_media_player_reports_failures(tmp_path, monkeypatch) -> None:
         raise MediaPlayerError("Apple Music import failed: boom")
 
     monkeypatch.setattr("spotm3u.app.add_to_media_player", failing_add)
+    monkeypatch.setattr("spotm3u.web_jobs.add_to_media_player", failing_add)
 
     response = client.post(f"/processing/{job.job_id}/1/media-player")
 
@@ -1043,7 +1062,7 @@ def _run_batch_job(tmp_path, monkeypatch, *, local: tuple[str, ...] = ()):
     music.mkdir()
     for name in local or ("Artist A - Alpha Rhapsody.mp3", "Artist B - Zulu Ballad.mp3"):
         (music / name).write_bytes(b"audio")
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
     upload = client.post(
         "/upload",
@@ -1101,6 +1120,7 @@ def test_add_all_imports_every_playlist_as_its_own(tmp_path, monkeypatch) -> Non
         )
 
     monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+    monkeypatch.setattr("spotm3u.web_jobs.add_to_media_player", fake_add)
 
     response = client.post(f"/processing/{job_id}/batch/media-player")
 
@@ -1129,6 +1149,7 @@ def test_add_all_reports_a_failed_playlist_without_stopping(tmp_path, monkeypatc
         return MediaPlayerResult(action="created", imported=1, message="ok")
 
     monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+    monkeypatch.setattr("spotm3u.web_jobs.add_to_media_player", fake_add)
 
     response = client.post(f"/processing/{job_id}/batch/media-player")
 
@@ -1151,6 +1172,7 @@ def test_add_all_skips_playlists_without_resolved_tracks(tmp_path, monkeypatch) 
         return MediaPlayerResult(action="created", imported=1, message=f"ok {playlist_name}")
 
     monkeypatch.setattr("spotm3u.app.add_to_media_player", fake_add)
+    monkeypatch.setattr("spotm3u.web_jobs.add_to_media_player", fake_add)
 
     response = client.post(f"/processing/{job_id}/batch/media-player")
 

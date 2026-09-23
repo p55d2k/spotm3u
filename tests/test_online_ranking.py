@@ -52,6 +52,7 @@ def test_music_video_is_penalized_but_not_rejected() -> None:
 def test_exact_title_with_poor_artist_is_rejected() -> None:
     result = rank_source_candidate(TRACK, candidate("Song Name", "Another Band"))
     assert result.confidence == "rejected"
+    assert not result.accepted
 
 
 def test_clearly_wrong_duration_is_rejected() -> None:

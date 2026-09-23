@@ -1,11 +1,13 @@
 """Tests for optional config.toml loading."""
 
+import re
 from pathlib import Path
 
 import pytest
 
 from spotm3u.app import create_app
 from spotm3u.config import (
+    _FIELD_ATTRIBUTES,
     DEFAULT_MAX_JOB_AGE,
     DEFAULT_MAX_UPLOAD_SIZE,
     Config,
@@ -13,6 +15,38 @@ from spotm3u.config import (
     discover_config_path,
     load_config,
 )
+
+# The repository's own ``config.toml`` is a documented, entirely optional
+# sample: its header promises that deleting it changes nothing, and it is what
+# runs from the project root pick up. Both promises are asserted below, so a
+# new setting that never reaches the sample -- or a sample value that quietly
+# differs from the built-in default -- fails here instead of shipping.
+SAMPLE_CONFIG = Path(__file__).resolve().parent.parent / "config.toml"
+
+
+def _documented_settings(path: Path) -> set[str]:
+    """Return the ``section.field`` names the sample config mentions."""
+    documented: set[str] = set()
+    section = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        header = re.fullmatch(r"\[([a-z_][a-z0-9_]*)\]", line)
+        if header:
+            section = header.group(1)
+            continue
+        # Only whole ``field = value`` lines count, commented or not, so prose
+        # and the indented shell examples in the header are ignored.
+        field = re.fullmatch(r"#?\s*([a-z_][a-z0-9_]*)\s*=\s*\S+\s*", line)
+        if section and field:
+            documented.add(f"{section}.{field.group(1)}")
+    return documented
+
+
+def test_sample_config_only_documents_real_settings() -> None:
+    assert _documented_settings(SAMPLE_CONFIG) == set(_FIELD_ATTRIBUTES)
+
+
+def test_sample_config_matches_the_built_in_defaults() -> None:
+    assert load_config(SAMPLE_CONFIG) == Config()
 
 
 def write_config(directory: Path, content: str) -> Path:
@@ -251,39 +285,39 @@ def test_create_app_config_argument_overrides_file(tmp_path, monkeypatch) -> Non
 
 
 def test_create_app_wires_artwork_verify_local(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork
 
     monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
     monkeypatch.chdir(tmp_path)
 
     create_app()
-    assert metadata._ARTWORK_VERIFY_LOCAL is True
+    assert artwork._ARTWORK_VERIFY_LOCAL is True
 
     create_app({"ARTWORK_VERIFY_LOCAL": False})
-    assert metadata._ARTWORK_VERIFY_LOCAL is False
+    assert artwork._ARTWORK_VERIFY_LOCAL is False
 
     create_app()
-    assert metadata._ARTWORK_VERIFY_LOCAL is True
+    assert artwork._ARTWORK_VERIFY_LOCAL is True
 
 
 def test_create_app_wires_artist_artwork(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork
 
     monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
     monkeypatch.chdir(tmp_path)
 
     create_app()
-    assert metadata._ARTIST_ARTWORK_ENABLED is True
+    assert artwork._ARTIST_ARTWORK_ENABLED is True
 
     create_app({"ARTWORK_ARTIST_ARTWORK": False})
-    assert metadata._ARTIST_ARTWORK_ENABLED is False
+    assert artwork._ARTIST_ARTWORK_ENABLED is False
 
     create_app()
-    assert metadata._ARTIST_ARTWORK_ENABLED is True
+    assert artwork._ARTIST_ARTWORK_ENABLED is True
 
 
 def test_create_app_wires_embedding_options(tmp_path, monkeypatch) -> None:
-    from spotm3u import metadata
+    from spotm3u import artwork, metadata
 
     monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -291,12 +325,12 @@ def test_create_app_wires_embedding_options(tmp_path, monkeypatch) -> None:
     create_app()
     assert metadata.metadata_enabled() is True
     assert metadata.id3_tags_enabled() is True
-    assert metadata.album_artwork_enabled() is True
+    assert artwork.album_artwork_enabled() is True
 
     create_app({"METADATA_ENABLED": False, "METADATA_TAGS": False, "ARTWORK_ALBUM_ARTWORK": False})
     assert metadata.metadata_enabled() is False
     assert metadata.id3_tags_enabled() is False
-    assert metadata.album_artwork_enabled() is False
+    assert artwork.album_artwork_enabled() is False
 
     create_app()
     assert metadata.metadata_enabled() is True
@@ -318,3 +352,49 @@ def test_create_app_wires_lyrics_enabled(tmp_path, monkeypatch) -> None:
 
     create_app()
     assert lyrics.lyrics_enabled() is True
+
+
+def test_create_app_wires_artwork_request_timeout(tmp_path, monkeypatch) -> None:
+    from spotm3u import artwork_sources
+
+    monkeypatch.setattr(artwork_sources, "_REQUEST_TIMEOUT", artwork_sources._REQUEST_TIMEOUT)
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app()
+    assert artwork_sources._REQUEST_TIMEOUT == 15
+
+    create_app({"ARTWORK_REQUEST_TIMEOUT": 5})
+    assert artwork_sources._REQUEST_TIMEOUT == 5
+
+
+def test_create_app_wires_pot_provider_timeout(tmp_path, monkeypatch) -> None:
+    from spotm3u.online import youtube_setup
+
+    monkeypatch.setattr(youtube_setup, "_POT_PROVIDER_TIMEOUT", youtube_setup._POT_PROVIDER_TIMEOUT)
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app()
+    assert youtube_setup._POT_PROVIDER_TIMEOUT == 5.0
+
+    create_app({"YTDLP_POT_PROVIDER_TIMEOUT": 2})
+    assert youtube_setup._POT_PROVIDER_TIMEOUT == 2.0
+
+
+def test_config_file_sets_timeout_settings(tmp_path) -> None:
+    path = write_config(
+        tmp_path,
+        "[artwork]\nrequest_timeout = 5\n\n[update]\nrequest_timeout = 2\n"
+        "\n[download]\npot_provider_timeout = 3\n",
+    )
+
+    config = load_config(path)
+    mapping = config.to_app_config()
+
+    assert config.artwork_request_timeout == 5
+    assert config.update_request_timeout == 2
+    assert config.pot_provider_timeout == 3
+    assert mapping["ARTWORK_REQUEST_TIMEOUT"] == 5
+    assert mapping["UPDATE_REQUEST_TIMEOUT"] == 2
+    assert mapping["YTDLP_POT_PROVIDER_TIMEOUT"] == 3

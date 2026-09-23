@@ -235,30 +235,22 @@ def test_iconutil_failure_fails_icon_generation(master, tmp_path, monkeypatch) -
         icons.generate(master, tmp_path / "generated")
 
 
-def test_generate_rejects_non_png_source(tmp_path) -> None:
-    bad = tmp_path / "icon.png"
-    bad.write_bytes(b"not a png")
+@pytest.mark.parametrize(
+    ("write_master", "message"),
+    [
+        pytest.param(lambda path: path.write_bytes(b"not a png"), "PNG", id="not-a-png"),
+        pytest.param(
+            lambda path: path.write_bytes(icons._encode_png(_FLAT_PIXEL * (600 * 512), 600, 512)),
+            "square",
+            id="non-square",
+        ),
+        pytest.param(lambda path: path.write_bytes(_flat_png(256)), "at least", id="undersized"),
+        pytest.param(lambda path: None, "missing", id="missing-file"),
+    ],
+)
+def test_generate_rejects_an_unusable_master(tmp_path, write_master, message) -> None:
+    master = tmp_path / "icon.png"
+    write_master(master)
 
-    with pytest.raises(icons.IconError, match="PNG"):
-        icons.generate(bad, tmp_path / "generated")
-
-
-def test_generate_rejects_a_non_square_source(tmp_path) -> None:
-    bad = tmp_path / "icon.png"
-    bad.write_bytes(icons._encode_png(_FLAT_PIXEL * (600 * 512), 600, 512))
-
-    with pytest.raises(icons.IconError, match="square"):
-        icons.generate(bad, tmp_path / "generated")
-
-
-def test_generate_rejects_an_undersized_source(tmp_path) -> None:
-    bad = tmp_path / "icon.png"
-    bad.write_bytes(_flat_png(256))
-
-    with pytest.raises(icons.IconError, match="at least"):
-        icons.generate(bad, tmp_path / "generated")
-
-
-def test_generate_rejects_a_missing_source(tmp_path) -> None:
-    with pytest.raises(icons.IconError, match="missing"):
-        icons.generate(tmp_path / "icon.png", tmp_path / "generated")
+    with pytest.raises(icons.IconError, match=message):
+        icons.generate(master, tmp_path / "generated")

@@ -77,10 +77,6 @@ class SourceProfile:
     vocal: bool = False
     markers: tuple[str, ...] = ()
 
-    @property
-    def always_reject(self) -> bool:
-        return self.quality == SourceQuality.REJECTED
-
 
 def source_profile(candidate: SourceCandidate) -> SourceProfile:
     """Classify a candidate into identity-independent source-quality tiers."""

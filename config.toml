@@ -102,16 +102,21 @@
 # at the cost of possibly keeping a wrong one.
 # verify_local = true
 
-# When true (default), the performing artist's profile image is embedded into
-# each MP3 as an ID3 artist picture (APIC type 8) in addition to the album
-# artwork, reusing one cached image per artist. Missing artist artwork never
-# affects the track. When false, no artist image lookup or embedding happens.
 # When true (default), the album front cover is embedded in the MP3 as the
 # album artwork. Embedded covers are much larger than tags or lyrics, so set
 # this to false to save space. No cover lookup or download happens either.
 # album_artwork = true
 
+# When true (default), the performing artist's profile image is embedded into
+# each MP3 as an ID3 artist picture (APIC type 8) in addition to the album
+# artwork, reusing one cached image per artist. Missing artist artwork never
+# affects the track. When false, no artist image lookup or embedding happens.
 # artist_artwork = true
+
+# Seconds to wait for each artwork lookup request (MusicBrainz, Cover Art
+# Archive, iTunes, Deezer) before it is abandoned and the next source is tried.
+# (default 15)
+# request_timeout = 15
 
 [lyrics]
 # When true (default), each resolved track is looked up in public lyrics
@@ -129,11 +134,11 @@
 
 # How many tracks are downloaded at once. A separate, smaller cap than
 # resolve_workers so the per-track yt-dlp/ffmpeg work never spawns an
-# uncontrolled number of processes.
+# uncontrolled number of processes. (default 2)
 # If YouTube starts asking "sign in to confirm you're not a bot" or rate
 # limits you, lower this number or set cookies_from_browser to a signed-in
 # session instead of raising it further.
-workers = 4
+# workers = 2
 
 # Maximum wall-clock time (seconds) for a single download before it is
 # abandoned. Set to 0 to disable.
@@ -169,6 +174,11 @@ workers = 4
 #
 # Script option requires a matching checkout; Node 22+ or Deno 2.0.0+.
 # pot_provider_home = "~/bgutil-ytdlp-pot-provider/server"
+#
+# Seconds to wait for a configured HTTP provider to answer its /ping probe
+# before the pre-download check reports it as not running or reachable. Raise
+# this when a provider needs longer to start up. (default 5)
+# pot_provider_timeout = 5
 
 [m3u]
 # Write an extended M3U (the #EXTM3U header plus #EXTINF metadata lines).
@@ -189,3 +199,8 @@ workers = 4
 
 # Repository whose releases are checked, in OWNER/REPO form.
 # github_repo = "p55d2k/spotm3u"
+
+# Seconds to wait for the GitHub release check before giving up. The check is
+# best-effort and never blocks or fails the app, so a slow or unreachable
+# GitHub only delays the update notice. (default 10)
+# request_timeout = 10

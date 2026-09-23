@@ -38,11 +38,6 @@ def _candidate_directories() -> tuple[Path, ...]:
     return tuple(dict.fromkeys(root / BUNDLED_SUBDIR for root in bundle_roots()))
 
 
-def has_bundled_ffmpeg() -> bool:
-    """True when a packaged bundle ships an FFmpeg binary with the app."""
-    return any(has_executable(directory) for directory in _candidate_directories())
-
-
 def has_executable(directory: Path) -> bool:
     """True when ``directory`` contains an ``ffmpeg``/``ffprobe`` binary."""
     if not directory.is_dir():

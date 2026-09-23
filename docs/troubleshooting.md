@@ -103,7 +103,9 @@ beside the executable as an override.
 The bgutil Python plugin is installed with the application, but installing it
 does not start a provider. An HTTP provider must be running on the configured
 URL, or a script provider must point to a valid checkout and runtime. Keep
-provider services loopback-only because they are unauthenticated.
+provider services loopback-only because they are unauthenticated. Raise
+`download.pot_provider_timeout` (seconds, default `5`) when a provider that is
+still starting up is reported as unreachable.
 
 PO tokens are not browser authentication. If YouTube requires a signed-in
 session, set `download.cookies_from_browser` (for example, `chrome`) or

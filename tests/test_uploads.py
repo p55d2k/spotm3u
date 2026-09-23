@@ -74,36 +74,41 @@ def test_store_upload_rejects_invalid_zip_and_oversized_upload(tmp_path: Path) -
         )
 
 
-def test_store_upload_rejects_excessive_decompressed_size(tmp_path: Path) -> None:
+def _multi_entry_zip(count: int) -> bytes:
+    """A ZIP holding ``count`` tiny CSV entries."""
     output = BytesIO()
     with ZipFile(output, "w") as archive:
-        archive.writestr("playlist.csv", b"x" * 4096)
-    blob = output.getvalue()
-
-    with pytest.raises(UploadError, match="too much data"):
-        store_upload(
-            file_storage(blob),
-            upload_root=tmp_path,
-            max_upload_size=1024 * 1024,
-            max_decompressed_size=1024,
-        )
-
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_store_upload_rejects_too_many_entries(tmp_path: Path) -> None:
-    output = BytesIO()
-    with ZipFile(output, "w") as archive:
-        for index in range(4):
+        for index in range(count):
             archive.writestr(f"playlist-{index}.csv", b"title")
-    blob = output.getvalue()
+    return output.getvalue()
 
-    with pytest.raises(UploadError, match="too many files"):
+
+@pytest.mark.parametrize(
+    ("build_archive", "limits", "message"),
+    [
+        pytest.param(
+            lambda: zip_bytes("playlist.csv", b"x" * 4096),
+            {"max_decompressed_size": 1024},
+            "too much data",
+            id="decompressed-size",
+        ),
+        pytest.param(
+            lambda: _multi_entry_zip(4),
+            {"max_archive_entries": 3},
+            "too many files",
+            id="archive-entries",
+        ),
+    ],
+)
+def test_store_upload_rejects_archives_past_the_limits(
+    tmp_path: Path, build_archive, limits: dict, message: str
+) -> None:
+    with pytest.raises(UploadError, match=message):
         store_upload(
-            file_storage(blob),
+            file_storage(build_archive()),
             upload_root=tmp_path,
             max_upload_size=1024 * 1024,
-            max_archive_entries=3,
+            **limits,
         )
 
     assert list(tmp_path.iterdir()) == []
@@ -130,19 +135,18 @@ def test_store_upload_rejects_special_file_entries(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize("entry", ["bad\x00name.csv", "a\nb.csv"])
-def test_safe_archive_path_rejects_control_characters(entry: str) -> None:
-    from spotm3u.uploads import _safe_archive_path
-
-    with pytest.raises(UploadError, match="unsafe path"):
-        _safe_archive_path(entry)
-
-
 @pytest.mark.parametrize(
     "entry",
-    ["CON.csv", "folder/NUL", "name.csv ", "bad:name.csv"],
+    [
+        pytest.param("bad\x00name.csv", id="nul-byte"),
+        pytest.param("a\nb.csv", id="newline"),
+        pytest.param("CON.csv", id="windows-device-name"),
+        pytest.param("folder/NUL", id="windows-device-name-nested"),
+        pytest.param("name.csv ", id="trailing-space"),
+        pytest.param("bad:name.csv", id="windows-colon"),
+    ],
 )
-def test_safe_archive_path_rejects_windows_invalid_names(entry: str) -> None:
+def test_safe_archive_path_rejects_unsafe_entries(entry: str) -> None:
     from spotm3u.uploads import _safe_archive_path
 
     with pytest.raises(UploadError, match="unsafe path"):

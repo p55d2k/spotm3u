@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import pytest
 import requests
 
 from spotm3u.app import create_app
@@ -125,61 +126,48 @@ def test_check_for_updates_reports_newer_release(monkeypatch) -> None:
     assert result.as_dict()["update_available"] is True
 
 
-def test_check_for_updates_is_not_newer_when_current_is_latest(monkeypatch) -> None:
+def _offline():
+    raise requests.ConnectionError("offline")
+
+
+@pytest.mark.parametrize(
+    ("respond", "current_version", "latest_version", "expect_error"),
+    [
+        pytest.param(
+            lambda: SimpleNamespace(status_code=200, json=lambda: _release(tag="v1.2.3")),
+            "1.2.3",
+            "1.2.3",
+            False,
+            id="current-is-latest",
+        ),
+        pytest.param(_offline, "1.0.0", None, True, id="network-error"),
+        pytest.param(
+            lambda: SimpleNamespace(status_code=503, json=lambda: {}),
+            "1.0.0",
+            None,
+            True,
+            id="http-error",
+        ),
+        pytest.param(
+            lambda: SimpleNamespace(status_code=200, json=lambda: {}),
+            "1.0.0",
+            None,
+            False,
+            id="empty-release",
+        ),
+    ],
+)
+def test_check_for_updates_degrades_without_a_newer_release(
+    monkeypatch, respond, current_version, latest_version, expect_error
+) -> None:
     update = reset_cache(monkeypatch)
+    monkeypatch.setattr(update.requests, "get", lambda url, **kwargs: respond())
 
-    def fake_get(url: str, **kwargs):
-        return SimpleNamespace(status_code=200, json=lambda: _release(tag="v1.2.3"))
-
-    monkeypatch.setattr(update.requests, "get", fake_get)
-
-    result = check_for_updates(repo="p55d2k/spotm3u", current_version="1.2.3")
+    result = check_for_updates(repo="p55d2k/spotm3u", current_version=current_version)
 
     assert result.update_available is False
-    assert result.latest_version == "1.2.3"
-
-
-def test_check_for_updates_degrades_on_network_error(monkeypatch) -> None:
-    update = reset_cache(monkeypatch)
-
-    def fake_get(url: str, **kwargs):
-        raise requests.ConnectionError("offline")
-
-    monkeypatch.setattr(update.requests, "get", fake_get)
-
-    result = check_for_updates(repo="p55d2k/spotm3u", current_version="1.0.0")
-
-    assert result.update_available is False
-    assert result.latest_version is None
-    assert result.error
-
-
-def test_check_for_updates_degrades_on_http_error(monkeypatch) -> None:
-    update = reset_cache(monkeypatch)
-
-    def fake_get(url: str, **kwargs):
-        return SimpleNamespace(status_code=503, json=lambda: {})
-
-    monkeypatch.setattr(update.requests, "get", fake_get)
-
-    result = check_for_updates(repo="p55d2k/spotm3u", current_version="1.0.0")
-
-    assert result.update_available is False
-    assert result.error
-
-
-def test_check_for_updates_handles_empty_release(monkeypatch) -> None:
-    update = reset_cache(monkeypatch)
-
-    def fake_get(url: str, **kwargs):
-        return SimpleNamespace(status_code=200, json=lambda: {})
-
-    monkeypatch.setattr(update.requests, "get", fake_get)
-
-    result = check_for_updates(repo="p55d2k/spotm3u", current_version="1.0.0")
-
-    assert result.update_available is False
-    assert result.latest_version is None
+    assert result.latest_version == latest_version
+    assert bool(result.error) is expect_error
 
 
 def test_check_route_with_an_available_update(monkeypatch) -> None:

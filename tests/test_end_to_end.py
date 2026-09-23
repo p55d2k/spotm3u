@@ -87,10 +87,10 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
     (music / "Local Artist - First Song.mp3").write_bytes(b"audio")
 
     monkeypatch.setattr(
-        "spotm3u.app.OnlineSourceSearcher",
+        "spotm3u.web_jobs.OnlineSourceSearcher",
         lambda **kw: _FakeSearcher(no_results_titles=frozenset({"Missing Song"})),
     )
-    monkeypatch.setattr("spotm3u.app.download_track", _mock_download)
+    monkeypatch.setattr("spotm3u.web_jobs.download_track", _mock_download)
     monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
 
     download_dir = tmp_path / "downloads"
@@ -169,8 +169,8 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
 def test_e2e_second_playlist_independent(tmp_path, monkeypatch):
     music = tmp_path / "music"
     music.mkdir()
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kw: _FakeSearcher())
-    monkeypatch.setattr("spotm3u.app.download_track", _mock_download)
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kw: _FakeSearcher())
+    monkeypatch.setattr("spotm3u.web_jobs.download_track", _mock_download)
     monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
 
     download_dir = tmp_path / "downloads"
@@ -221,7 +221,7 @@ def test_e2e_all_tracks_local_no_online_search(tmp_path, monkeypatch):
             search_called = True
             return ()
 
-    monkeypatch.setattr("spotm3u.app.OnlineSourceSearcher", lambda **kw: _NoSearch())
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kw: _NoSearch())
 
     client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
 

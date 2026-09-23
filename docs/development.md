@@ -69,6 +69,11 @@ pre-commit configuration also runs the full test suite.
 ```text
 src/spotm3u/
   app.py                 Flask routes and application setup
+  web_jobs.py            job, batch, and artwork helpers used by the Flask routes
+  artwork.py             artwork lookup order, embedding, and cleanup
+  artwork_sources.py     MusicBrainz/iTunes/Deezer lookups and candidate matching
+  artwork_cache.py       artwork cache layout, cache keys, and the in-process memo
+  metadata.py            ID3 metadata read/write and enrichment
   config.py              optional TOML and environment configuration
   desktop.py             native WebView shell used by the packaged application
   dev.py                 ``uv run dev`` development server
@@ -77,7 +82,7 @@ src/spotm3u/
   resolution.py          track resolution orchestration
   audio/                 local audio discovery and matching
   exportify/             Exportify ZIP parsing
-  online/                search, ranking, downloads, and validation
+  online/                search, ranking, downloads, errors, and validation
   m3u/                   playlist writing
   templates/             Jinja templates
   static/                CSS

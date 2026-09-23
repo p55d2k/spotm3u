@@ -5,6 +5,8 @@ of being rejected for imperfect metadata. Obvious wrong recordings are still
 rejected.
 """
 
+import pytest
+
 from spotm3u.models import Track
 from spotm3u.online import SourceCandidate, rank_source_candidate, validate_source_candidate
 
@@ -30,14 +32,19 @@ def test_exact_title_and_exact_artist() -> None:
     assert result.accepted
 
 
-def test_title_with_punctuation_differences() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall.")).accepted
-    assert rank_source_candidate(TRACK, source(title="Wonderwall - Official Audio")).accepted
-
-
-def test_title_with_remastered_marker() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall (Remastered)")).accepted
-    assert rank_source_candidate(TRACK, source(title="Wonderwall - Remastered 2011")).accepted
+@pytest.mark.parametrize(
+    "title",
+    [
+        pytest.param("Wonderwall.", id="trailing-punctuation"),
+        pytest.param("Wonderwall - Official Audio", id="official-audio"),
+        pytest.param("Wonderwall (Remastered)", id="remastered"),
+        pytest.param("Wonderwall - Remastered 2011", id="remastered-year"),
+        pytest.param("Wonderwall - Original Studio Recording", id="studio-recording"),
+        pytest.param("Wonderwall [Official]", id="bracketed-official"),
+    ],
+)
+def test_imperfect_title_variants_are_accepted(title: str) -> None:
+    assert rank_source_candidate(TRACK, source(title=title)).accepted
 
 
 def test_requested_remastered_matches_plain_title() -> None:
@@ -89,35 +96,19 @@ def test_music_video_candidate_is_preferred_over_generic_but_below_audio() -> No
     assert audio.score > mv.score
 
 
-def test_live_candidate_is_rejected() -> None:
-    assert (
-        rank_source_candidate(TRACK, source(title="Wonderwall (Live at Knebworth)")).confidence
-        == "rejected"
-    )
-
-
-def test_remix_candidate_is_rejected() -> None:
-    assert rank_source_candidate(TRACK, source(title="Wonderwall Remix")).confidence == "rejected"
-
-
-def test_cover_candidate_is_rejected() -> None:
-    assert (
-        rank_source_candidate(TRACK, source(title="Wonderwall (Cover by Fan)")).confidence
-        == "rejected"
-    )
-
-
-def test_movie_scene_candidate_is_rejected() -> None:
-    assert (
-        rank_source_candidate(TRACK, source(title="Wonderwall Movie Scene")).confidence
-        == "rejected"
-    )
-
-
-def test_obvious_unrelated_song_is_rejected() -> None:
-    assert (
-        rank_source_candidate(TRACK, source(title="Champagne Supernova")).confidence == "rejected"
-    )
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"title": "Wonderwall (Live at Knebworth)"}, id="live"),
+        pytest.param({"title": "Wonderwall Remix"}, id="remix"),
+        pytest.param({"title": "Wonderwall (Cover by Fan)"}, id="cover"),
+        pytest.param({"title": "Wonderwall Movie Scene"}, id="movie-scene"),
+        pytest.param({"title": "Champagne Supernova"}, id="unrelated-song"),
+        pytest.param({"artist": "Another Band", "uploader": "Another Band"}, id="wrong-artist"),
+    ],
+)
+def test_obviously_wrong_recordings_are_rejected(overrides: dict) -> None:
+    assert rank_source_candidate(TRACK, source(**overrides)).confidence == "rejected"
 
 
 def test_incomplete_metadata_candidate_is_accepted() -> None:
@@ -130,20 +121,4 @@ def test_incomplete_metadata_candidate_is_accepted() -> None:
             TRACK, source(title="Wonderwall", artist=None, uploader=None, duration_s=None)
         ).status
         == "accepted"
-    )
-
-
-def test_harmless_extra_title_text_is_accepted() -> None:
-    assert rank_source_candidate(
-        TRACK, source(title="Wonderwall - Original Studio Recording")
-    ).accepted
-    assert rank_source_candidate(TRACK, source(title="Wonderwall [Official]")).accepted
-
-
-def test_wrong_artist_is_rejected() -> None:
-    assert (
-        rank_source_candidate(
-            TRACK, source(title="Wonderwall", artist="Another Band", uploader="Another Band")
-        ).confidence
-        == "rejected"
     )
