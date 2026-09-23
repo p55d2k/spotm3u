@@ -91,7 +91,18 @@ For each track, the live view shows the current meaningful stage — for example
 - Checking source
 - Downloading
 - Checking downloaded audio
+- Adding tags, artwork and lyrics
 - Trying another source
+
+The wording for these comes from one shared vocabulary (`_status_icons.html`,
+`window.SPOTM3U_STATUS_LABEL`), so the text beside a track and the tooltip on
+its status icon can never disagree. A stage that has no entry there is shown as
+readable words rather than as its raw identifier, so a new pipeline stage is
+never exposed as a slug such as `enriching-metadata`.
+
+The page is the only scrolling region: the progress panel and the track list
+grow with the run, and the whole page scrolls to reach the rest of a long
+playlist.
 
 ![Live processing progress](images/processing-progress.png)
 

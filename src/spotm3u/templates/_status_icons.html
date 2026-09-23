@@ -38,7 +38,7 @@
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>',
     },
     "enriching-metadata": {
-      label: "Enriching metadata",
+      label: "Adding tags, artwork and lyrics",
       group: "wait",
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>',
     },
@@ -87,6 +87,32 @@
       group: "warn",
       icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="20"/></svg>',
     },
+  };
+
+  // The user-facing name of a stage or a job status.
+  //
+  // A track stage reads its name from the icons above, so the line beside a
+  // track always agrees with that icon's tooltip and a new stage only has to be
+  // described once. Job-level statuses are listed here, and anything unlisted
+  // is humanised, so a machine name such as "enriching-metadata" or "running"
+  // can never reach the page.
+  const JOB_LABELS = {
+    queued: "Waiting to start",
+    running: "Processing in progress",
+    completed: "Processing complete",
+    failed: "Processing failed",
+  };
+
+  window.SPOTM3U_STATUS_LABEL = function statusLabel(status) {
+    const entry = window.SPOTM3U_STATUS_ICONS[status];
+    if (entry) {
+      return entry.label;
+    }
+    if (JOB_LABELS[status]) {
+      return JOB_LABELS[status];
+    }
+    const name = String(status || "").replace(/[-_]+/g, " ");
+    return name.charAt(0).toUpperCase() + name.slice(1);
   };
 
   // Fill every [data-status-icon] element with its Lucide icon, group colour,

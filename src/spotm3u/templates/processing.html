@@ -80,38 +80,9 @@
         return n.toLocaleString();
       }
 
-      const stageLabels = {
-        queued: "Queued",
-        "resolving-local": "Finding local audio",
-        searching: "Searching online",
-        searched: "Search complete",
-        "validating-source": "Checking source",
-        downloading: "Downloading",
-        "validating-audio": "Checking downloaded audio",
-        complete: "Complete",
-        failed: "Failed",
-        ambiguous: "Ambiguous",
-        skipped: "Skipped",
-      };
-
-      function stageLabel(status) {
-        return stageLabels[status] || status;
-      }
-
-      function statusLabel(status) {
-        switch (status) {
-          case "queued":
-            return "Waiting to start";
-          case "running":
-            return "Processing in progress";
-          case "completed":
-            return "Processing complete";
-          case "failed":
-            return "Processing failed";
-          default:
-            return status;
-        }
-      }
+      // One source for every stage and job status name, including the stages
+      // that had no entry here before (see _status_icons.html).
+      const statusLabel = window.SPOTM3U_STATUS_LABEL;
 
       function progressFraction(state) {
         const total = state.progress_total || state.playlist.total_tracks || 1;
@@ -255,7 +226,7 @@
         statSuccessful.textContent = fmtNumber(state.successful);
         statFailed.textContent = fmtNumber(state.failed);
         currentTrackText.textContent = state.current_track
-          ? "Current: " + state.current_track.title + " — " + stageLabel(state.current_track.status)
+          ? "Current: " + state.current_track.title + " — " + statusLabel(state.current_track.status)
           : "";
         renderEta(state);
         jobError.hidden = !state.error;
@@ -334,8 +305,8 @@
         return item;
       }
 
-      // Refresh an existing row in place so a status change never rebuilds the
-      // list, which would otherwise reset its scroll position every second.
+      // Refresh an existing row in place so a status change only touches the
+      // rows that changed.
       function updateTrackRow(item, track) {
         const status = track.resolution || track.status || "queued";
         item.className = "track-" + status;
@@ -381,7 +352,6 @@
 
       // Tracks keep their playlist order, so the list can be updated by index.
       function renderTracks(tracks) {
-        const scrollTop = trackList.scrollTop;
         for (let index = 0; index < tracks.length; index += 1) {
           const existing = trackList.children[index];
           if (existing) {
@@ -393,7 +363,6 @@
         while (trackList.children.length > tracks.length) {
           trackList.lastElementChild.remove();
         }
-        trackList.scrollTop = scrollTop;
       }
 
       async function poll() {

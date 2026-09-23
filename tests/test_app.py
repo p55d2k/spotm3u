@@ -249,6 +249,22 @@ def test_the_import_page_uses_the_native_picker_when_the_bridge_is_present() -> 
     assert 'id="export-file"' in homepage
 
 
+def test_live_pages_take_their_status_wording_from_one_shared_place() -> None:
+    templates = Path(create_app().root_path) / "templates"
+
+    icons = (templates / "_status_icons.html").read_text(encoding="utf-8")
+    assert "window.SPOTM3U_STATUS_LABEL" in icons
+    # Anything without an entry is read as words, not as its identifier.
+    assert 'replace(/[-_]+/g, " ")' in icons
+
+    for name in ("processing.html", "batch_processing.html"):
+        page = (templates / name).read_text(encoding="utf-8")
+        assert "window.SPOTM3U_STATUS_LABEL" in page
+        # Each page kept its own map of stage names, which is how a stage the
+        # map did not know ("enriching-metadata") reached the screen as a slug.
+        assert "stageLabels" not in page
+
+
 def test_the_missing_files_confirmation_is_a_keyboard_accessible_dialog() -> None:
     app = create_app()
     css = (Path(app.static_folder) / "style.css").read_text(encoding="utf-8")

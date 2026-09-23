@@ -167,19 +167,10 @@
         // by second, which read as a broken countdown.
         return formatRemaining(secs * remainingCount);
       }
-      const stageLabels = {
-        queued: "Waiting to start",
-        "resolving-local": "Finding local audio",
-        searching: "Searching online",
-        searched: "Search complete",
-        "validating-source": "Checking source",
-        downloading: "Downloading",
-        "validating-audio": "Checking downloaded audio",
-        complete: "Complete",
-        failed: "Failed",
-        ambiguous: "Ambiguous",
-      };
-      const stageLabel = (stage) => stageLabels[stage] || stage;
+      // One source for every stage and job status name, including the stages
+      // and playlist statuses that had no entry here before (see
+      // _status_icons.html).
+      const statusLabel = window.SPOTM3U_STATUS_LABEL;
 
       // Compact rows with the album art, the Lucide status icon (hover for the
       // meaning), and a truncated title so long names never blow up the row.
@@ -246,8 +237,8 @@
         return item;
       }
 
-      // Refresh an existing row in place so a status change never rebuilds the
-      // list, which would otherwise reset its scroll position on every poll.
+      // Refresh an existing row in place so a poll only touches the rows that
+      // changed.
       function updateTrackRow(item, track, playlistId) {
         const status = track.resolution || track.status || "queued";
         item.className = "track-" + status;
@@ -293,7 +284,6 @@
 
       // Tracks keep their playlist order, so each list is updated by index.
       function renderTrackRows(container, tracks, playlistId) {
-        const scrollTop = container.scrollTop;
         for (let index = 0; index < tracks.length; index += 1) {
           const existing = container.children[index];
           if (existing) {
@@ -305,7 +295,6 @@
         while (container.children.length > tracks.length) {
           container.lastElementChild.remove();
         }
-        container.scrollTop = scrollTop;
       }
 
       function createPlaylistView(playlist) {
@@ -329,7 +318,7 @@
 
       function updatePlaylistView(view, playlist) {
         view.item.className = "batch-playlist" + (playlist.status === "running" ? " active" : "");
-        view.detail.textContent = stageLabel(playlist.status) + " · " +
+        view.detail.textContent = statusLabel(playlist.status) + " · " +
           playlist.searched + " / " + playlist.playlist.total_tracks + " found · " +
           playlist.completed + " / " + playlist.playlist.total_tracks + " tracks · " +
           playlist.successful + " successful · " + playlist.failed + " failed";
@@ -338,7 +327,7 @@
         if (playlist.current_track) {
           view.activeTrack.hidden = false;
           view.activeTrack.textContent = "Current: " + playlist.current_track.title +
-            " — " + stageLabel(playlist.current_track.status);
+            " — " + statusLabel(playlist.current_track.status);
         } else {
           view.activeTrack.hidden = true;
         }
@@ -377,11 +366,11 @@
         const active = state.playlists.find((playlist) => playlist.status === "running");
         currentTrack.textContent = active && active.current_track
           ? "Active playlist: " + active.playlist.name + " · Current: " +
-            active.current_track.title + " — " + stageLabel(active.current_track.status)
+            active.current_track.title + " — " + statusLabel(active.current_track.status)
           : active ? "Active playlist: " + active.playlist.name : "";
         renderEta(state);
-        // Reuse each playlist's DOM so its track list keeps its scroll position
-        // while the status poll refreshes every 700 ms.
+        // Reuse each playlist's DOM so a refresh every 700 ms only updates the
+        // rows that changed.
         const seen = new Set();
         for (const playlist of state.playlists) {
           const key = playlist.playlist.id;
