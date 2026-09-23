@@ -174,9 +174,10 @@ files - so the action downloads the correct platform installer instead:
 
 In the desktop shell the download goes through the `WindowControls`
 `download_update` bridge into the Downloads folder with an **Open folder** toast
-(the same flow as saving an M3U). The toast shows the same layout as the
-playlist-save toast: the downloaded filename plus the next step, *quit SpotM3U
-and open the file to install*. A finished download also clears the banner and
+(the same flow as saving an M3U). Both flows report through the shared toast in
+`templates/_feedback.html`, so the download shows the same layout as the
+playlist save: the downloaded filename plus the next step, *quit SpotM3U and
+open the file to install*. A finished download also clears the banner and
 remembers the dismissal for that version, so the notice stops prompting once the
 installer is on disk. In a plain browser the asset URL opens in a new tab.
 Downloads travel over HTTPS to the GitHub release asset URL only and are never

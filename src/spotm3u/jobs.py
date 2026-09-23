@@ -65,6 +65,16 @@ def _missing_output(result: TrackResolution | None) -> bool:
     return local_path is None or _missing_file(str(local_path))
 
 
+# Shown when a job dies outside the per-track error handling. The exception is
+# never surfaced: the traceback goes to the log (see the ``track_log.exception``
+# call that accompanies these messages) and the page gets something the user
+# can act on. A timeout is named because it is the one failure the user can
+# influence; anything else only says the conversion stopped.
+JOB_FAILURE_MESSAGE = (
+    "The conversion stopped unexpectedly. Retry the playlist to finish the remaining tracks."
+)
+JOB_TIMEOUT_MESSAGE = "The conversion timed out. Retry the playlist to finish the remaining tracks."
+
 TRACK_STATUS_TERMINAL = {
     "local": "complete",
     "downloaded": "complete",
@@ -357,12 +367,17 @@ class ProcessingJob:
                 self.failed,
             )
         except Exception as exc:  # pragma: no cover - defensive final state
+            message = (
+                JOB_TIMEOUT_MESSAGE if isinstance(exc, JobTimeoutError) else JOB_FAILURE_MESSAGE
+            )
             with self._lock:
                 self._current_index = None
                 self._pending = None
-                self._error = str(exc)
+                self._error = message
                 self._status = "failed"
                 self._completed_at = time.time()
+            # The user-facing message above is what the UI shows; the traceback
+            # stays here for debugging.
             track_log.exception("job failed: %s", exc)
 
     def _resolve_all(

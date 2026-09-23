@@ -1,4 +1,6 @@
 {% include "_titlebar.html" %}
+{# Before the page's own scripts so every async action can report through it. #}
+{% include "_feedback.html" %}
 <div class="app-frame">
   {% include "_sidebar.html" %}
   <div class="app-content">

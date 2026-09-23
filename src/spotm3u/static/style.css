@@ -1584,16 +1584,43 @@ form:has(.mode-option) > button {
   transform: translate(-50%, 0);
 }
 
+/* Tones: the icon and the border carry the state, so the same toast works for
+   a finished download, a playlist that skips tracks, and a failed save. */
+.app-toast.is-ok {
+  border-color: var(--color-success-border);
+}
+
+.app-toast.is-warn {
+  border-color: var(--color-warning-border);
+}
+
+.app-toast.is-err {
+  border-color: var(--color-danger-border);
+}
+
 .toast-icon {
   align-items: center;
-  background: var(--color-success-subtle);
   border-radius: var(--radius-full, 999px);
-  color: var(--color-success-ink);
   display: inline-flex;
   flex: none;
   height: 1.75rem;
   justify-content: center;
   width: 1.75rem;
+}
+
+.app-toast.is-ok .toast-icon {
+  background: var(--color-success-subtle);
+  color: var(--color-success-ink);
+}
+
+.app-toast.is-warn .toast-icon {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-ink);
+}
+
+.app-toast.is-err .toast-icon {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger-ink);
 }
 
 .toast-icon svg {

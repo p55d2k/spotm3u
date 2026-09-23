@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-from spotm3u.jobs import JobManager, JobStartError, ProcessingJob
+from spotm3u.jobs import JOB_FAILURE_MESSAGE, JobManager, JobStartError, ProcessingJob
 from spotm3u.models import ResolvedTrack, Track
 from spotm3u.resolution import PreparedTrack, TrackResolution
 
@@ -322,7 +322,10 @@ def test_job_failure_sets_error_and_failed_status(tmp_path: Path) -> None:
 
     snapshot = job.as_dict()
     assert snapshot["status"] == "failed"
-    assert snapshot["error"] == "boom"
+    # The page gets something the user can act on; the exception text goes to
+    # the log with its traceback instead of into the UI.
+    assert snapshot["error"] == JOB_FAILURE_MESSAGE
+    assert "boom" not in snapshot["error"]
 
 
 def test_job_manager_registers_and_returns_jobs(tmp_path: Path) -> None:
@@ -575,7 +578,10 @@ def test_job_parallel_resolution_recovers_when_a_track_raises(tmp_path: Path) ->
 
     snapshot = job.as_dict()
     assert snapshot["status"] == "failed"
-    assert snapshot["error"] == "exploded"
+    # The page reports the failure in user-facing words; "exploded" stays in the
+    # log with its traceback.
+    assert snapshot["error"] == JOB_FAILURE_MESSAGE
+    assert "exploded" not in snapshot["error"]
 
 
 def test_job_m3u_options_control_relative_and_extended_output(tmp_path: Path) -> None:

@@ -1,0 +1,109 @@
+{# Shared transient feedback for asynchronous operations.
+
+   Every async action reports itself through ``window.SpotM3UFeedback`` instead
+   of building its own toast, so saves, update downloads and failures all look
+   and behave the same: an icon from the same set the track statuses use (see
+   ``_status_icons.html``), a short headline, one muted line of detail, and at
+   most one action button.
+
+   Tones match the vocabulary the rest of the UI speaks — success, warning,
+   error — and each carries its own colour pair and how long it stays up.
+   Errors are deliberately longer-lived than successes: a failure the user
+   might have missed is worse than a stale confirmation. Toasts cover transient
+   events only; errors that concern the page itself stay as persistent inline
+   messages.
+
+   Messages here are user-facing text. Technical detail belongs in the console
+   (and the SpotM3U log), so callers log the caught error themselves. #}
+<script>
+  (() => {
+    const ICONS = {
+      // Same Lucide shapes as the "complete", "ambiguous" and "failed" statuses.
+      ok: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+      warn: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+      err: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    };
+    const TIMEOUTS = { ok: 5000, warn: 12000, err: 10000 };
+
+    let toast = null;
+    let hideTimer = null;
+
+    function ensureToast() {
+      if (toast) return toast;
+      toast = document.createElement("div");
+      toast.id = "spotm3u-toast";
+      toast.className = "app-toast";
+      // Polite: every toast follows a click, so none of them has to interrupt
+      // whatever the screen reader is already saying.
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
+      toast.hidden = true;
+      document.body.appendChild(toast);
+      return toast;
+    }
+
+    function dismiss() {
+      if (!toast) return;
+      window.clearTimeout(hideTimer);
+      toast.classList.remove("is-visible");
+      toast.hidden = true;
+    }
+
+    function show({ tone = "ok", title = "", detail = "", action = null, timeout } = {}) {
+      const safeTone = ICONS[tone] ? tone : "ok";
+      const node = ensureToast();
+      node.className = "app-toast is-" + safeTone;
+      node.textContent = "";
+
+      const icon = document.createElement("span");
+      icon.className = "toast-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = '<svg viewBox="0 0 24 24">' + ICONS[safeTone] + "</svg>";
+      node.appendChild(icon);
+
+      const text = document.createElement("div");
+      text.className = "toast-text";
+      const headline = document.createElement("strong");
+      headline.textContent = title;
+      text.appendChild(headline);
+      if (detail) {
+        const muted = document.createElement("span");
+        muted.className = "toast-muted";
+        muted.textContent = detail;
+        text.appendChild(muted);
+      }
+      node.appendChild(text);
+
+      if (action && action.label) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "toast-action";
+        button.textContent = action.label;
+        button.addEventListener("click", () => {
+          dismiss();
+          action.onClick();
+        });
+        node.appendChild(button);
+      }
+
+      node.hidden = false;
+      window.clearTimeout(hideTimer);
+      window.requestAnimationFrame(() => node.classList.add("is-visible"));
+      const delay = timeout === undefined ? TIMEOUTS[safeTone] : timeout;
+      if (delay > 0) {
+        hideTimer = window.setTimeout(dismiss, delay);
+      }
+    }
+
+    const withTone = (tone) => (title, detail, options) =>
+      show({ ...options, tone, title, detail });
+
+    window.SpotM3UFeedback = {
+      show,
+      dismiss,
+      success: withTone("ok"),
+      warning: withTone("warn"),
+      error: withTone("err"),
+    };
+  })();
+</script>
