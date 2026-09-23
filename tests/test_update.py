@@ -245,6 +245,15 @@ def test_the_update_notice_ships_in_the_sidebar_footer() -> None:
     # It belongs in the sidebar footer beside the theme toggle. As a page-level
     # banner it pushed the whole page down every time the check resolved.
     assert "data-update-notice" in page.split('class="sidebar-footer"', 1)[1]
+    # The toast's "Release notes" action has to go through the shell bridge:
+    # window.open does nothing in the desktop WebView, which is how the link
+    # used to do nothing at all. A browser run keeps window.open as the fallback.
+    notice = (Path(create_app().root_path) / "templates" / "_update_notice.html").read_text(
+        encoding="utf-8"
+    )
+    assert "api.open_url(target)" in notice
+    assert 'typeof api.open_url === "function"' in notice
+    assert 'window.open(target, "_blank", "noopener")' in notice
     sidebar = (Path(create_app().root_path) / "templates" / "_sidebar.html").read_text(
         encoding="utf-8"
     )

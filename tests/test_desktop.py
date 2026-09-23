@@ -635,6 +635,44 @@ def test_open_at_reports_missing_files(tmp_path, monkeypatch) -> None:
     assert controls.open_at(str(tmp_path / "missing.m3u")) == err
 
 
+def test_open_url_opens_the_page_in_the_default_browser(tmp_path, monkeypatch) -> None:
+    opened: list[tuple[str, int]] = []
+
+    def fake_open(url, new=0):
+        opened.append((url, new))
+        return True
+
+    monkeypatch.setattr(desktop.webbrowser, "open", fake_open)
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    result = controls.open_url("https://github.com/p55d2k/spotm3u/releases/tag/v1.3.0")
+
+    assert result == {"opened": True}
+    # A new tab/window where the platform supports the distinction.
+    assert opened == [("https://github.com/p55d2k/spotm3u/releases/tag/v1.3.0", 2)]
+
+
+def test_open_url_refuses_anything_that_is_not_a_web_page(tmp_path, monkeypatch) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr(desktop.webbrowser, "open", lambda url, new=0: opened.append(url) or True)
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    # The page may only ask the shell to open a web page, never a local file
+    # or another scheme the OS would run.
+    for url in ("file:///etc/passwd", "javascript:alert(1)", "", "   "):
+        assert controls.open_url(url) == {"error": "That link cannot be opened."}
+    assert opened == []
+
+
+def test_open_url_reports_when_no_browser_could_be_opened(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(desktop.webbrowser, "open", lambda url, new=0: False)
+    controls, _window, _app, _job = _controls_client(tmp_path)
+
+    assert controls.open_url("https://github.com/p55d2k/spotm3u/releases") == {
+        "error": "The page could not be opened in a browser."
+    }
+
+
 def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeypatch) -> None:
     created: dict[str, Any] = {}
 

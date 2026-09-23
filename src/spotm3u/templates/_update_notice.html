@@ -45,8 +45,22 @@
       })
       .catch(() => {});
 
-    const openPage = (url) => () =>
-      window.open(url || RELEASES, "_blank", "noopener");
+    // The WebView has no browser of its own, so window.open silently does
+    // nothing in the desktop shell: hand the URL to the shell bridge instead,
+    // and keep window.open for a browser run.
+    const openPage = (api, url) => async () => {
+      const target = url || RELEASES;
+      if (api && typeof api.open_url === "function") {
+        try {
+          const result = await api.open_url(target);
+          if (!result || !result.error) return;
+          console.error("opening the release page failed:", result.error);
+        } catch (error) {
+          console.error("opening the release page failed", error);
+        }
+      }
+      window.open(target, "_blank", "noopener");
+    };
 
     const openFolder = (api, path) => async () => {
       try {
@@ -92,7 +106,7 @@
       // steps, so the toast carries both: what changed, and where it landed.
       feedback.success(result.name, "Downloaded to Downloads. Quit SpotM3U, then open it to install.", {
         actions: [
-          { label: "Release notes", onClick: openPage(info.release_url) },
+          { label: "Release notes", onClick: openPage(api, info.release_url) },
           { label: "Open folder", onClick: openFolder(api, result.path) },
         ],
         timeout: 7000,

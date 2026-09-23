@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import webbrowser
 from pathlib import Path
 
 import requests
@@ -348,6 +349,27 @@ class WindowControls:
         except OSError as error:
             _LOGGER.warning("could not reveal %s in the file manager: %s", target, error)
             return {"error": "The file manager could not be opened."}
+        return {"opened": True}
+
+    def open_url(self, url: str) -> dict[str, str | bool]:
+        """Open a web page in the user's default browser.
+
+        Powers the toast's "Release notes" action. The WebView has no browser
+        of its own — ``window.open`` from the page does nothing there — so the
+        page hands the URL to this bridge and the OS opens it. Only http(s)
+        pages are accepted, so the page can never ask the shell to run
+        anything else.
+        """
+        target = str(url or "").strip()
+        if not target.startswith(("http://", "https://")):
+            return {"error": "That link cannot be opened."}
+        try:
+            opened = webbrowser.open(target, new=2)
+        except (webbrowser.Error, OSError) as error:
+            _LOGGER.warning("could not open %s in a browser: %s", target, error)
+            return {"error": "The page could not be opened in a browser."}
+        if not opened:
+            return {"error": "The page could not be opened in a browser."}
         return {"opened": True}
 
     def _unique_download_target(self, name: str) -> Path:
