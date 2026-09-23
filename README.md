@@ -189,16 +189,19 @@ documented in [troubleshooting](docs/troubleshooting.md).
 
 ## Documentation
 
+- [Installation and usage](README.md) — getting started, platforms, and config
+- [Downloads](docs/downloads.md) — how tracks are downloaded, embedded metadata, lyrics
+- [Web application](docs/web.md) — upload, processing, result pages, media player
+- [Artwork](docs/artwork.md) — album covers and artist images
+- [Exportify format](docs/exportify.md) — how your exported playlists are parsed
+- [Matching and source selection](docs/matching.md) — local and online matching
+- [M3U output](docs/m3u.md) — playlist generation semantics
+- [Security design](docs/security.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Development](docs/development.md) — local setup, checks, and project layout
 - [Architecture](docs/architecture.md) — application boundaries and data flow
 - [Packaging](docs/packaging.md) — PyInstaller bundles and FFmpeg staging
 - [Releases](docs/releases.md) — tags, CI builds, verification, and publishing
-- [Troubleshooting](docs/troubleshooting.md) — configuration and download issues
-- [Exportify format](docs/exportify.md) — parser boundary and playlist semantics
-- [Matching and source validation](docs/matching.md)
-- [M3U output](docs/m3u.md)
-- [Security design](docs/security.md)
-- [Screenshot plan](docs/screenshots.md)
 
 ## Contributing and security
 

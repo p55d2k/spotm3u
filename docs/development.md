@@ -103,6 +103,6 @@ credentials, browser cookie databases, downloaded media, or machine-specific
 paths. `SPOTM3U_LOG_LEVEL=DEBUG` enables detailed diagnostic logging without
 changing the default log level.
 
-If UI changes affect a documented state, update the
-[screenshot plan](screenshots.md) and recapture the affected PNGs from the
+If a UI change affects the screenshots embedded in the README or
+[web.md](web.md), recapture the affected PNGs in `docs/images/` from the
 current application.

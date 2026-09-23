@@ -1,25 +1,17 @@
 # Web Application
 
-Screenshot references and capture requirements are maintained in the
-[screenshot plan](screenshots.md). The playlist selection and processing
-screenshots are embedded beside their corresponding sections below; keep
-personal paths, credentials, cookies, and library names out of every capture.
+The interface is a Flask application served locally with Jinja2 templates and
+vanilla HTML/CSS/JS. The flow below is the whole user journey, from uploading an
+Exportify ZIP to downloading an M3U.
 
-## Technology
-
-Use Flask with:
-
-- Jinja2
-- vanilla HTML/CSS/JS unless existing project requirements require otherwise
-
-## User Flow
-
+```text
 Exportify
 → ZIP upload
 → playlist selection
 → processing
 → result
 → M3U download
+```
 
 The playlist selection page presents each parsed playlist as an independent
 button/card. Checkboxes also support Select all, Deselect all, and
@@ -58,9 +50,9 @@ The choice belongs to the job: the resolver is built once when processing
 starts, a retry reuses the same mode, and starting an already-started playlist
 returns the existing job rather than switching its mode.
 
-## Processing States
+## Processing states
 
-Useful states include:
+Each track passes through a sequence of states as it moves toward resolution:
 
 - queued
 - resolving-local
@@ -74,27 +66,15 @@ Useful states include:
 - failed
 - ambiguous
 
-## Important UI Behavior
-
-Do not show:
-
-"Failed: no candidate passed source validation"
-
-when the system simply has not yet attempted plausible candidates.
-
-Differentiate:
-
-- no plausible candidates found
-- candidate rejected before download
-- download failed
-- downloaded audio failed validation
-- multiple candidates remained ambiguous
+The pages distinguish the reasons a track did not resolve, and never claim a
+candidate was rejected when one was not yet attempted. The failure cases shown
+to the user are: no plausible candidates found, candidate rejected before
+download, download failed, downloaded audio failed validation, and multiple
+candidates remained ambiguous.
 
 ## Progress
 
-For each track, show the current meaningful stage.
-
-Examples:
+For each track, the live view shows the current meaningful stage — for example:
 
 - Finding local audio
 - Searching for source
@@ -107,18 +87,9 @@ Examples:
 
 ## Result
 
-Display:
-
-- total tracks
-- successful tracks
-- local matches
-- downloaded tracks
-- failed tracks
-- ambiguous tracks
-- rejected tracks
-- uncertain tracks
-
-For failures, display the actual processing reason.
+The finished result page shows the summary counts — total, successful, local
+matches, downloaded, failed, ambiguous, rejected, and uncertain tracks — and,
+for failures, the actual processing reason.
 
 The finished result is available at `GET /processing/<job_id>/<playlist_id>/result`,
 which renders per-track outcomes (status and reason) alongside the summary
@@ -299,10 +270,8 @@ later runs match them locally instead of re-downloading. The former default
 `<MUSIC_LIBRARY>/SpotM3U-downloads/` is renamed to the new name when a download
 directory is resolved (see [downloads](downloads.md)).
 
-## Important
-
-A track should only be marked successful after the final local audio file has passed the relevant validation.
-
-A track should not be marked failed merely because its metadata was imperfect.
+A track is marked successful only after its final local audio file has passed
+the relevant validation, and it is never marked failed merely because its
+metadata was imperfect.
 
 ![Completed result page](images/result-page.png)

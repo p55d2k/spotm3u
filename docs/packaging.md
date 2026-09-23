@@ -1,9 +1,7 @@
 # Packaging
 
-Packaging screenshots are intentionally not planned: the standalone archive
-is better documented by its supported-platform table and smoke test than by a
-static image. UI screenshots belong to the
-[screenshot plan](screenshots.md).
+The packaged application is documented by its supported-platform table and
+smoke test rather than by screenshots.
 
 Standalone builds are PyInstaller one-folder bundles, wrapped in a normal
 `SpotM3U.app` application bundle on macOS. The source application and the

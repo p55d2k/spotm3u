@@ -30,7 +30,7 @@ of possibly borrowing a wrong local cover.
 
 ### Reading a local file's embedded art
 
-`_embedded_artwork` returns only an unambiguous front cover: an explicit
+SpotM3U uses only an unambiguous front cover from a local file: an explicit
 type-3 (front cover) APIC frame, or the sole APIC frame in the file. When
 several frames exist and none is marked as a front cover (a back cover or
 artist photo could be picked), the file is treated as having no cover rather
@@ -108,9 +108,8 @@ the requested one **exactly** once normalized is even considered — Deezer's
 ranking puts `Adèle & Zalem`, `Adele & Andy` and `Mortelle Adèle` ahead of the
 requested `Adele`. Popularity only orders which candidates are worth checking, so
 the common case does not spend its requests on an obscure namesake; at most three
-candidates have their releases checked. Rejections are logged at debug level with
-the candidate ids and the reason (`spotm3u.artwork_sources`); successful
-resolutions log the artist id, the confidence and the evidence.
+candidates have their releases checked. Rejections and successful resolutions
+(artist id, confidence, and the evidence behind it) are logged at debug level.
 
 Artist images are cached under `<download_dir>/artwork_cache/artists/`, keyed by
 normalized artist alone (a separate directory from the release cache, so artist
@@ -140,10 +139,10 @@ Disabling either option skips its network lookups as well as its write, and the
 
 ## Multiple artists
 
-The structured multi-artist model (Task 39) is preserved. Artwork identity uses
-the album artist when present, otherwise the first structured artist. Artist
-names are **never joined** into a malformed lookup string such as
-`Artist1Artist2`. ID3 metadata still records every collaborating artist.
+Tracks can carry several credited artists. Album artwork identity uses the album
+artist when present, otherwise the first structured artist. Artist names are
+**never joined** into a malformed lookup string such as `Artist1Artist2`.
+ID3 metadata still records every collaborating artist.
 
 ## Caching
 

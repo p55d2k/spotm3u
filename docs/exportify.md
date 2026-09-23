@@ -1,153 +1,61 @@
-# Exportify Integration
+# Exportify
 
-## Purpose
-
-Exportify is the source of Spotify playlist metadata.
-
-The Flask application does not authenticate with Spotify and does not communicate with Spotify directly.
-
-The user authenticates through Exportify, exports their playlists, downloads the ZIP, and uploads it to this application.
-
----
-
-## Required Workflow
+SpotM3U gets its playlist data from [Exportify](https://exportify.net/): you
+authenticate with Spotify inside Exportify, export your playlists, and download
+the resulting ZIP. SpotM3U never talks to Spotify directly — it does not use
+the Spotify Web API, it does not scrape Spotify's site, and it never asks for
+your Spotify password. Authentication happens entirely in Exportify; SpotM3U
+only ever receives the downloaded ZIP.
 
 ```text
 User
  ↓
-Exportify
- ↓
-Spotify authentication in Exportify
- ↓
-Export All
+Exportify — Spotify authentication and "Export All"
  ↓
 ZIP download
  ↓
-Flask upload
+SpotM3U upload
  ↓
 Exportify parser
 ```
 
-The application must never ask the user for their Spotify password.
+## What the parser produces
 
----
+The upload is an **untrusted ZIP** (see the [security notes](security.md)), and
+the parser only reads it — uploaded files are never executed. The parser
+converts Exportify's files into the generic `Playlist` and `Track` models used
+by the rest of the application, so nothing outside the parser needs to know
+about Exportify's CSV column names, filenames, or internal structure.
 
-## Important Parsing Rule
-
-Do not assume the structure of an Exportify export from memory.
-
-Before implementing or changing the parser:
-
-1. Inspect an actual Exportify ZIP.
-2. Identify all relevant files.
-3. Inspect headers/fields.
-4. Determine how playlists are represented.
-5. Determine how tracks are represented.
-6. Determine how ordering is represented.
-7. Determine how duplicate tracks are represented.
-8. Check encoding and Unicode behavior.
-9. Check whether multiple export formats exist.
-
-Parser behavior should be based on the actual input.
-
----
-
-## Parser Boundary
-
-The parser converts Exportify-specific data into generic models:
-
-```text
-Exportify files
-      ↓
-Exportify parser
-      ↓
-Playlist
-Track
-```
-
-Code outside `exportify/` should not need to know about Exportify's CSV column names, filenames, or internal structure.
-
----
-
-## Playlist Requirements
-
-For every playlist, preserve:
+For every playlist it preserves:
 
 - playlist name
-- stable identifier where available
+- a stable identifier where Exportify provides one
 - track order
 - track count where available
-- track entries
-- intentional duplicates
+- track entries, including **intentional duplicates**
+- every available track field: title, artist(s), album, duration, Spotify
+  track ID, and Spotify URL
 
----
+Missing fields become empty values rather than failing the whole export.
 
-## Track Requirements
+## Order and duplicates
 
-Extract where available:
-
-- title
-- artist(s)
-- album
-- duration
-- Spotify track ID
-- Spotify URL
-
-Missing fields should become `None` or an appropriate empty value rather than causing unnecessary failure.
-
----
+Track order is significant and is preserved exactly. A playlist that contains
+`A B A C` stays `A B A C`: two entries with the same Spotify ID are two entries,
+not one. Tracks are only de-duplicated when there is strong evidence that the
+duplicate is an artifact of the parsing itself rather than an actual playlist
+entry.
 
 ## Unicode
 
-Exports may contain:
+Exports regularly contain accented characters, CJK text, emoji, and
+non-Latin artist names. The parser is Unicode-safe and keeps the original
+values as they were exported.
 
-- accented characters
-- CJK characters
-- emoji
-- non-Latin artist names
-- punctuation from different Unicode ranges
+## Handling malformed exports
 
-Use Unicode-safe parsing and retain the original values.
-
----
-
-## Malformed Input
-
-The parser should distinguish between:
-
-- completely invalid export
-- missing expected files
-- malformed individual rows
-- missing optional fields
-- empty playlists
-- empty exports
-
-Do not silently produce incorrect playlist data.
-
----
-
-## Order and Duplicates
-
-Track order is significant.
-
-If a playlist contains:
-
-```text
-A
-B
-A
-C
-```
-
-the parsed playlist must contain:
-
-```text
-A
-B
-A
-C
-```
-
-Do not deduplicate tracks merely because they have the same Spotify ID.
-
-Only remove duplicates when there is strong evidence that the duplicate is an artifact of parsing rather than an actual playlist entry.
+The parser distinguishes between a completely invalid export, missing expected
+files, malformed individual rows, missing optional fields, and empty playlists
+or exports. It never silently produces incorrect playlist data — a damaged
+export is reported rather than guessed at.
