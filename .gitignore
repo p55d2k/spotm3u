@@ -22,6 +22,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Per-file timing dumps (e.g. `time uv run pytest tests/test_app.py`)
+tests/*.time
+
 # Build / packaging
 build/
 dist/
