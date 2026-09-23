@@ -49,6 +49,7 @@
       const api = window.pywebview && window.pywebview.api;
       if (api && typeof api.download_update === "function" && info.asset_url) {
         download.disabled = true;
+        download.setAttribute("aria-busy", "true");
         download.textContent = "Downloading…";
         let result;
         try {
@@ -61,6 +62,7 @@
         // Always restore the button: a failed or finished download must not
         // leave it stuck on "Downloading…".
         download.disabled = false;
+        download.removeAttribute("aria-busy");
         download.textContent = "Download update";
         if (!result || result.error) {
           feedback.error(

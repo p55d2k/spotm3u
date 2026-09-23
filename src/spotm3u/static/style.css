@@ -60,6 +60,7 @@
   --color-text-faint: #8a92a1;
   --color-accent: #2364e6;
   --color-accent-hover: #1b53c7;
+  --color-accent-active: #1745a5;
   --color-accent-subtle: #e8f0fd;
   --color-accent-ink: #1d56bd;
   --color-on-accent: #ffffff;
@@ -70,6 +71,8 @@
   --color-warning-subtle: #fbf3e0;
   --color-warning-ink: #7d4f05;
   --color-danger: #c0382b;
+  --color-danger-hover: #a82f23;
+  --color-danger-active: #8f281e;
   --color-danger-subtle: #fbe9e7;
   --color-danger-ink: #9c2b20;
   /* Translucent edges for tinted surfaces; one alpha per role so the error,
@@ -106,6 +109,7 @@
   --color-text-faint: #6d7686;
   --color-accent: #4d8dff;
   --color-accent-hover: #6aa1ff;
+  --color-accent-active: #3a7bf0;
   --color-accent-subtle: #213351;
   --color-accent-ink: #a9c8ff;
   --color-on-accent: #0b1220;
@@ -116,6 +120,8 @@
   --color-warning-subtle: #352b14;
   --color-warning-ink: #ebc069;
   --color-danger: #ea6a5c;
+  --color-danger-hover: #f08377;
+  --color-danger-active: #d8574a;
   --color-danger-subtle: #3b211f;
   --color-danger-ink: #f2998f;
   /* The same border roles as the light theme, tuned for dark surfaces. */
@@ -211,6 +217,19 @@ section:focus-visible {
 
 [hidden] {
   display: none !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Icons                                                               */
+/* ------------------------------------------------------------------ */
+
+/* Every icon a template draws comes from _icons.html. This is its default
+   size; a context that needs a smaller one (a sidebar step, a back link)
+   overrides it further down the file. */
+.ui-icon {
+  flex: none;
+  height: 1.25rem;
+  width: 1.25rem;
 }
 
 /* ------------------------------------------------------------------ */
@@ -336,10 +355,22 @@ main.page > * {
 .nav-icon {
   align-items: center;
   display: inline-flex;
-  font-size: var(--text-md);
   height: 1.25rem;
   justify-content: center;
   width: 1.25rem;
+}
+
+/* The theme toggle draws both icons and CSS reveals the one for the theme it
+   switches *to*, so the glyph always matches the label beside it. */
+.theme-icon {
+  display: none;
+  height: 1rem;
+  width: 1rem;
+}
+
+:root:not([data-theme="dark"]) .theme-icon-moon,
+:root[data-theme="dark"] .theme-icon-sun {
+  display: block;
 }
 
 .sidebar-block {
@@ -387,8 +418,8 @@ a.step-link:hover {
   text-decoration: none;
 }
 
-/* Leading icon for a step (Lucide, stroke-based; see _sidebar.html). It is
-   decorative, so state stays readable through the dot and the label. */
+/* Leading icon for a step (see _icons.html). It is decorative, so state stays
+   readable through the dot and the label. */
 .step-icon {
   color: var(--color-text-faint);
   flex: none;
@@ -422,13 +453,11 @@ a.step-link:hover {
   background: var(--color-success-subtle);
   border-color: transparent;
   color: var(--color-success-ink);
-  font-size: 0;
 }
 
-.step.complete .step-dot::before {
-  content: "✓";
-  font-size: var(--text-xs);
-  line-height: 1;
+.step-dot-check {
+  height: 0.75rem;
+  width: 0.75rem;
 }
 
 .step.current .step-dot {
@@ -451,24 +480,15 @@ a.step-link:hover {
   padding: var(--space-3);
 }
 
+/* A ghost button (see the button hierarchy below) that fills the sidebar
+   footer; only the layout it needs on top of the variant is set here. */
 .theme-toggle {
-  align-items: center;
-  background: transparent;
-  border: 0;
   border-radius: var(--radius-m);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  display: flex;
   font-size: var(--text-md);
-  font-weight: var(--weight-medium);
   gap: var(--space-3);
+  justify-content: flex-start;
   padding: var(--space-2) var(--space-3);
   width: 100%;
-}
-
-.theme-toggle:hover {
-  background: var(--state-hover);
-  color: var(--color-text);
 }
 
 .theme-toggle-label {
@@ -520,8 +540,11 @@ body.has-native-titlebar .titlebar {
 }
 
 .titlebar-mark {
-  color: var(--color-accent);
-  font-size: var(--text-base);
+  border-radius: var(--radius-xs);
+  display: block;
+  flex: none;
+  height: 1.25rem;
+  width: 1.25rem;
 }
 
 .titlebar-name {
@@ -575,6 +598,15 @@ body.has-native-titlebar .titlebar {
 .titlebar-button:hover {
   background: var(--state-hover);
   color: var(--color-text);
+}
+
+.titlebar-button:active {
+  background: var(--state-active);
+}
+
+.titlebar-button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .titlebar-button-close:hover {
@@ -654,8 +686,9 @@ body.has-native-titlebar .titlebar {
   margin-top: var(--space-2);
 }
 
-.back-link::before {
-  content: "←";
+.back-link-icon {
+  height: 0.875rem;
+  width: 0.875rem;
 }
 
 .back-link:hover {
@@ -728,6 +761,13 @@ main.page section > h2 {
 /* Buttons and inputs                                                  */
 /* ------------------------------------------------------------------ */
 
+/* One hierarchy, four variants: primary for the main action on a screen,
+   secondary for supporting actions, ghost for low-emphasis ones, and danger
+   for an operation that destroys or overwrites something. Every variant
+   defines the same states - default, hover, active, focus, disabled and
+   loading - so no control has to invent one of its own. */
+
+/* Primary. The base style, so an unlabelled <button> is the main action. */
 .button,
 button {
   align-items: center;
@@ -747,29 +787,70 @@ button {
   transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
-.button:hover,
-button:hover {
-  background: var(--color-accent-hover);
-  text-decoration: none;
-}
-
-button:focus-visible,
-.button:focus-visible {
-  box-shadow: var(--focus-ring);
-}
-
-button[disabled],
-.button[disabled] {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
 .button:visited {
   color: var(--color-on-accent);
 }
 
+/* States. A pressed or disabled control never keeps its hover feedback. */
+.button:hover:not([disabled]):not([aria-disabled="true"]),
+button:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--color-accent-hover);
+  text-decoration: none;
+}
+
+.button:active:not([disabled]):not([aria-disabled="true"]),
+button:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--color-accent-active);
+}
+
+.button:focus-visible,
+button:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.button[disabled],
+button[disabled],
+.button[aria-disabled="true"],
+button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.button[aria-busy="true"],
+button[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* The label stays put while the action is in flight and a spinner joins it,
+   so a slow request never leaves what looks like a dead button. */
+.button[aria-busy="true"]::before,
+button[aria-busy="true"]::before {
+  animation: spin 0.7s linear infinite;
+  border: 2px solid currentColor;
+  border-radius: var(--radius-full);
+  border-top-color: transparent;
+  content: "";
+  flex: none;
+  height: 0.875rem;
+  width: 0.875rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button[aria-busy="true"]::before,
+  button[aria-busy="true"]::before {
+    animation: none;
+  }
+}
+
+/* Secondary. A supporting action: a filled, quieter button that keeps its own
+   border so it reads as a control next to the primary one. */
 .button-secondary,
-button[type="button"],
 button.button-secondary {
   background: var(--color-muted-button);
   border-color: var(--color-line);
@@ -777,13 +858,62 @@ button.button-secondary {
   font-weight: var(--weight-medium);
 }
 
-.button-secondary:hover,
-button[type="button"]:hover,
-button.button-secondary:hover {
+.button-secondary:hover:not([disabled]):not([aria-disabled="true"]),
+button.button-secondary:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--state-hover);
   border-color: var(--color-line-strong);
 }
 
+.button-secondary:active:not([disabled]):not([aria-disabled="true"]),
+button.button-secondary:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--state-active);
+  border-color: var(--color-line-strong);
+}
+
+/* Ghost. A low-emphasis action - the theme toggle, and any other action that
+   should read as part of the surface until it is pointed at. */
+.button-ghost,
+button.button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+  justify-content: flex-start;
+}
+
+.button-ghost:hover:not([disabled]):not([aria-disabled="true"]),
+button.button-ghost:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--state-hover);
+  color: var(--color-text);
+}
+
+.button-ghost:active:not([disabled]):not([aria-disabled="true"]),
+button.button-ghost:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--state-active);
+  color: var(--color-text);
+}
+
+/* Danger. For an operation that removes or overwrites something. Nothing in
+   the app is destructive today, so no control uses this yet; it exists so the
+   first one that does is not invented on the spot. */
+.button-danger,
+button.button-danger {
+  background: var(--color-danger);
+  border-color: transparent;
+  color: var(--color-on-accent);
+}
+
+.button-danger:hover:not([disabled]):not([aria-disabled="true"]),
+button.button-danger:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--color-danger-hover);
+}
+
+.button-danger:active:not([disabled]):not([aria-disabled="true"]),
+button.button-danger:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--color-danger-active);
+}
+
+/* The one size modifier, shared by every variant. */
 .button-small {
   font-size: var(--text-sm);
   min-height: 2rem;
@@ -808,6 +938,16 @@ input[type="file"]:focus {
   border-color: var(--color-accent);
   box-shadow: var(--focus-ring);
   outline: none;
+}
+
+/* Error state: the same border and ring as the other danger surfaces, so a
+   rejected input is recognisable without reading the message beside it. */
+input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+input[aria-invalid="true"]:focus {
+  box-shadow: var(--focus-ring-error);
 }
 
 input::placeholder {
@@ -945,10 +1085,15 @@ input[type="radio"] {
   border-radius: var(--radius-full, 999px);
   color: var(--color-accent-ink);
   display: inline-flex;
-  font-size: 1.25rem;
   height: 2.75rem;
   justify-content: center;
   width: 2.75rem;
+}
+
+/* A file the page itself rejected marks the input, so the zone that wraps it
+   carries the error border. */
+.upload-zone:has(input[aria-invalid="true"]) {
+  border-color: var(--color-danger);
 }
 
 .upload-title {
@@ -1071,8 +1216,22 @@ input[type="radio"] {
   padding: var(--space-4) var(--space-5);
 }
 
+.mode-option:hover {
+  border-color: var(--color-line-strong);
+}
+
+.mode-option:active {
+  background: var(--state-hover);
+}
+
 .mode-option input[type="checkbox"] {
   margin: var(--space-1) 0 0;
+}
+
+/* The checkbox itself takes the global focus ring, so the option only has to
+   respond to the press. */
+.mode-option:focus-within {
+  border-color: var(--color-accent);
 }
 
 .mode-option-text {
@@ -1293,7 +1452,6 @@ form:has(.mode-option) > button {
   color: var(--color-accent-ink);
   display: inline-flex;
   flex: none;
-  font-size: 1rem;
   height: 3rem;
   justify-content: center;
   overflow: hidden;
@@ -1667,6 +1825,11 @@ form:has(.mode-option) > button {
 
 .toast-action:hover {
   background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.toast-action:active {
+  background: var(--color-accent-active);
   color: var(--color-on-accent);
 }
 

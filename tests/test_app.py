@@ -75,6 +75,70 @@ def test_sidebar_brand_shows_the_app_icon_instead_of_a_glyph() -> None:
     assert b'<span class="brand-mark"' not in response.data
 
 
+def test_interface_icons_all_come_from_one_set() -> None:
+    app = create_app()
+    templates = Path(app.root_path) / "templates"
+    css = (Path(app.static_folder) / "style.css").read_text(encoding="utf-8")
+    markup = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(templates.glob("*.html"))
+    )
+
+    # No emoji, stray Unicode symbol or CSS-drawn glyph stands in for an icon:
+    # they all come from the shared Lucide set in _icons.html.
+    for glyph in ("\u266a", "\u2191", "\u2713", "\u2190", "\u2600", "\u263e"):
+        assert glyph not in markup
+        assert glyph not in css
+    # The window title bar draws the application icon for the same reason.
+    titlebar = (templates / "_titlebar.html").read_text(encoding="utf-8")
+    assert '<img class="titlebar-mark"' in titlebar
+    assert "url_for('app_icon')" in titlebar
+
+    homepage = app.test_client().get("/")
+    assert b'<span class="upload-icon" aria-hidden="true"><svg class="ui-icon"' in homepage.data
+    # The live pages build their rows in JS, so they publish the same icons
+    # rather than embedding a second copy of the artwork.
+    for name in ("processing.html", "batch_processing.html"):
+        source = (templates / name).read_text(encoding="utf-8")
+        assert "icon_script()" in source
+        assert "window.SpotM3U_ICONS.music" in source
+
+
+def test_button_hierarchy_is_one_shared_set_of_variants() -> None:
+    css = (Path(create_app().static_folder) / "style.css").read_text(encoding="utf-8")
+
+    # Four variants and no more: primary is the base style, the other three are
+    # modifiers, and every button in the app uses one of them.
+    assert ".button,\nbutton {" in css
+    for variant in (".button-secondary", ".button-ghost", ".button-danger"):
+        assert variant in css
+        assert f"{variant}:hover" in css
+        assert f"{variant}:active" in css
+    # The states that are shared rather than per-variant.
+    assert ".button:focus-visible" in css
+    assert ".button[disabled]" in css
+    assert '.button[aria-busy="true"]' in css
+    assert "@keyframes spin" in css
+    # A button must not keep its hover feedback while it is pressed or off.
+    assert 'button:hover:not([disabled]):not([aria-disabled="true"])' in css
+    # No blanket rule styles a button by its type attribute any more; that
+    # silently overrode the window controls, the theme toggle and the toast
+    # action, which all carry their own design.
+    assert 'button[type="button"] {' not in css
+
+
+def test_controls_report_their_error_and_loading_states() -> None:
+    app = create_app()
+    css = (Path(app.static_folder) / "style.css").read_text(encoding="utf-8")
+    homepage = (Path(app.root_path) / "templates" / "index.html").read_text(encoding="utf-8")
+
+    # A rejected input gets the danger border and the error focus ring.
+    assert 'input[aria-invalid="true"] {' in css
+    assert "box-shadow: var(--focus-ring-error)" in css
+    assert 'uploadInput.setAttribute("aria-invalid", "true")' in homepage
+    # And an action in flight keeps its label next to a spinner.
+    assert 'uploadButton.setAttribute("aria-busy", "true")' in homepage
+
+
 def test_artwork_styles_support_light_and_dark_themes() -> None:
     import pathlib
 

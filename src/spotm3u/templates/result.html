@@ -1,3 +1,4 @@
+{% from "_icons.html" import icon %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -17,7 +18,7 @@
         <p class="content-intro">Total tracks: {{ state.playlist.total_tracks }}</p>
       </div>
       {% if batch_back %}
-      <a class="back-link" href="{{ url_for('batch_processing_result', job_id=job_id) }}">Back to all playlist results</a>
+      <a class="back-link" href="{{ url_for('batch_processing_result', job_id=job_id) }}">{{ icon("arrow-left", "back-link-icon") }}Back to all playlist results</a>
       {% endif %}
     </header>
 
@@ -115,7 +116,7 @@
                 <img class="track-art-img" src="{{ url_for('track_artwork', job_id=job_id, playlist_id=playlist_id, index=track.index) }}" alt="" width="48" height="48" loading="lazy" onerror="this.remove()">
               </div>
               {% else %}
-              <div class="track-artwork" aria-hidden="true">♪</div>
+              <div class="track-artwork" aria-hidden="true">{{ icon("music") }}</div>
               {% endif %}
               <div class="track-art-main">
                 <div class="track-head">

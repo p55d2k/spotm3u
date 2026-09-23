@@ -1,3 +1,4 @@
+{% from "_icons.html" import icon %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,7 @@
         <p class="error" role="alert">{{ error }}</p>
         {% endif %}
         <label class="upload-zone" for="export-file" id="upload-zone">
-          <span class="upload-icon" aria-hidden="true">↑</span>
+          <span class="upload-icon" aria-hidden="true">{{ icon("upload") }}</span>
           <span class="upload-title" id="upload-title">Drop your Exportify ZIP here</span>
           <span class="upload-or">or</span>
           <span class="button button-secondary button-small">Choose ZIP</span>
@@ -81,12 +82,16 @@
       // a question the page can settle on its own.
       const selectFile = (file) => {
         uploadFilename.classList.remove("is-error");
+        uploadInput.removeAttribute("aria-invalid");
         if (!file) {
           uploadFilename.textContent = idleHint;
           return true;
         }
         if (!file.name.toLowerCase().endsWith(".zip")) {
           uploadFilename.classList.add("is-error");
+          // The input is the labelled control, so the error is reported on it
+          // and the zone (which wraps it) picks up the error border.
+          uploadInput.setAttribute("aria-invalid", "true");
           uploadFilename.textContent = "That is not a ZIP file — choose the Exportify export.";
           return false;
         }
@@ -146,6 +151,7 @@
         uploadZone.classList.add("is-busy");
         uploadTitle.textContent = "Reading your export…";
         uploadButton.disabled = true;
+        uploadButton.setAttribute("aria-busy", "true");
         uploadButton.textContent = "Importing…";
         uploadForm.setAttribute("aria-busy", "true");
       });

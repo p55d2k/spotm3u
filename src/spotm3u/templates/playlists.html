@@ -1,3 +1,4 @@
+{% from "_icons.html" import icon %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -14,7 +15,7 @@
         <p class="eyebrow">Step 2 · Choose playlists</p>
         <h1 class="page-title">Select playlists</h1>
       </div>
-      <a class="back-link" href="{{ url_for('index') }}">Cancel and upload a different ZIP</a>
+      <a class="back-link" href="{{ url_for('index') }}">{{ icon("arrow-left", "back-link-icon") }}Cancel and upload a different ZIP</a>
     </header>
 
     {% if error %}

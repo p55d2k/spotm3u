@@ -1,3 +1,4 @@
+{% from "_icons.html" import icon, icon_script %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -7,6 +8,7 @@
     <title>Batch processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     {% include "_status_icons.html" %}
+    {{ icon_script() }}
   </head>
   <body>
     {% include "_header.html" %}
@@ -16,7 +18,7 @@
         <h1 class="page-title">Converting selected playlists</h1>
         <p class="content-intro">Playlists with more than 50 songs can take a while. Leave this window open while SpotM3U completes the work.</p>
       </div>
-      <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">Back to playlist selection</a>
+      <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">{{ icon("arrow-left", "back-link-icon") }}Back to playlist selection</a>
     </header>
 
     <form id="start-form" method="post" action="{{ url_for('start_batch_processing', job_id=job_id) }}">
@@ -192,7 +194,9 @@
         const art = document.createElement("div");
         art.className = "track-artwork";
         art.setAttribute("aria-hidden", "true");
-        art.textContent = "♪";
+        // The same "no artwork" placeholder the result page draws, from the
+        // shared icon set rather than a Unicode note.
+        art.innerHTML = window.SpotM3U_ICONS.music;
         if (track.artwork) {
           const img = document.createElement("img");
           img.className = "track-art-img";
@@ -418,9 +422,27 @@
       }
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        form.hidden = true;
-        const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
-        if (response.ok) render(await response.json());
+        const button = form.querySelector("button[type='submit']");
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        try {
+          const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
+          if (!response.ok) {
+            // The form stays put so the action can be retried. The server's own
+            // message (an expired selection) is user-facing copy.
+            const payload = await response.json().catch(() => null);
+            window.SpotM3UFeedback.error(
+              "Batch processing could not be started.",
+              (payload && payload.error) || "Check your connection and try again."
+            );
+            return;
+          }
+          form.hidden = true;
+          render(await response.json());
+        } finally {
+          button.disabled = false;
+          button.removeAttribute("aria-busy");
+        }
       });
     </script>
   </body>

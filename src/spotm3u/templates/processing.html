@@ -1,3 +1,4 @@
+{% from "_icons.html" import icon, icon_script %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -7,6 +8,7 @@
     <title>Processing - Spotify to M3U Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     {% include "_status_icons.html" %}
+    {{ icon_script() }}
   </head>
   <body>
     {% include "_header.html" %}
@@ -16,7 +18,7 @@
         <h1 class="page-title">Convert "{{ playlist_name }}"</h1>
         <p class="content-intro">{{ total_tracks }} tracks · You can leave this window open while SpotM3U works.</p>
       </div>
-      <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">Back to playlist selection</a>
+      <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">{{ icon("arrow-left", "back-link-icon") }}Back to playlist selection</a>
     </header>
 
     <form id="start-form" method="post" action="{{ url_for('start_processing', job_id=job_id, playlist_id=playlist_id) }}">
@@ -280,7 +282,9 @@
         const art = document.createElement("div");
         art.className = "track-artwork";
         art.setAttribute("aria-hidden", "true");
-        art.textContent = "♪";
+        // The same "no artwork" placeholder the result page draws, from the
+        // shared icon set rather than a Unicode note.
+        art.innerHTML = window.SpotM3U_ICONS.music;
         if (track.artwork) {
           const img = document.createElement("img");
           img.className = "track-art-img";
@@ -419,6 +423,7 @@
         event.preventDefault();
         const button = startForm.querySelector("button");
         button.disabled = true;
+        button.setAttribute("aria-busy", "true");
         try {
           const response = await fetch(startForm.action, { method: "POST", body: new FormData(startForm) });
           if (response.status === 202 || response.status === 409) {
@@ -430,6 +435,7 @@
           }
         } finally {
           button.disabled = false;
+          button.removeAttribute("aria-busy");
         }
       });
 

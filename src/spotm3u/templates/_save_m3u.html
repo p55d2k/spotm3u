@@ -19,8 +19,12 @@
         window.location.href = link.href;
         return;
       }
+      // A second click while the bridge is still saving would save twice.
+      if (link.dataset.saving === "true") return;
 
       let result;
+      link.dataset.saving = "true";
+      link.setAttribute("aria-busy", "true");
       try {
         result = await api.save_m3u(
           link.dataset.jobId,
@@ -31,6 +35,11 @@
         console.error("saving the playlist failed", error);
         feedback.error(SAVE_FAILED, "Try again, or download the file in a browser.");
         return;
+      } finally {
+        // Both paths are settled, so the link stops looking busy before the
+        // toast (which may offer another click) appears.
+        link.dataset.saving = "false";
+        link.removeAttribute("aria-busy");
       }
       if (!result || result.error) {
         feedback.error(SAVE_FAILED, result ? result.error : "Try again in a moment.");

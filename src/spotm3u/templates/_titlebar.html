@@ -11,7 +11,8 @@
 <div class="titlebar" data-titlebar hidden>
   <div class="titlebar-drag pywebview-drag-region">
     <span class="titlebar-brand">
-      <span class="titlebar-mark" aria-hidden="true">♪</span>
+      {# The application icon itself, from the same route the sidebar uses. #}
+      <img class="titlebar-mark" src="{{ url_for('app_icon') }}" alt="" width="20" height="20">
       <span class="titlebar-name">SpotM3U</span>
     </span>
   </div>
