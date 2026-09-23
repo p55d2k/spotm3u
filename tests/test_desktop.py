@@ -514,6 +514,10 @@ def test_show_window_creates_a_frameless_window_with_the_controls_bridge(monkeyp
     fake_window.events.maximized.fire()
     assert controls.is_maximized() is True
 
+    # On macOS the traffic-light restore runs from a start() callback (the
+    # NSWindow only exists once the GUI loop is up); other platforms skip it.
+    assert ("func" in created["start"]) is (sys.platform == "darwin")
+
 
 def test_start_server_serves_until_shutdown() -> None:
     server, thread = desktop.start_server(_minimal_app(), launcher.DEFAULT_HOST, 0)

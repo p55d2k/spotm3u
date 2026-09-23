@@ -1,5 +1,6 @@
 """Tests for the Flask application scaffold."""
 
+import re
 from io import BytesIO
 from pathlib import Path
 
@@ -39,6 +40,41 @@ def test_static_stylesheet_is_available() -> None:
     assert b"font-family" in response.data
 
 
+def test_app_icon_route_serves_the_canonical_artwork() -> None:
+    from spotm3u.desktop import webview_icon_path
+
+    client = create_app().test_client()
+
+    response = client.get("/icon.png")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    # The route serves assets/icon.png itself, so the page never needs a second
+    # copy of the artwork to drift out of date.
+    assert response.data == webview_icon_path().read_bytes()
+
+
+def test_app_icon_route_reports_a_missing_icon(monkeypatch) -> None:
+    from spotm3u import desktop
+
+    monkeypatch.setattr(desktop, "webview_icon_path", lambda: None)
+    client = create_app().test_client()
+
+    response = client.get("/icon.png")
+
+    assert response.status_code == 404
+
+
+def test_sidebar_brand_shows_the_app_icon_instead_of_a_glyph() -> None:
+    client = create_app().test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b'<img class="brand-mark" src="/icon.png"' in response.data
+    assert b'<span class="brand-mark"' not in response.data
+
+
 def test_artwork_styles_support_light_and_dark_themes() -> None:
     import pathlib
 
@@ -48,6 +84,32 @@ def test_artwork_styles_support_light_and_dark_themes() -> None:
     assert ".track-artwork" in css
     assert "--track" in css
     assert ':root[data-theme="dark"]' in css
+
+
+def test_fullscreen_macos_drops_the_traffic_light_gap_but_keeps_even_padding() -> None:
+    app = create_app()
+    css = (Path(app.static_folder) / "style.css").read_text(encoding="utf-8")
+    titlebar = (Path(app.root_path) / "templates" / "_titlebar.html").read_text(encoding="utf-8")
+
+    # Full screen hides the traffic lights, so the gap held for them goes away:
+    # the brand keeps the same breathing room above and below instead.
+    rule = re.search(
+        r'body\.has-native-titlebar\.is-fullscreen \.titlebar\[data-platform="mac"\]'
+        r" ~ \.app-frame \.sidebar-brand \{(?P<declarations>[^}]*)\}",
+        css,
+    )
+    assert rule is not None
+    padding = {
+        name.strip(): value.strip().rstrip(";")
+        for name, value in (
+            line.split(":", 1)
+            for line in rule.group("declarations").strip().splitlines()
+            if ":" in line
+        )
+    }
+    assert padding["padding-top"] == padding["padding-bottom"]
+    # The page can only know about full screen through the window bridge.
+    assert 'classList.toggle("is-fullscreen"' in titlebar
 
 
 def test_playlist_selection_persists_state_and_redirects(tmp_path) -> None:

@@ -3,7 +3,11 @@
    The bar stays hidden in a normal browser and is revealed only once pywebview
    has injected its JavaScript bridge, so developer runs (``uv run dev``) and
    the headless smoke test keep the normal page. The ``.pywebview-drag-region``
-   element is what pywebview uses to drag a frameless window. #}
+   element is what pywebview uses to drag a frameless window.
+
+   On Windows and Linux this bar draws the window controls. On macOS the native
+   AppKit traffic lights are restored (see desktop_macos.py), so here the bar is
+   only a transparent drag strip and the control buttons are hidden. #}
 <div class="titlebar" data-titlebar hidden>
   <div class="titlebar-drag pywebview-drag-region">
     <span class="titlebar-brand">
@@ -86,13 +90,19 @@
       drawFrame(shellState);
     }
 
+    // macOS's green control is full screen; Windows and Linux maximize and
+    // restore within the current desktop.
+    const isMac = () => titlebar.dataset.platform === "mac";
+
     const setMaximized = (maximized) => {
       titlebar.classList.toggle("is-maximized", Boolean(maximized));
+      // macOS full screen hides the traffic lights (the title bar is gone
+      // entirely and slides back in only while the pointer is at the top edge),
+      // so the page reclaims the space that held them.
+      document.body.classList.toggle("is-fullscreen", isMac() && Boolean(maximized));
       const button = titlebar.querySelector('[data-window-action="maximize"]');
       if (!button) return;
-      // macOS's green control is full screen, so label it the way other Mac
-      // apps do; Windows and Linux use maximize/restore wording.
-      const fullscreen = titlebar.dataset.platform === "mac";
+      const fullscreen = isMac();
       const label = maximized
         ? fullscreen ? "Exit Full Screen" : "Restore window"
         : fullscreen ? "Enter Full Screen" : "Maximize window";

@@ -6,7 +6,8 @@
 <aside class="app-sidebar" aria-label="Application navigation">
   <div class="sidebar-brand">
     <a href="{{ url_for('index') }}" aria-label="SpotM3U home">
-      <span class="brand-mark" aria-hidden="true">♪</span>
+      {# The application icon itself; the name beside it carries the text. #}
+      <img class="brand-mark" src="{{ url_for('app_icon') }}" alt="" width="28" height="28">
       <span class="brand-name">SpotM3U</span>
     </a>
   </div>

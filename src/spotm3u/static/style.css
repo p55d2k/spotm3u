@@ -43,6 +43,8 @@
   /* Layout */
   --sidebar-w: 15rem;
   --titlebar-h: 2.5rem;
+  /* Clearance the native macOS traffic lights need above the sidebar brand. */
+  --traffic-gap: 2.5rem;
   --content-max: 78rem;
   --tab-width: 15.25rem;
 
@@ -205,8 +207,35 @@ section:focus-visible {
   height: 100%;
 }
 
-body.has-native-titlebar .app-frame {
+/* ``~`` not ``+``: _titlebar.html emits its script after the bar, so the
+   shell div is not the bar's *adjacent* sibling. */
+body.has-native-titlebar .titlebar:not([data-platform="mac"]) ~ .app-frame {
   padding-top: var(--titlebar-h);
+}
+
+/* On macOS the chrome is native AppKit traffic lights floating over a
+   full-bleed content view, so the page content extends right up under them. */
+body.has-native-titlebar .titlebar[data-platform="mac"] ~ .app-frame {
+  padding-top: 0;
+}
+
+/* The native traffic lights float at the top-left corner of the content, so
+   on macOS the sidebar brand is pushed below them instead of colliding. */
+body.has-native-titlebar .titlebar[data-platform="mac"] ~ .app-frame .sidebar-brand {
+  padding-top: var(--traffic-gap);
+}
+
+/* Full screen hides the traffic lights, so the gap reserved for them (and the
+   drag strip that only exists to move the window) go away with them. The brand
+   then keeps the same breathing room above and below instead of sitting flush
+   against the top of the sidebar. */
+body.has-native-titlebar.is-fullscreen .titlebar[data-platform="mac"] ~ .app-frame .sidebar-brand {
+  padding-top: var(--space-5);
+  padding-bottom: var(--space-5);
+}
+
+body.has-native-titlebar.is-fullscreen .titlebar[data-platform="mac"] {
+  display: none;
 }
 
 .app-content {
@@ -273,15 +302,13 @@ main.page > * {
   text-decoration: none;
 }
 
+/* The app icon (assets/icon.png), served by the app_icon route. The artwork
+   is a full-bleed square, so the tile rounding comes from here. */
 .brand-mark {
-  align-items: center;
-  background: var(--color-accent);
   border-radius: var(--radius-s);
-  color: var(--color-on-accent);
-  display: inline-flex;
-  font-size: 1rem;
+  display: block;
+  flex: none;
   height: 1.75rem;
-  justify-content: center;
   width: 1.75rem;
 }
 
@@ -481,66 +508,21 @@ body.has-native-titlebar .titlebar {
 }
 
 .titlebar[data-platform="mac"] .titlebar-controls {
-  align-items: center;
-  gap: var(--space-2);
-  height: 100%;
-  left: 0;
-  padding: 0 0 0 var(--space-4);
-  position: absolute;
-  top: 0;
+  display: none;
 }
 
-/* Native macOS traffic lights: close, minimize, maximize in coloured dots. */
-.titlebar[data-platform="mac"] .titlebar-button {
-  border: 0.5px solid rgb(0 0 0 / 0.14);
-  border-radius: var(--radius-full);
-  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.14);
-  color: rgb(0 0 0 / 0.62);
-  height: 0.75rem;
-  margin: 0;
-  width: 0.75rem;
-}
-
-.titlebar[data-platform="mac"] .titlebar-button[data-window-action="close"] {
-  background: #ff5f57;
-  order: 1;
-}
-
-.titlebar[data-platform="mac"] .titlebar-button[data-window-action="minimize"] {
-  background: #febc2e;
-  order: 2;
-}
-
-.titlebar[data-platform="mac"] .titlebar-button[data-window-action="maximize"] {
-  background: #28c840;
-  order: 3;
-}
-
-.titlebar[data-platform="mac"] .titlebar-button:hover {
-  background: inherit;
-  color: rgb(0 0 0 / 0.62);
-}
-
-.titlebar[data-platform="mac"] .titlebar-icon {
-  height: 0.45rem;
-  opacity: 0;
-  width: 0.45rem;
-}
-
-.titlebar[data-platform="mac"] .titlebar-button:hover .titlebar-icon {
-  opacity: 1;
-}
-
-.titlebar[data-platform="mac"] .titlebar-drag {
-  position: relative;
+/* On macOS the bar is only an invisible drag strip: the native AppKit traffic
+   lights live in the NSWindow itself, above the content, and nothing here
+   re-creates them in HTML/CSS. The brand and the window-control buttons are
+   hidden so the traffic lights float directly over the page. */
+.titlebar[data-platform="mac"] {
+  background: transparent;
+  border-bottom: 0;
+  height: 1.5rem;
 }
 
 .titlebar[data-platform="mac"] .titlebar-brand {
-  left: 50%;
-  margin-left: 0;
-  pointer-events: none;
-  position: absolute;
-  transform: translateX(-50%);
+  display: none;
 }
 
 .titlebar-button {
@@ -977,6 +959,7 @@ input[type="radio"] {
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-4);
+  position: relative;
   transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
 

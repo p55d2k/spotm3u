@@ -6,11 +6,14 @@ of an external browser. Flask keeps serving the UI and handling application
 logic; this module only supplies the window around it, waits for the server
 before loading the page, and shuts the server down when the window closes.
 
-The window is frameless and the page draws its own title bar (see
-``templates/_titlebar.html`` and the title bar rules in ``static/style.css``).
+The window is frameless. Windows and Linux draw their own title bar (see
+``templates/_titlebar.html`` and the title bar rules in ``static/style.css``);
+macOS instead re-enables the native traffic lights on the frameless NSWindow
+(see ``desktop_macos.py``) and keeps only a transparent drag strip in the page.
 :class:`WindowControls` is exposed to the page as ``pywebview.api`` so the HTML
-minimize, maximize and close buttons can drive the native window; that
-windowing capability is the only JavaScript bridge exposed to the page.
+custom title-bar buttons can drive the native window on Windows/Linux and the
+M3U download can be saved through a native dialog. Only that API is exposed
+to the page, and the localhost URL stays hidden from normal users.
 
 The WebView is a production shell only. Developers use ``uv run dev``, which
 starts the same Flask app in a normal browser, and never need the native window
@@ -385,11 +388,13 @@ def show_window(url: str, app: Flask | None = None) -> None:
     """Show ``url`` in the native SpotM3U window and block until it closes.
 
     pywebview is imported lazily so tests and the headless server path never
-    touch the desktop GUI stack. The window is frameless and the page draws its
-    own title bar; :class:`WindowControls` is exposed as ``pywebview.api`` so
-    the HTML minimize/maximize/close buttons can drive the native window and the
-    M3U download can be saved through a native dialog. Only that API is exposed
-    to the page, and the localhost URL stays hidden from normal users.
+    touch the desktop GUI stack. The window is frameless; on macOS its native
+    traffic lights are restored so the chrome stays AppKit-native, while
+    Windows and Linux keep the page-drawn title bar.
+    :class:`WindowControls` is exposed as ``pywebview.api`` so the HTML
+    title-bar buttons can drive the native window and the M3U download can be
+    saved through a native dialog. Only that API is exposed to the page, and
+    the localhost URL stays hidden from normal users.
     """
     import webview
 
@@ -413,7 +418,15 @@ def show_window(url: str, app: Flask | None = None) -> None:
         js_api=controls,
     )
     controls.attach(window)
-    webview.start(**webview_start_kwargs())
+    # On macOS the native NSWindow only exists once pywebview's GUI loop has
+    # started, so restore the traffic lights from a start() callback that waits
+    # for the window to appear; every other platform keeps the page-drawn bar.
+    from .desktop_macos import configure_native_chrome
+
+    start_kwargs = webview_start_kwargs()
+    if sys.platform == "darwin":
+        start_kwargs["func"] = lambda: configure_native_chrome(window)
+    webview.start(**start_kwargs)
 
 
 def run_desktop(*, open_window: bool | None = None) -> None:

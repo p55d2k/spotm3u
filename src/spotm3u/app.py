@@ -137,6 +137,23 @@ def create_app(config: dict | None = None) -> Flask:
     def index():
         return render_template("index.html", error=None)
 
+    @app.get("/icon.png")
+    def app_icon():
+        """Serve the canonical SpotM3U artwork to the page.
+
+        ``assets/icon.png`` is the single source of truth for the application
+        icon (see ``docs/packaging.md``), so the sidebar brand reuses it
+        instead of a second copy of the artwork under ``static/``. ``desktop``
+        is imported here rather than at module level because it imports this
+        module.
+        """
+        from .desktop import webview_icon_path
+
+        icon = webview_icon_path()
+        if icon is None:
+            return jsonify({"error": "The application icon is not available."}), 404
+        return send_file(icon, mimetype="image/png", max_age=3600)
+
     @app.post("/upload")
     def upload():
         uploaded_file = request.files.get("file")
