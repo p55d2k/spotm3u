@@ -6,11 +6,18 @@ needs ICO/ICNS rather than PNG, so the build (``uv run build``) regenerates:
     assets/generated/icon.ico    Windows executable icon
     assets/generated/icon.icns   macOS .app bundle icon
 
-Only the standard library is used: the 8-bit RGBA PNG source is decoded, scaled
-with bilinear resampling, and re-encoded directly into the ICO (PNG-compressed,
-Vista+) and ICNS (PNG element) containers. Generation is deterministic, so a
-local build and a GitHub Actions build always produce identical assets, and the
-files are never edited by hand. Run it as:
+The source PNG is validated first (exists, valid 8-bit RGB/RGBA PNG, square, and
+large enough for the required representations) so a bad master artwork fails the
+build instead of silently shipping a broken application icon. Stale generated
+artifacts are removed before the fresh ones are written, so a build can never
+package an icon left over from an earlier run.
+
+On macOS the ICNS is produced by the system's ``iconutil``, which is the only
+tool that reliably writes every representation macOS expects (the icon must carry
+both the 1x and @2x members for 16/32/128/256/512). Where ``iconutil`` is not
+available - Linux and Windows builds never consume the ICNS - a pure-standard
+library writer emits the same element set instead, so the file can still be
+inspected and tested off-macOS. Run it as:
 
     python packaging/generate_icons.py [source.png] [output-dir]
 
@@ -19,25 +26,55 @@ or just invoke ``uv run build``, which generates the icons before packaging.
 
 from __future__ import annotations
 
+import shutil
 import struct
+import subprocess
 import sys
 import zlib
 from pathlib import Path
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 ICNS_MAGIC = b"icns"
-# Element types with the pixel size they hold; both 1x and @2x members are
-# included so macOS picks the sharpest element for the current display scale.
+# Windows ICO members: the small sizes are used by Explorer's list views and
+# shortcuts, 256x256 by the extra-large tile view.
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+# ``.iconset`` members handed to ``iconutil``, with the pixel size each one must
+# hold. The @2x entries are what make the icon sharp on Retina displays.
+ICONSET_ENTRIES = (
+    ("icon_16x16.png", 16),
+    ("icon_16x16@2x.png", 32),
+    ("icon_32x32.png", 32),
+    ("icon_32x32@2x.png", 64),
+    ("icon_128x128.png", 128),
+    ("icon_128x128@2x.png", 256),
+    ("icon_256x256.png", 256),
+    ("icon_256x256@2x.png", 512),
+    ("icon_512x512.png", 512),
+    ("icon_512x512@2x.png", 1024),
+)
+# ICNS element types paired with the pixel size macOS expects each one to hold.
+# Getting this pairing wrong yields an .icns whose representations are scaled
+# from the wrong member (for example a 128px image in the 512pt slot), which is
+# how the bundled icon ends up rendered as a smeared square.
 ICNS_ELEMENTS = (
-    ("ic10", 128),
-    ("ic07", 256),
+    ("icp4", 16),
+    ("icp5", 32),
+    ("icp6", 64),
+    ("ic07", 128),
+    ("ic08", 256),
+    ("ic09", 512),
+    ("ic10", 1024),
+    ("ic11", 32),
+    ("ic12", 64),
     ("ic13", 256),
-    ("ic11", 512),
     ("ic14", 512),
 )
-ICO_SIZES = (16, 32, 48, 64, 128, 256)
+# macOS renders the 512pt slot from a 1024px master, so anything smaller would
+# have to be upscaled. Never upscale the master artwork.
+MIN_SOURCE_SIZE = 512
 DEFAULT_SOURCE = Path("assets") / "icon.png"
 DEFAULT_OUTPUT = Path("assets") / "generated"
+ICONSET_DIRNAME = "icon.iconset"
 
 
 class IconError(RuntimeError):
@@ -130,6 +167,29 @@ def read_png(path: Path) -> tuple[bytes, int, int]:
     return bytes(rgba), width, height
 
 
+def validate_source(path: Path) -> tuple[bytes, int, int]:
+    """Return the decoded master artwork, or fail the build with a clear reason.
+
+    A non-square or undersized source is rejected rather than cropped or
+    upscaled: silently reshaping the master artwork is how an application icon
+    ends up looking wrong on a platform.
+    """
+    if not path.is_file():
+        raise IconError(f"source icon is missing: {path}")
+    try:
+        rgba, width, height = read_png(path)
+    except OSError as error:
+        raise IconError(f"cannot read source icon {path}: {error}") from error
+    if width != height:
+        raise IconError(f"source icon must be square, got {width}x{height}: {path}")
+    if width < MIN_SOURCE_SIZE:
+        raise IconError(
+            f"source icon must be at least {MIN_SOURCE_SIZE}x{MIN_SOURCE_SIZE}, "
+            f"got {width}x{height}: {path}"
+        )
+    return rgba, width, height
+
+
 def _resize(rgba: bytes, source_w: int, source_h: int, width: int, height: int) -> bytes:
     """Bilinear resize of a packed RGBA image."""
     if width == source_w and height == source_h:
@@ -181,30 +241,86 @@ def _encode_png(rgba: bytes, width: int, height: int) -> bytes:
     )
 
 
-def _build_ico(scaled: dict[int, bytes]) -> bytes:
+def required_sizes(source_size: int) -> list[int]:
+    """Every pixel size the generated formats need, capped at the source size."""
+    wanted = {*ICO_SIZES, *(size for _, size in ICNS_ELEMENTS), *(s for _, s in ICONSET_ENTRIES)}
+    return sorted(size for size in wanted if size <= source_size)
+
+
+def build_ico(scaled: dict[int, bytes]) -> bytes:
     """Package PNG-compressed entries into a Windows .ico container."""
-    sizes = [size for size in ICO_SIZES]
-    header = struct.pack("<HHH", 0, 1, len(sizes))
-    offset = 6 + 16 * len(sizes)
+    header = struct.pack("<HHH", 0, 1, len(ICO_SIZES))
+    offset = 6 + 16 * len(ICO_SIZES)
     entries = bytearray()
-    for size in sizes:
+    for size in ICO_SIZES:
         data = scaled[size]
         dimension = 0 if size >= 256 else size
         entries += struct.pack("<BBBBHHII", dimension, dimension, 0, 0, 1, 32, len(data), offset)
         offset += len(data)
-    body = b"".join(scaled[size] for size in sizes)
+    body = b"".join(scaled[size] for size in ICO_SIZES)
     return header + bytes(entries) + body
 
 
-def _build_icns(scaled: dict[int, bytes]) -> bytes:
-    """Package PNG elements into a macOS .icns container."""
+def build_icns(scaled: dict[int, bytes]) -> bytes:
+    """Package PNG elements into a macOS .icns container.
+
+    Used where ``iconutil`` is unavailable. Elements larger than the source
+    artwork are skipped rather than upscaled.
+    """
     chunks = bytearray()
     for element, size in ICNS_ELEMENTS:
-        data = scaled[size]
+        data = scaled.get(size)
+        if data is None:
+            continue
         if len(data) % 2:
             data += b"\x00"
         chunks += element.encode() + struct.pack(">I", 8 + len(data)) + data
     return ICNS_MAGIC + struct.pack(">I", 8 + len(chunks)) + bytes(chunks)
+
+
+def _iconutil() -> str | None:
+    """The macOS ``iconutil`` executable, when this build can use it."""
+    return shutil.which("iconutil")
+
+
+def write_icns(dest: Path, scaled: dict[int, bytes]) -> None:
+    """Write ``dest`` as a native macOS .icns.
+
+    Prefers ``iconutil``, which builds the standard ``.iconset`` layout and lets
+    macOS itself assemble the container. Falls back to the standard library
+    writer on platforms where ``iconutil`` does not exist.
+    """
+    iconutil = _iconutil()
+    if iconutil is None:
+        dest.write_bytes(build_icns(scaled))
+        return
+
+    iconset = dest.parent / ICONSET_DIRNAME
+    shutil.rmtree(iconset, ignore_errors=True)
+    iconset.mkdir(parents=True)
+    try:
+        for name, size in ICONSET_ENTRIES:
+            data = scaled.get(size)
+            if data is not None:
+                (iconset / name).write_bytes(data)
+        result = subprocess.run(
+            [iconutil, "-c", "icns", "-o", str(dest), str(iconset)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not dest.is_file():
+            detail = (result.stderr or result.stdout).strip()
+            raise IconError(f"iconutil failed (exit {result.returncode}): {detail}")
+    finally:
+        shutil.rmtree(iconset, ignore_errors=True)
+
+
+def clean(output: Path) -> None:
+    """Remove previously generated icons so a stale artifact is never packaged."""
+    shutil.rmtree(output / ICONSET_DIRNAME, ignore_errors=True)
+    for name in ("icon.ico", "icon.icns"):
+        (output / name).unlink(missing_ok=True)
 
 
 def generate(source: str | Path, output_dir: str | Path) -> dict[str, Path]:
@@ -214,20 +330,19 @@ def generate(source: str | Path, output_dir: str | Path) -> dict[str, Path]:
     """
     source = Path(source)
     output = Path(output_dir)
-    rgba, width, height = read_png(source)
-    min_side = min(width, height)
-    sizes = sorted({*(size for size in ICO_SIZES if size <= 256), *(s for _, s in ICNS_ELEMENTS)})
-    if min_side < 16:
-        raise IconError(f"source image too small: {width}x{height}")
+    rgba, width, height = validate_source(source)
 
     scaled = {
-        size: _encode_png(_resize(rgba, width, height, size, size), size, size) for size in sizes
+        size: _encode_png(_resize(rgba, width, height, size, size), size, size)
+        for size in required_sizes(width)
     }
+
+    clean(output)
     output.mkdir(parents=True, exist_ok=True)
     ico = output / "icon.ico"
     icns = output / "icon.icns"
-    ico.write_bytes(_build_ico(scaled))
-    icns.write_bytes(_build_icns(scaled))
+    ico.write_bytes(build_ico(scaled))
+    write_icns(icns, scaled)
     return {"ico": ico, "icns": icns}
 
 

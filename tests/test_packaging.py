@@ -1,8 +1,11 @@
 """Tests for the release packaging helper scripts."""
 
+import ast
 import importlib.util
 import os
+import plistlib
 import shutil
+import struct
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
@@ -114,6 +117,13 @@ def test_stage_ffmpeg_errors_when_binary_missing(tmp_path, monkeypatch) -> None:
         stage_ffmpeg.stage_ffmpeg(tmp_path / "ffmpeg-stage")
 
 
+def _icns_payload() -> bytes:
+    """A minimal well-formed .icns container holding one PNG element."""
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + struct.pack(">II", 128, 128)
+    element = b"ic07" + struct.pack(">I", 8 + len(png)) + png
+    return b"icns" + struct.pack(">I", 8 + len(element)) + element
+
+
 def _fake_app(tmp_path: Path) -> Path:
     app = tmp_path / "SpotM3U.app"
     macos = app / "Contents" / "MacOS"
@@ -121,7 +131,12 @@ def _fake_app(tmp_path: Path) -> Path:
     exe = macos / "SpotM3U"
     exe.write_bytes(b"exe")
     exe.chmod(0o755)
-    (app / "Contents" / "Info.plist").write_bytes(b"plist")
+    plist = {
+        "CFBundleExecutable": "SpotM3U",
+        "CFBundleIconFile": "icon.icns",
+        "CFBundleIdentifier": "com.p55d2k.spotm3u",
+    }
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
     ffmpeg = app / "Contents" / "Resources" / "ffmpeg"
     ffmpeg.mkdir(parents=True)
     for name in ("ffmpeg", "ffprobe"):
@@ -131,7 +146,7 @@ def _fake_app(tmp_path: Path) -> Path:
     (resources / "templates" / "index.html").write_bytes(b"<html>")
     (resources / "static").mkdir(parents=True)
     (resources / "static" / "style.css").write_bytes(b"body{}")
-    (app / "Contents" / "Resources" / "icon.icns").write_bytes(b"\x69\x63\x6e\x73")
+    (app / "Contents" / "Resources" / "icon.icns").write_bytes(_icns_payload())
     return app
 
 
@@ -171,6 +186,65 @@ def test_validate_app_rejects_missing_icon(tmp_path) -> None:
         verify_macos_bundle.validate_app(app)
 
 
+def test_validate_app_rejects_a_malformed_icns(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    (app / "Contents" / "Resources" / "icon.icns").write_bytes(b"not an icns")
+
+    with pytest.raises(SystemExit, match="icon container"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_rejects_a_truncated_icns(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    (app / "Contents" / "Resources" / "icon.icns").write_bytes(_icns_payload()[:-4])
+
+    with pytest.raises(SystemExit, match="truncated"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_rejects_a_plist_without_an_icon_name(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    del plist["CFBundleIconFile"]
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
+
+    with pytest.raises(SystemExit, match="CFBundleIconFile"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_rejects_an_icon_name_that_is_not_bundled(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    plist["CFBundleIconFile"] = "missing.icns"
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
+
+    with pytest.raises(SystemExit, match="missing icon"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_rejects_a_background_only_app(tmp_path) -> None:
+    # PyInstaller sets LSBackgroundOnly for console EXEs; macOS then presents
+    # the app without its icon, which is the bug the spec now overrides.
+    app = _fake_app(tmp_path)
+    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    plist["LSBackgroundOnly"] = True
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
+
+    with pytest.raises(SystemExit, match="LSBackgroundOnly"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_verify_rejects_a_background_only_bundle_inside_an_archive(tmp_path) -> None:
+    app = _fake_app(tmp_path)
+    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    plist["LSBackgroundOnly"] = True
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
+    archive = make_archive.build_archive(app, tmp_path / "release" / "macos.zip")
+
+    with pytest.raises(SystemExit, match="LSBackgroundOnly"):
+        verify_macos_bundle._find_app(archive)
+
+
 def test_verify_round_trips_archive_with_cross_links(tmp_path) -> None:
     app = _fake_app(tmp_path)
     if sys.platform != "win32":
@@ -190,6 +264,28 @@ def test_find_app_detects_directory_containing_bundle(tmp_path) -> None:
 
     assert verify_macos_bundle._find_app(app) == app
     assert verify_macos_bundle._find_app(tmp_path) == app
+
+
+def test_spec_presents_the_macos_bundle_as_a_foreground_app() -> None:
+    # ``uv run build`` must not leave macOS treating SpotM3U as a background-only
+    # process: such an app gets no Dock tile and falls back to the generic
+    # placeholder icon in Finder and the Cmd-Tab switcher.
+    tree = ast.parse((_PACKAGING / "spotm3u.spec").read_text(encoding="utf-8"))
+    bundles = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "BUNDLE"
+    ]
+
+    assert len(bundles) == 1
+    keywords = {keyword.arg: keyword.value for keyword in bundles[0].keywords}
+    info_plist = keywords["info_plist"]
+    settings = {
+        key.value: value.value
+        for key, value in zip(info_plist.keys, info_plist.values, strict=True)
+    }
+    assert settings["LSBackgroundOnly"] is False
+    assert settings["NSHighResolutionCapable"] is True
 
 
 def test_pkg_command_installs_to_applications() -> None:

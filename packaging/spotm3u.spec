@@ -170,6 +170,16 @@ if sys.platform == "win32":
 # and puts the executable in Contents/MacOS, which is what lets the frozen
 # bootloader find ``sys._MEIPASS``. It is a no-op on other platforms, but is
 # only declared on macOS so non-macOS builds keep their existing layout.
+#
+# BUNDLE defaults to ``LSBackgroundOnly=true`` whenever the EXE is built with
+# ``console=True`` -- which is the case on macOS -- and macOS then treats the
+# bundle as a background-only process. Such an app gets no Dock tile and no
+# application icon: the Dock, Finder, and the Cmd-Tab switcher fall back to the
+# generic placeholder, which is what made the packaged app show up as a plain
+# square block instead of the bundled .icns. SpotM3U is an ordinary foreground
+# app on macOS, so the default is overridden; ``NSHighResolutionCapable`` is set
+# alongside it because PyInstaller only supplies it to windowed builds and the
+# icon must render at native resolution on Retina displays.
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
@@ -177,4 +187,8 @@ if sys.platform == "darwin":
         icon=str(_require_icon(ICON_ICNS, "macOS .icns")),
         bundle_identifier="com.p55d2k.spotm3u",
         version=os.environ.get("SPOTM3U_APP_VERSION", "0.0.0"),
+        info_plist={
+            "LSBackgroundOnly": False,
+            "NSHighResolutionCapable": True,
+        },
     )

@@ -34,13 +34,32 @@ platform formats the packaging tools need from it before PyInstaller runs:
 - `assets/generated/icon.icns` – embedded in the macOS `SpotM3U.app` bundle
   (Finder, Dock, Applications folder).
 
-Generation is handled by `packaging/generate_icons.py`, which uses only the
-Python standard library, so no icon tool needs to be installed and local and
-GitHub Actions builds produce identical assets. The generated directory
-`assets/generated/` is git-ignored; `assets/icon.png` remains tracked. The
-canonical PNG is also collected into the bundle so the desktop window can apply
-it at runtime on Linux (the only pywebview backend that supports a window
-icon).
+Generation is handled by `packaging/generate_icons.py`. It first validates the
+master artwork (present, valid 8-bit RGB/RGBA PNG, square, at least
+512x512) and fails the build with a clear reason otherwise, and it removes
+previously generated icons before writing new ones so a stale artifact can never
+be packaged. The generated directory `assets/generated/` is git-ignored;
+`assets/icon.png` remains tracked. The canonical PNG is also collected into the
+bundle so the desktop window can apply it at runtime on Linux (the only pywebview
+backend that supports a window icon).
+
+The Windows `.ico` holds 16, 24, 32, 48, 64, 128, and 256 pixel members and is
+written with the standard library alone. On macOS the `.icns` is built by the
+system's `iconutil` from a standard `.iconset`, which is what gives the icon
+its 1x and @2x members for 16/32/128/256/512 points; the build fails instead of
+shipping a partial icon if `iconutil` errors. Where `iconutil` is unavailable
+(the Linux and Windows runners, which never embed an `.icns`) a standard-library
+writer emits the same element set, so those builds stay tool-free and the
+containers remain inspectable off macOS. Local and GitHub Actions builds produce
+identical assets either way.
+
+The packaged macOS app is an ordinary foreground application: the spec overrides
+PyInstaller's `LSBackgroundOnly` default (PyInstaller sets it for console-mode
+executables) and sets `NSHighResolutionCapable`, so the Dock, Finder, and the
+Cmd-Tab switcher present the bundled `.icns` normally rather than falling back to
+the generic placeholder. `packaging/verify_macos_bundle.py` fails a release whose
+`Info.plist` drops `CFBundleIconFile`, names an icon that is not in the bundle,
+disables that override, or ships a malformed `.icns`.
 
 ## Build locally
 
@@ -105,6 +124,10 @@ bundle's `ffmpeg/` directory. The resulting one-folder application is
 `dist/SpotM3U/` on every platform. On macOS the same build also produces
 `dist/SpotM3U.app`, a normal application bundle whose executable lives in
 `Contents/MacOS/` and whose runtime files live under `Contents/Frameworks`.
+
+`assets/icon.png` is deliberately a square, full-bleed master: the macOS
+platform presentation is provided by the bundle metadata above, not by baked-in
+rounded corners in the artwork.
 
 The spec collects package templates/static assets, yt-dlp dynamic modules,
 bgutil plugin modules, zhconv data, the syncedlyrics lyrics providers (pulled in

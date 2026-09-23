@@ -1,10 +1,17 @@
 """Validate the structure of a packaged macOS ``SpotM3U.app`` release artifact.
 
 Catches malformed or flattened macOS bundles -- loose PyInstaller output, a
-missing executable, missing FFmpeg, or missing application resources -- without
-downgrading the release to unsigned internals. The project intentionally
-distributes an unsigned, un-notarized application, so signature and Gatekeeper
-status are never checked here; only structural problems fail the build.
+missing executable, missing FFmpeg, missing application resources, or icon
+metadata that macOS would ignore -- without downgrading the release to unsigned
+internals. The project intentionally distributes an unsigned, un-notarized
+application, so signature and Gatekeeper status are never checked here; only
+structural problems fail the build.
+
+The icon checks exist because a bundle can look complete and still be presented
+with the generic placeholder icon: an ``Info.plist`` whose ``CFBundleIconFile``
+names a file that is not in the bundle, an ``.icns`` that is not a real icon
+container, or ``LSBackgroundOnly`` -- which makes macOS treat the app as a
+background-only process with no Dock tile or Cmd-Tab icon at all.
 
 Accepts a release ZIP, an extracted ``SpotM3U.app``, or a directory containing
 either.
@@ -12,6 +19,8 @@ either.
 
 from __future__ import annotations
 
+import plistlib
+import struct
 import sys
 import zipfile
 from pathlib import Path
@@ -34,10 +43,51 @@ _REQUIRED_RESOURCES = (
 # Contents/Resources and references it from Info.plist.
 _REQUIRED_ICON = "icon.icns"
 _FFMPEG_BINARIES = ("ffmpeg", "ffprobe")
+ICNS_MAGIC = b"icns"
 
 
 def _fail(message: str) -> NoReturn:
     raise SystemExit(f"invalid macOS bundle: {message}")
+
+
+def _validate_icon_metadata(info_plist: dict, has_icon) -> None:
+    """Reject icon metadata macOS would not use to present the application.
+
+    ``has_icon`` reports whether a bundle resource name is present; it lets the
+    same checks run against an extracted bundle and a release archive.
+    """
+    icon_name = info_plist.get("CFBundleIconFile")
+    if not icon_name:
+        _fail("Info.plist does not declare CFBundleIconFile")
+    if not has_icon(icon_name):
+        _fail(f"Info.plist CFBundleIconFile points at a missing icon: {icon_name}")
+    if info_plist.get("LSBackgroundOnly"):
+        _fail(
+            "Info.plist sets LSBackgroundOnly, so macOS would present the app "
+            "as a background-only process without its icon"
+        )
+
+
+def _validate_icns(payload: bytes) -> None:
+    """Check that ``payload`` is a well-formed .icns container with elements."""
+    if len(payload) < 16 or payload[:4] != ICNS_MAGIC:
+        _fail(f"bundled {_REQUIRED_ICON} is not an .icns icon container")
+    (declared,) = struct.unpack_from(">I", payload, 4)
+    if declared != len(payload):
+        _fail(
+            f"bundled {_REQUIRED_ICON} is truncated: header says {declared} bytes, "
+            f"file has {len(payload)}"
+        )
+    elements = 0
+    offset = 8
+    while offset + 8 <= len(payload):
+        (length,) = struct.unpack_from(">I", payload, offset + 4)
+        if length < 8 or offset + length > len(payload):
+            _fail(f"bundled {_REQUIRED_ICON} has an invalid element at offset {offset}")
+        elements += 1
+        offset += length
+    if elements == 0:
+        _fail(f"bundled {_REQUIRED_ICON} contains no image representations")
 
 
 def _find_resource(app: Path, relative: str) -> Path | None:
@@ -71,13 +121,20 @@ def validate_app(app: Path) -> None:
     info_plist = app / "Contents" / "Info.plist"
     if not info_plist.is_file():
         _fail(f"Info.plist missing: {info_plist}")
+    try:
+        metadata = plistlib.loads(info_plist.read_bytes())
+    except Exception as error:  # plistlib raises a mix of parse errors
+        _fail(f"Info.plist is unreadable: {error}")
 
     if _find_ffmpeg_directory(app) is None:
         trees = "/".join(_CONTENT_TREES)
         _fail(f"bundled ffmpeg/ffprobe missing from Contents/{{{trees}}}/ffmpeg")
 
-    if _find_resource(app, _REQUIRED_ICON) is None:
+    icon = _find_resource(app, _REQUIRED_ICON)
+    if icon is None:
         _fail(f"bundled application icon missing: {_REQUIRED_ICON}")
+    _validate_icns(icon.read_bytes())
+    _validate_icon_metadata(metadata, lambda name: _find_resource(app, name) is not None)
 
     for relative in _REQUIRED_RESOURCES:
         if _find_resource(app, relative) is None:
@@ -92,11 +149,24 @@ def _validate_archive(archive: Path) -> None:
         if corrupt is not None:
             _fail(f"corrupt archive member: {corrupt}")
         names = set(zf.namelist())
+        plist_bytes = zf.read(INFO_PLIST) if INFO_PLIST in names else None
+        icons = [name for name in names if Path(name).name == _REQUIRED_ICON]
+        icon_bytes = zf.read(icons[0]) if icons else None
 
     if EXECUTABLE not in names:
         _fail(f"archive does not contain {EXECUTABLE}")
-    if INFO_PLIST not in names:
+    if plist_bytes is None:
         _fail(f"archive does not contain {INFO_PLIST}")
+    if icon_bytes is None:
+        _fail(f"archive is missing bundled application icon: {_REQUIRED_ICON}")
+    try:
+        metadata = plistlib.loads(plist_bytes)
+    except Exception as error:  # plistlib raises a mix of parse errors
+        _fail(f"archive {INFO_PLIST} is unreadable: {error}")
+    _validate_icns(icon_bytes)
+    _validate_icon_metadata(
+        metadata, lambda name: any(Path(member).name == name for member in names)
+    )
 
     def has_suffix(suffix: str) -> bool:
         return any(name.endswith(suffix) for name in names)
@@ -114,8 +184,6 @@ def _validate_archive(archive: Path) -> None:
     for relative in _REQUIRED_RESOURCES:
         if not has_suffix(f"/{relative}"):
             _fail(f"archive is missing bundled resource: {relative}")
-    if not has_suffix(f"/{_REQUIRED_ICON}"):
-        _fail(f"archive is missing bundled application icon: {_REQUIRED_ICON}")
 
 
 def _find_app(target: Path) -> Path:
