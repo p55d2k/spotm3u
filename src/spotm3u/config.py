@@ -58,6 +58,10 @@ class Config:
     artwork_album_artwork: bool = True
     artwork_artist_artwork: bool = True
     artwork_request_timeout: int = 15
+    artwork_artist_search_limit: int = 25
+    artwork_musicbrainz_artist_limit: int = 10
+    artwork_artist_verification_limit: int = 3
+    artwork_memory_cache_size: int = 1024
     # [lyrics]
     lyrics_enabled: bool = True
     # [download]
@@ -99,6 +103,10 @@ class Config:
             "ARTWORK_ALBUM_ARTWORK": self.artwork_album_artwork,
             "ARTWORK_ARTIST_ARTWORK": self.artwork_artist_artwork,
             "ARTWORK_REQUEST_TIMEOUT": self.artwork_request_timeout,
+            "ARTWORK_ARTIST_SEARCH_LIMIT": self.artwork_artist_search_limit,
+            "ARTWORK_MUSICBRAINZ_ARTIST_LIMIT": self.artwork_musicbrainz_artist_limit,
+            "ARTWORK_ARTIST_VERIFICATION_LIMIT": self.artwork_artist_verification_limit,
+            "ARTWORK_MEMORY_CACHE_SIZE": self.artwork_memory_cache_size,
             "LYRICS_ENABLED": self.lyrics_enabled,
             "DOWNLOAD_QUALITY": self.audio_quality,
             "DOWNLOAD_MAX_WORKERS": self.max_download_workers,
@@ -149,6 +157,10 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "artwork.album_artwork": "artwork_album_artwork",
     "artwork.artist_artwork": "artwork_artist_artwork",
     "artwork.request_timeout": "artwork_request_timeout",
+    "artwork.artist_search_limit": "artwork_artist_search_limit",
+    "artwork.musicbrainz_artist_limit": "artwork_musicbrainz_artist_limit",
+    "artwork.artist_verification_limit": "artwork_artist_verification_limit",
+    "artwork.memory_cache_size": "artwork_memory_cache_size",
     "lyrics.enabled": "lyrics_enabled",
     "download.audio_quality": "audio_quality",
     "download.workers": "max_download_workers",

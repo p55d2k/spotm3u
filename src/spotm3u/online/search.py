@@ -291,11 +291,6 @@ def _strip_instrumental_marker(title: str) -> str:
     return " ".join(parts)
 
 
-def search_online_sources(track: Track, *, max_results: int = 8) -> tuple[SourceCandidate, ...]:
-    """Convenience function used by callers that want a track-to-candidate search."""
-    return OnlineSourceSearcher(max_results=max_results).search(track)
-
-
 def _clean_query(value: str | None) -> str:
     if value is None:
         return ""
@@ -371,5 +366,4 @@ __all__ = [
     "SourceCandidate",
     "TITLE_ONLY_QUERY_TEMPLATES",
     "build_search_queries",
-    "search_online_sources",
 ]

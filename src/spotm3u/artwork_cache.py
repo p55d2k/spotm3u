@@ -25,6 +25,17 @@ _ARTWORK_LOCK = threading.Lock()
 _ARTWORK_CACHE_DIR = "artwork_cache"
 
 
+def set_artwork_memory_limit(size: int) -> None:
+    """Set the size cap of the in-process artwork memo.
+
+    Configured through ``artwork.memory_cache_size`` in config.toml; the memo
+    only springs entries back between runs of the same process, so a smaller cap
+    trades a little cache reuse for less resident memory.
+    """
+    global _ARTWORK_MEMORY_LIMIT
+    _ARTWORK_MEMORY_LIMIT = max(1, int(size))
+
+
 # Artist images live in their own subdirectory of the artwork cache. Artist
 # identity alone is the cache key there, so it can never collide with (or be
 # mistaken for) a release entry keyed by artist + album / artist + title.

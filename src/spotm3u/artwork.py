@@ -17,11 +17,11 @@ from pathlib import Path
 
 import mutagen.id3 as mutagen_id3
 
+from . import artwork_cache as _artwork_cache
 from .artwork_cache import (
     _ARTIST_ARTWORK_SUBDIR,
     _ARTWORK_LOCK,
     _ARTWORK_MEMORY,
-    _ARTWORK_MEMORY_LIMIT,
     _artist_cache_dir,
     _artist_cache_key,
     _artwork_memory_key,
@@ -169,7 +169,7 @@ def _deduplicated_artwork_fetch(
         with _ARTWORK_LOCK:
             _ARTWORK_MEMORY[memory_key] = result
             _ARTWORK_MEMORY.move_to_end(memory_key)
-            while len(_ARTWORK_MEMORY) > _ARTWORK_MEMORY_LIMIT:
+            while len(_ARTWORK_MEMORY) > _artwork_cache._ARTWORK_MEMORY_LIMIT:
                 _ARTWORK_MEMORY.popitem(last=False)
     return result
 

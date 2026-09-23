@@ -120,6 +120,21 @@
 # (default 15)
 # request_timeout = 15
 
+# Limits for the artist-artwork identity check. Deezer search hits are kept as
+# exact-name candidates up to artist_search_limit (default 25); the matching
+# MusicBrainz hit is chosen from up to musicbrainz_artist_limit results (default
+# 10); and the artist_verification_limit (default 3) strongest candidates have
+# their releases checked for corroboration before an image is trusted. Lowering
+# these cuts the number of lookups per track, at the cost of weaker matching.
+# artist_search_limit = 25
+# musicbrainz_artist_limit = 10
+# artist_verification_limit = 3
+
+# How many resolved artwork images the in-process memory cache keeps (default
+# 1024) before the oldest entries are dropped. The limit balances memory use
+# against reusing repeated lookups within the same run.
+# memory_cache_size = 1024
+
 [lyrics]
 # When true (default), each resolved track is looked up in public lyrics
 # providers through the syncedlyrics library and any lyrics found are embedded

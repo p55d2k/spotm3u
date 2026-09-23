@@ -591,24 +591,12 @@ def enrich_metadata(
     )
 
 
-def enrich_metadata_batch(
-    tracks: list[Track], resolved_paths: list[Path], download_dir: str | Path
-) -> list[MetadataResult]:
-    """Enrich metadata for multiple tracks, reusing artwork cache."""
-    results: list[MetadataResult] = []
-    for track, path in zip(tracks, resolved_paths, strict=True):
-        result = enrich_metadata(path, track, download_dir)
-        results.append(result)
-    return results
-
-
 __all__ = [
     "LyricsForm",
     "MetadataError",
     "MetadataResult",
     "embedded_lyrics_form",
     "enrich_metadata",
-    "enrich_metadata_batch",
     "id3_tags_enabled",
     "metadata_enabled",
     "set_id3_tags_enabled",

@@ -382,6 +382,34 @@ def test_create_app_wires_pot_provider_timeout(tmp_path, monkeypatch) -> None:
     assert youtube_setup._POT_PROVIDER_TIMEOUT == 2.0
 
 
+def test_config_file_sets_artwork_limits(tmp_path, monkeypatch) -> None:
+    from spotm3u import artwork_cache, artwork_sources
+
+    for attribute in (
+        "_ARTIST_SEARCH_LIMIT",
+        "_MUSICBRAINZ_ARTIST_LIMIT",
+        "_ARTIST_VERIFICATION_LIMIT",
+        "_REQUEST_TIMEOUT",
+    ):
+        monkeypatch.setattr(artwork_sources, attribute, getattr(artwork_sources, attribute))
+    monkeypatch.setattr(artwork_cache, "_ARTWORK_MEMORY_LIMIT", artwork_cache._ARTWORK_MEMORY_LIMIT)
+    monkeypatch.delenv("SPOTM3U_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    create_app(
+        {
+            "ARTWORK_ARTIST_SEARCH_LIMIT": 5,
+            "ARTWORK_MUSICBRAINZ_ARTIST_LIMIT": 4,
+            "ARTWORK_ARTIST_VERIFICATION_LIMIT": 2,
+            "ARTWORK_MEMORY_CACHE_SIZE": 64,
+        }
+    )
+    assert artwork_sources._ARTIST_SEARCH_LIMIT == 5
+    assert artwork_sources._MUSICBRAINZ_ARTIST_LIMIT == 4
+    assert artwork_sources._ARTIST_VERIFICATION_LIMIT == 2
+    assert artwork_cache._ARTWORK_MEMORY_LIMIT == 64
+
+
 def test_config_file_sets_timeout_settings(tmp_path) -> None:
     path = write_config(
         tmp_path,

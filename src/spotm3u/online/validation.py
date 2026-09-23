@@ -65,16 +65,8 @@ def validate_source_candidate(track: Track, candidate: SourceCandidate) -> Sourc
     return SourceValidation(candidate, "accepted", ranking.reasons)
 
 
-def validate_source_candidates(
-    track: Track, candidates: list[SourceCandidate] | tuple[SourceCandidate, ...]
-) -> tuple[SourceValidation, ...]:
-    """Validate candidates while preserving their input order."""
-    return tuple(validate_source_candidate(track, candidate) for candidate in candidates)
-
-
 __all__ = [
     "SourceValidation",
     "ValidationStatus",
     "validate_source_candidate",
-    "validate_source_candidates",
 ]

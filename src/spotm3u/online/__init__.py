@@ -3,7 +3,7 @@
 from ..metadata import MetadataResult, enrich_metadata
 from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
 from .cache import DownloadCache, cache_metadata_key, source_identity
-from .downloader import download_source, download_track
+from .downloader import download_track
 from .errors import DownloadError
 from .ranking import (
     CandidateRanking,
@@ -15,7 +15,6 @@ from .search import (
     OnlineSourceSearcher,
     SourceCandidate,
     build_search_queries,
-    search_online_sources,
 )
 from .source_quality import (
     SourceProfile,
@@ -28,7 +27,6 @@ from .validation import (
     SourceValidation,
     ValidationStatus,
     validate_source_candidate,
-    validate_source_candidates,
 )
 from .youtube_setup import describe_youtube_setup
 
@@ -36,7 +34,6 @@ __all__ = [
     "OnlineSourceSearcher",
     "SourceCandidate",
     "build_search_queries",
-    "search_online_sources",
     "CandidateRanking",
     "ScoreComponents",
     "rank_source_candidate",
@@ -49,10 +46,8 @@ __all__ = [
     "SourceValidation",
     "ValidationStatus",
     "validate_source_candidate",
-    "validate_source_candidates",
     "DownloadError",
     "describe_youtube_setup",
-    "download_source",
     "download_track",
     "DownloadCache",
     "cache_metadata_key",

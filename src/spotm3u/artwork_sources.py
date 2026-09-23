@@ -36,6 +36,13 @@ _ARTIST_API_BASE = "https://api.deezer.com/artist"
 
 _REQUEST_TIMEOUT = 15
 
+# How many candidate artists each authority returns or how many are consulted
+# when verifying an artist's identity. Reasonable-to-tune limits that a
+# config.toml can lower to cut bandwidth or raise for better matching odds.
+_ARTIST_VERIFICATION_LIMIT = 3
+_ARTIST_SEARCH_LIMIT = 25
+_MUSICBRAINZ_ARTIST_LIMIT = 10
+
 
 _USER_AGENT = "spotm3u/0.1 (https://github.com/zk/spotm3u)"
 
@@ -131,6 +138,33 @@ def set_artwork_request_timeout(seconds: int) -> None:
     """
     global _REQUEST_TIMEOUT
     _REQUEST_TIMEOUT = int(seconds)
+
+
+def set_artist_search_limit(limit: int) -> None:
+    """Set how many exact-name artist candidates Deezer returns.
+
+    Configured through ``artwork.artist_search_limit`` in config.toml.
+    """
+    global _ARTIST_SEARCH_LIMIT
+    _ARTIST_SEARCH_LIMIT = int(limit)
+
+
+def set_musicbrainz_artist_limit(limit: int) -> None:
+    """Set how many MusicBrainz artist hits are scanned for an exact name.
+
+    Configured through ``artwork.musicbrainz_artist_limit`` in config.toml.
+    """
+    global _MUSICBRAINZ_ARTIST_LIMIT
+    _MUSICBRAINZ_ARTIST_LIMIT = int(limit)
+
+
+def set_artist_verification_limit(limit: int) -> None:
+    """Set how many exact-name candidates have their releases checked.
+
+    Configured through ``artwork.artist_verification_limit`` in config.toml.
+    """
+    global _ARTIST_VERIFICATION_LIMIT
+    _ARTIST_VERIFICATION_LIMIT = int(limit)
 
 
 def _normalize_album_for_search(album: str) -> str:
@@ -334,15 +368,6 @@ def _image_mime(data: bytes) -> str:
 # embedded; ``likely`` and ``unknown`` describe candidates that were found and
 # then rejected, and exist so rejections can say why.
 ArtistConfidence = Literal["verified", "likely", "unknown"]
-
-# How many exact-name candidates have their Deezer releases checked. Each check
-# is a request, and corroborating evidence -- not popularity -- is what decides.
-_ARTIST_VERIFICATION_LIMIT = 3
-
-# Deezer search hits kept as exact-name candidates, and MusicBrainz results
-# scanned for an exact name match.
-_ARTIST_SEARCH_LIMIT = 25
-_MUSICBRAINZ_ARTIST_LIMIT = 10
 
 # Artist images are recorded with the Deezer artist id they were taken from and
 # the evidence that established the identity

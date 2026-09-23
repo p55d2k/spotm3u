@@ -14,7 +14,13 @@ from .artwork import (
     set_artist_artwork_enabled,
     set_artwork_verify_local,
 )
-from .artwork_sources import set_artwork_request_timeout
+from .artwork_cache import set_artwork_memory_limit
+from .artwork_sources import (
+    set_artist_search_limit,
+    set_artist_verification_limit,
+    set_artwork_request_timeout,
+    set_musicbrainz_artist_limit,
+)
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
 from .jobs import JobManager, JobStartError
@@ -82,6 +88,10 @@ def create_app(config: dict | None = None) -> Flask:
     set_id3_tags_enabled(bool(app.config.get("METADATA_TAGS", True)))
     set_artwork_verify_local(bool(app.config.get("ARTWORK_VERIFY_LOCAL", True)))
     set_artwork_request_timeout(int(app.config.get("ARTWORK_REQUEST_TIMEOUT", 15)))
+    set_artist_search_limit(int(app.config.get("ARTWORK_ARTIST_SEARCH_LIMIT", 25)))
+    set_musicbrainz_artist_limit(int(app.config.get("ARTWORK_MUSICBRAINZ_ARTIST_LIMIT", 10)))
+    set_artist_verification_limit(int(app.config.get("ARTWORK_ARTIST_VERIFICATION_LIMIT", 3)))
+    set_artwork_memory_limit(int(app.config.get("ARTWORK_MEMORY_CACHE_SIZE", 1024)))
     set_album_artwork_enabled(bool(app.config.get("ARTWORK_ALBUM_ARTWORK", True)))
     set_artist_artwork_enabled(bool(app.config.get("ARTWORK_ARTIST_ARTWORK", True)))
     set_lyrics_enabled(bool(app.config.get("LYRICS_ENABLED", True)))

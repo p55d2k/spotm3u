@@ -609,30 +609,6 @@ def _download_to(
     return output_path
 
 
-def download_source(
-    source_url: str,
-    track: Track,
-    output_dir: str | Path,
-    *,
-    quality: str = "192",
-    timeout: float | None = 600,
-    cookies_from_browser: str | None = None,
-    pot_provider_url: str | None = None,
-    pot_provider_home: str | None = None,
-) -> Path:
-    """Compatibility-oriented source-first wrapper around :func:`download_track`."""
-    return download_track(
-        track,
-        source_url,
-        output_dir,
-        quality=quality,
-        timeout=timeout,
-        cookies_from_browser=cookies_from_browser,
-        pot_provider_url=pot_provider_url,
-        pot_provider_home=pot_provider_home,
-    )
-
-
 def _pot_provider_extractor_args(
     provider_url: str | None,
     provider_home: str | None,
@@ -781,4 +757,4 @@ def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
         return False
 
 
-__all__ = ["DownloadError", "download_source", "download_track"]
+__all__ = ["DownloadError", "download_track"]
