@@ -6,6 +6,8 @@
 
 SpotM3U turns Spotify playlists exported from [Exportify](https://exportify.net/) into M3U playlists for music already on your computer.
 
+![SpotM3U demo workflow](docs/images/demo.gif)
+
 ## Download
 
 - [Download for Windows](https://github.com/p55d2k/spotm3u/releases)
@@ -23,8 +25,6 @@ Exportify → Download → Launch → Upload ZIP → Get M3U
 4. **Upload ZIP** → drag the Exportify ZIP into the window and choose your
    playlists.
 5. **Get M3U** → review the match results and download the generated playlist.
-
-![SpotM3U demo workflow](docs/images/demo.gif)
 
 ## Overview
 
