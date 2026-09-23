@@ -9,17 +9,23 @@
   </head>
   <body>
     {% include "_header.html" %}
-    <main class="card">
-      <p class="eyebrow">Step 2 · Choose playlists</p>
-      <h1>Select playlists</h1>
-      {% if error %}
-      <p role="alert">{{ error }}</p>
-      {% endif %}
-      {% if playlists %}
-      <form method="post" action="{{ url_for('select_playlists_batch', job_id=job_id) }}" id="batch-form">
+    <header class="content-head">
+      <div class="content-head-text">
+        <p class="eyebrow">Step 2 · Choose playlists</p>
+        <h1 class="page-title">Select playlists</h1>
+      </div>
+      <a class="back-link" href="{{ url_for('index') }}">Cancel and upload a different ZIP</a>
+    </header>
+
+    {% if error %}
+    <p class="error" role="alert">{{ error }}</p>
+    {% endif %}
+    {% if playlists %}
+    <form method="post" action="{{ url_for('select_playlists_batch', job_id=job_id) }}" id="batch-form">
       <div class="playlist-toolbar">
-        <label for="playlist-search">Search playlists</label>
-        <input id="playlist-search" type="search" placeholder="Search by playlist name" autocomplete="off">
+        <label for="playlist-search">Search playlists
+          <input id="playlist-search" type="search" placeholder="Search by playlist name" autocomplete="off">
+        </label>
         <div class="selection-actions">
           <button class="button-secondary" type="button" id="select-all">Select all</button>
           <button class="button-secondary" type="button" id="deselect-all">Deselect all</button>
@@ -43,10 +49,12 @@
       </form>
       <p id="no-playlists-found" class="page-note" hidden>No playlists match your search.</p>
       {% else %}
-      <p role="status">The export did not contain any playlists.</p>
+      <p role="status" class="page-note">The export did not contain any playlists.</p>
       {% endif %}
-      <p class="page-note">Playlists with more than 50 songs can take a while to finish. You can leave this tab open while SpotM3U works.</p>
+      <p class="page-note">Playlists with more than 50 songs can take a while to finish. You can leave this window open while SpotM3U works.</p>
     </main>
+    </div>
+</div>
     <script>
       const playlistForm = document.getElementById("batch-form");
       const cards = [...document.querySelectorAll(".playlist-card")];

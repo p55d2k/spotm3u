@@ -10,38 +10,46 @@
   </head>
   <body>
     {% include "_header.html" %}
-    <main class="card">
-      <p class="eyebrow">Step 3 · Batch conversion</p>
-      <h1>Converting selected playlists</h1>
-      <p class="intro">Playlists with more than 50 songs can take a while. Leave this tab open while SpotM3U completes the work.</p>
-      <form id="start-form" method="post" action="{{ url_for('start_batch_processing', job_id=job_id) }}">
-        <label class="mode-option">
-          {# The hidden 0 must follow the checkbox: form fields are read in document order, so a checked box submits 1 first. #}
-          <input type="checkbox" id="fast-mode" name="fast_mode" value="1"{% if fast_mode_default %} checked{% endif %}>
-          <input type="hidden" name="fast_mode" value="0">
-          <span class="mode-option-text"><strong>Fast mode</strong> — find audio and write each playlist without source checks, audio checks or metadata (tags, artwork, lyrics). Downloads finish much faster, but matches can be less accurate and the MP3s stay plain.</span>
-        </label>
-        <button type="submit">Start batch processing</button>
-      </form>
-      <section id="progress" class="progress" hidden>
-        <p id="status" class="status-line" role="status"></p>
-        <div class="progress-row">
-          <div class="progress-track" aria-label="Overall progress">
-            <div id="bar" class="progress-bar"></div>
-          </div>
-          <span id="eta-chip" class="eta-chip" hidden aria-live="polite"></span>
+    <header class="content-head">
+      <div class="content-head-text">
+        <p class="eyebrow">Step 3 · Batch conversion</p>
+        <h1 class="page-title">Converting selected playlists</h1>
+        <p class="content-intro">Playlists with more than 50 songs can take a while. Leave this window open while SpotM3U completes the work.</p>
+      </div>
+      <a class="back-link" href="{{ url_for('playlists', job_id=job_id) }}">Back to playlist selection</a>
+    </header>
+
+    <form id="start-form" method="post" action="{{ url_for('start_batch_processing', job_id=job_id) }}">
+      <label class="mode-option">
+        {# The hidden 0 must follow the checkbox: form fields are read in document order, so a checked box submits 1 first. #}
+        <input type="checkbox" id="fast-mode" name="fast_mode" value="1"{% if fast_mode_default %} checked{% endif %}>
+        <input type="hidden" name="fast_mode" value="0">
+        <span class="mode-option-text"><strong>Fast mode</strong> — find audio and write each playlist without source checks, audio checks or metadata (tags, artwork, lyrics). Downloads finish much faster, but matches can be less accurate and the MP3s stay plain.</span>
+      </label>
+      <button type="submit">Start batch processing</button>
+    </form>
+
+    <section id="progress" class="progress" hidden>
+      <p id="status" class="status-line" role="status"></p>
+      <div class="progress-row">
+        <div class="progress-track" aria-label="Overall progress">
+          <div id="bar" class="progress-bar"></div>
         </div>
-        <dl class="stats">
-          <div><dt>Searched</dt><dd id="stat-searched">0</dd></div>
-          <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
-          <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
-          <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
-        </dl>
-        <p id="current-track" class="current-track"></p>
-        <div id="playlists" class="batch-playlists"></div>
-        <p id="result-link"></p>
-      </section>
+        <span id="eta-chip" class="eta-chip" hidden aria-live="polite"></span>
+      </div>
+      <dl class="stats">
+        <div><dt>Searched</dt><dd id="stat-searched">0</dd></div>
+        <div><dt>Completed</dt><dd id="stat-completed">0</dd></div>
+        <div><dt>Successful</dt><dd id="stat-successful">0</dd></div>
+        <div><dt>Failed</dt><dd id="stat-failed">0</dd></div>
+      </dl>
+      <p id="current-track" class="current-track"></p>
+      <div id="playlists" class="batch-playlists"></div>
+      <p id="result-link"></p>
+    </section>
     </main>
+    </div>
+</div>
     <script>
       const form = document.getElementById("start-form");
       const progress = document.getElementById("progress");

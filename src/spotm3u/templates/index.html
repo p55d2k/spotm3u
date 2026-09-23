@@ -9,16 +9,41 @@
   </head>
   <body>
     {% include "_header.html" %}
-    <main class="card">
-      <p class="eyebrow">SpotM3U · Spotify playlist converter</p>
-      <h1>Spotify to M3U Converter</h1>
-      <p class="intro">
-        Turn your Spotify playlists into local M3U playlists without giving
-        SpotM3U access to your Spotify account.
-      </p>
+    <header class="content-head">
+      <div class="content-head-text">
+        <p class="eyebrow">Import · Spotify playlist converter</p>
+        <h1 class="page-title">Spotify to M3U Converter</h1>
+        <p class="content-intro">
+          Turn your Spotify playlists into local M3U playlists without giving
+          SpotM3U access to your Spotify account.
+        </p>
+      </div>
+    </header>
 
-      <section aria-labelledby="instructions-heading">
-        <h2 id="instructions-heading">Get started</h2>
+    <div class="import-layout">
+      <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form" class="panel">
+        <h2 class="panel-heading" id="upload-heading">Upload your export</h2>
+        {% if error %}
+        <p class="error" role="alert">{{ error }}</p>
+        {% endif %}
+        <label class="upload-zone" for="export-file">
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <span class="upload-title">Choose your Spotify playlist export</span>
+          <span class="upload-filename" id="upload-filename">ZIP file from Exportify · up to your configured upload limit</span>
+          <input
+            id="export-file"
+            name="file"
+            type="file"
+            accept=".zip,application/zip"
+            required
+          >
+        </label>
+        <p class="field-help">Large playlists may take a while; keep this window open while SpotM3U works.</p>
+        <button type="submit" id="upload-button">Upload playlist export</button>
+      </form>
+
+      <section class="panel" aria-labelledby="instructions-heading">
+        <h2 class="panel-heading" id="instructions-heading">Get started</h2>
         <ol class="steps">
           <li>
             <strong>Open Exportify</strong>
@@ -35,27 +60,10 @@
           <li><strong>Upload that ZIP here</strong></li>
         </ol>
       </section>
-
-      <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form">
-        {% if error %}
-        <p class="error" role="alert">{{ error }}</p>
-        {% endif %}
-        <label class="upload-zone" for="export-file">
-          <span class="upload-icon" aria-hidden="true">↑</span>
-          <span class="upload-title">Choose your Spotify playlist export</span>
-          <span class="upload-filename" id="upload-filename">ZIP file from Exportify · up to your configured upload limit</span>
-          <input
-            id="export-file"
-            name="file"
-            type="file"
-            accept=".zip,application/zip"
-            required
-          >
-        </label>
-        <p class="field-help">Large playlists may take a while; keep this tab open while SpotM3U works.</p>
-        <button type="submit" id="upload-button">Upload playlist export</button>
-      </form>
+    </div>
     </main>
+    </div>
+</div>
     <script>
       document.getElementById("export-file").addEventListener("change", (event) => {
         const file = event.target.files[0];

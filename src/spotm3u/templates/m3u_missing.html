@@ -9,14 +9,17 @@
   </head>
   <body>
     {% include "_header.html" %}
-    <main class="card">
-      <p class="eyebrow">Check before downloading</p>
-      <h1>{{ playlist_name }}</h1>
-      <p class="error" role="alert">
-        {{ check.missing_count }} of {{ check.total }} track{{ '' if check.total == 1 else 's' }}
-        in this playlist reference file{{ '' if check.missing_count == 1 else 's' }} that
-        {{ 'is' if check.missing_count == 1 else 'are' }} no longer in the download folder.
-      </p>
+    <header class="content-head">
+      <div class="content-head-text">
+        <p class="eyebrow">Check before downloading</p>
+        <h1 class="page-title">{{ playlist_name }}</h1>
+      </div>
+    </header>
+    <p class="error" role="alert">
+      {{ check.missing_count }} of {{ check.total }} track{{ '' if check.total == 1 else 's' }}
+      in this playlist reference file{{ '' if check.missing_count == 1 else 's' }} that
+      {{ 'is' if check.missing_count == 1 else 'are' }} no longer in the download folder.
+    </p>
 
       <section aria-labelledby="missing-heading">
         <h2 id="missing-heading">Missing files</h2>
@@ -44,5 +47,7 @@
         </div>
       </section>
     </main>
+    </div>
+</div>
   </body>
 </html>

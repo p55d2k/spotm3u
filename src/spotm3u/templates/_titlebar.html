@@ -55,6 +55,37 @@
       return "linux";
     };
 
+    // Session flag so reloads and navigations inside the same desktop window
+    // draw the frame immediately, instead of waiting for the bridge handshake
+    // to fire pywebviewready a frame late on every page load (which makes the
+    // title bar flash in/out whenever a sidebar step navigates).
+    const SHELL_KEY = "spotm3u-shell";
+    const shellState = (() => {
+      try {
+        return sessionStorage.getItem(SHELL_KEY);
+      } catch (_error) {
+        return null;
+      }
+    })();
+
+    const drawFrame = (platform) => {
+      if (titlebar.dataset.framed === "true") return;
+      titlebar.dataset.framed = "true";
+      if (platform) titlebar.dataset.platform = platform;
+      titlebar.hidden = false;
+      document.body.classList.add("has-native-titlebar");
+      try {
+        sessionStorage.setItem(SHELL_KEY, platform || "");
+      } catch (_error) {
+        // sessionStorage can be unavailable; the frame still appears once the
+        // bridge handshake completes.
+      }
+    };
+
+    if (shellState !== null) {
+      drawFrame(shellState);
+    }
+
     const setMaximized = (maximized) => {
       titlebar.classList.toggle("is-maximized", Boolean(maximized));
       const button = titlebar.querySelector('[data-window-action="maximize"]');
@@ -106,11 +137,10 @@
     const activate = () => {
       const api = bridge();
       if (!api || typeof api.minimize !== "function" || typeof api.close !== "function") return;
-      if (titlebar.dataset.active === "true") return;
       titlebar.dataset.active = "true";
-      titlebar.dataset.platform = platformName();
-      titlebar.hidden = false;
-      document.body.classList.add("has-native-titlebar");
+      const platform = platformName();
+      titlebar.dataset.platform = platform;
+      drawFrame(platform);
       wire(api);
     };
 

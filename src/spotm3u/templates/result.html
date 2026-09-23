@@ -10,28 +10,34 @@
   </head>
   <body>
     {% include "_header.html" %}
-    <main class="card">
-      <p class="eyebrow">Step 4 · Conversion complete</p>
-      <h1>{{ state.playlist.name }}</h1>
-      <p class="intro">Total tracks: {{ state.playlist.total_tracks }}</p>
+    <header class="content-head">
+      <div class="content-head-text">
+        <p class="eyebrow">Step 4 · Conversion complete</p>
+        <h1 class="page-title">{{ state.playlist.name }}</h1>
+        <p class="content-intro">Total tracks: {{ state.playlist.total_tracks }}</p>
+      </div>
+      {% if batch_back %}
+      <a class="back-link" href="{{ url_for('batch_processing_result', job_id=job_id) }}">Back to all playlist results</a>
+      {% endif %}
+    </header>
 
-      {% if state.error %}
-      <p class="error" role="alert">Processing failed: {{ state.error }}</p>
-      {% endif %}
-      {% if state.media_player_error %}
-      <p class="error" role="alert">Add to Media Player failed: {{ state.media_player_error }}</p>
-      {% elif state.media_player %}
-        {% if state.media_player.cancelled %}
-        <p role="status">{{ state.media_player.message }}</p>
-        {% else %}
-        <p role="status">
-          {{ state.media_player.message }}
-          {% if state.media_player.unresolved %}
-          {{ state.media_player.unresolved }} unresolved track(s) were not sent.
-          {% endif %}
-        </p>
+    {% if state.error %}
+    <p class="error" role="alert">Processing failed: {{ state.error }}</p>
+    {% endif %}
+    {% if state.media_player_error %}
+    <p class="error" role="alert">Add to Media Player failed: {{ state.media_player_error }}</p>
+    {% elif state.media_player %}
+      {% if state.media_player.cancelled %}
+      <p role="status" class="page-note">{{ state.media_player.message }}</p>
+      {% else %}
+      <p role="status" class="page-note">
+        {{ state.media_player.message }}
+        {% if state.media_player.unresolved %}
+        {{ state.media_player.unresolved }} unresolved track(s) were not sent.
         {% endif %}
+      </p>
       {% endif %}
+    {% endif %}
 
       {% if state.stale_outputs %}
       <p class="error" role="alert">
@@ -145,6 +151,8 @@
         </div>
       </section>
     </main>
+    </div>
+</div>
     <script>
       (() => {
         applyStatusIcons();

@@ -1,0 +1,65 @@
+{% set endpoint = request.endpoint or "index" %}
+{% set current_stage = workflow_stage if workflow_stage is defined else (1 if endpoint in ("index", "upload") else (2 if endpoint in ("playlists", "select_playlist", "select_playlists_batch") else (3 if endpoint in ("processing", "start_processing", "processing_status", "batch_processing", "start_batch_processing", "batch_processing_status") else 4))) %}
+{% set choose_href = url_for("playlists", job_id=job_id) if job_id is defined else "" %}
+{% set convert_href = (url_for("processing", job_id=job_id, playlist_id=playlist_id) if playlist_id is defined else (url_for("batch_processing", job_id=job_id) if endpoint in ("batch_processing", "start_batch_processing", "batch_processing_status") else "")) %}
+{% set done_href = ((url_for("processing_result", job_id=job_id, playlist_id=playlist_id) if playlist_id is defined else url_for("batch_processing_result", job_id=job_id)) if current_stage == 4 else "") %}
+<aside class="app-sidebar" aria-label="Application navigation">
+  <div class="sidebar-brand">
+    <a href="{{ url_for('index') }}" aria-label="SpotM3U home">
+      <span class="brand-mark" aria-hidden="true">♪</span>
+      <span class="brand-name">SpotM3U</span>
+    </a>
+  </div>
+
+  <div class="sidebar-block">
+    <p class="sidebar-heading">Conversion</p>
+    <ol class="sidebar-steps">
+      {% for name, number, href in [
+        ("Upload", 1, url_for("index")),
+        ("Choose playlists", 2, choose_href),
+        ("Convert", 3, convert_href),
+        ("Done", 4, done_href),
+      ] %}
+        {% set step_state = "current" if number == current_stage else ("complete" if number < current_stage else "") %}
+        <li class="step {{ step_state }}" {% if step_state == "current" %}aria-current="step"{% endif %}>
+          {% if href %}
+            <a class="step-link" href="{{ href }}">
+          {% else %}
+            <span class="step-link">
+          {% endif %}
+          <span class="step-dot" aria-hidden="true">{{ number }}</span>
+          <span class="step-name">{{ name }}</span>
+          {% if href %}</a>{% else %}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <div class="sidebar-footer">
+    <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false">
+      <span class="nav-icon" data-theme-icon aria-hidden="true"></span>
+      <span class="theme-toggle-label" data-theme-label>Dark mode</span>
+    </button>
+  </div>
+</aside>
+<script>
+  (() => {
+    const root = document.documentElement;
+    const toggle = document.querySelector("[data-theme-toggle]");
+    const icon = toggle && toggle.querySelector("[data-theme-icon]");
+    const label = toggle && toggle.querySelector("[data-theme-label]");
+    const apply = (theme) => {
+      root.dataset.theme = theme;
+      const dark = theme === "dark";
+      toggle && toggle.setAttribute("aria-pressed", dark ? "true" : "false");
+      if (icon) icon.textContent = dark ? "☀" : "☾";
+      if (label) label.textContent = dark ? "Light mode" : "Dark mode";
+    };
+    apply(localStorage.getItem("spotm3u-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+    toggle && toggle.addEventListener("click", () => {
+      const next = root.dataset.theme === "dark" ? "light" : "dark";
+      localStorage.setItem("spotm3u-theme", next);
+      apply(next);
+    });
+  })();
+</script>
