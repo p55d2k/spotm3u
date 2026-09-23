@@ -14,8 +14,9 @@ The helpers here -- free-port selection, server readiness polling, bundle
 config discovery, and native error reporting -- are shared with the desktop
 shell and the packaging helpers. A packaged Windows executable is built
 windowed (no console), so startup failures are reported through a native
-message box and mirrored into ``spotm3u-startup.log`` beside the executable
-rather than a traceback on a standard stream that does not exist.
+message box and mirrored into the process file log (see
+:func:`spotm3u.log.configure_file_logging`) rather than a traceback on a
+standard stream that does not exist.
 """
 
 from __future__ import annotations
@@ -30,12 +31,15 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from .log import DEFAULT_DATE_FORMAT, DEFAULT_FORMAT, PACKAGE_LOGGER
+from .log import (
+    PACKAGE_LOGGER,
+    configure_file_logging,
+    log_file_path,
+)
 from .runtime import bundle_roots, has_console, is_frozen
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5001
-STARTUP_LOG_NAME = "spotm3u-startup.log"
 MIN_PORT = 1
 MAX_PORT = 65535
 READINESS_TIMEOUT = 30.0
@@ -166,41 +170,32 @@ def write_error_log(message: str, *, exception: bool = False, path: Path | None 
 def startup_log_path() -> Path:
     """The default startup-log location for a packaged launch.
 
-    ``spotm3u-startup.log`` sits beside the executable so the folder the user is
-    working from shows the file after a launch.
+    Logs land in the per-user application log directory (see
+    :func:`spotm3u.log.log_file_path`) so the file is writable and findable
+    even when the bundle sits under Program Files.
     """
-    return Path(sys.executable).resolve().parent / STARTUP_LOG_NAME
+    return log_file_path()
 
 
 def configure_startup_log(path: Path | None = None) -> Path | None:
-    """Mirror package logging into a startup-log file for a packaged launch.
+    """Ensure a packaged launch mirrors logs into a file before the app imports.
 
     A windowed Windows build has no standard streams, so the logger's stream
     handler writes nowhere and the real reason for a startup failure is lost.
-    Attaching a file handler before the desktop shell (or its import) runs keeps
-    that reason on disk even when the process dies before any dialog appears.
-    No-op outside a PyInstaller bundle, where the console already shows the log.
-    Returns the log path, or ``None`` when nothing was configured.
+    Configuring the process file log before the desktop shell (or its import)
+    runs keeps that reason on disk even when the process dies before any dialog
+    appears. No-op outside a PyInstaller bundle, where the console already
+    shows the log. Returns the log path, or ``None`` when nothing was
+    configured.
     """
     if not is_frozen():
         return None
     logger = logging.getLogger(PACKAGE_LOGGER)
     if getattr(logger, "_spotm3u_startup_log_configured", False):
         return getattr(logger, "_spotm3u_startup_log_path", None)
-    target = path or startup_log_path()
-    if target.is_dir():
-        target = target / STARTUP_LOG_NAME
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(target, mode="a", encoding="utf-8")
-    except OSError:
-        target = Path(tempfile.gettempdir()) / STARTUP_LOG_NAME
-        handler = logging.FileHandler(target, mode="a", encoding="utf-8")
-    handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, DEFAULT_DATE_FORMAT))
-    handler._spotm3u_startup = True  # type: ignore[attr-defined]
-    logger.addHandler(handler)
     if logger.level == logging.NOTSET or logger.level > logging.INFO:
         logger.setLevel(logging.INFO)
+    target = configure_file_logging(level=logger.level, path=path or startup_log_path())
     logger._spotm3u_startup_log_configured = True  # type: ignore[attr-defined]
     logger._spotm3u_startup_log_path = target  # type: ignore[attr-defined]
     return target

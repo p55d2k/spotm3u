@@ -44,6 +44,14 @@
 # Also read from the SPOTM3U_LOG_LEVEL environment variable when unset.
 # log_level = "INFO"
 
+# Packaged builds (the PyInstaller .exe/.app) mirror every log record -- the
+# spotm3u package, Flask, and Werkzeug -- into a rotating file so failures are
+# diagnosable without a console. Default location per platform:
+#   Windows: %LOCALAPPDATA%\SpotM3U\logs\spotm3u.log
+#   macOS:   ~/Library/Logs/SpotM3U/spotm3u.log
+# SPOTM3U_LOG_FILE overrides the location; setting it also enables file logging
+# in development runs.
+
 [upload]
 # Maximum accepted ZIP size in bytes (default 50 MiB = 52428800).
 # max_upload_size = 52428800

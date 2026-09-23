@@ -173,7 +173,7 @@ def test_report_startup_error_writes_a_log_for_packaged_builds(monkeypatch) -> N
 
 
 def _reset_startup_log() -> None:
-    """Detach any startup-log handler the launcher attached."""
+    """Detach any file handler the launcher or the process file log attached."""
     logger = logging.getLogger(launcher.PACKAGE_LOGGER)
     for handler in list(logger.handlers):
         if getattr(handler, "_spotm3u_startup", False):
@@ -182,6 +182,13 @@ def _reset_startup_log() -> None:
     for attribute in ("_spotm3u_startup_log_configured", "_spotm3u_startup_log_path"):
         if hasattr(logger, attribute):
             delattr(logger, attribute)
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if getattr(handler, "_spotm3u_file_log", False):
+            root.removeHandler(handler)
+            handler.close()
+    if hasattr(root, "_spotm3u_file_log_path"):
+        delattr(root, "_spotm3u_file_log_path")
 
 
 def test_configure_startup_log_is_skipped_outside_a_bundle(monkeypatch) -> None:
@@ -190,12 +197,10 @@ def test_configure_startup_log_is_skipped_outside_a_bundle(monkeypatch) -> None:
     assert launcher.configure_startup_log() is None
 
 
-def test_configure_startup_log_records_messages_beside_the_executable(
-    monkeypatch, tmp_path
-) -> None:
+def test_configure_startup_log_records_messages_to_the_log_file(monkeypatch, tmp_path) -> None:
     _reset_startup_log()
     monkeypatch.setattr(launcher, "is_frozen", lambda: True)
-    target = tmp_path / "logs" / launcher.STARTUP_LOG_NAME
+    target = tmp_path / "logs" / "spotm3u.log"
     try:
         configured = launcher.configure_startup_log(target)
 
@@ -210,7 +215,7 @@ def test_configure_startup_log_records_messages_beside_the_executable(
 def test_configure_startup_log_is_idempotent(monkeypatch, tmp_path) -> None:
     _reset_startup_log()
     monkeypatch.setattr(launcher, "is_frozen", lambda: True)
-    target = tmp_path / launcher.STARTUP_LOG_NAME
+    target = tmp_path / "spotm3u.log"
     logger = logging.getLogger(launcher.PACKAGE_LOGGER)
     try:
         first = launcher.configure_startup_log(target)
@@ -229,7 +234,7 @@ def test_packaged_startup_failure_reaches_the_startup_log(monkeypatch, tmp_path)
     monkeypatch.setattr(launcher, "is_frozen", lambda: True)
     monkeypatch.setattr(launcher, "write_error_log", lambda *args, **kwargs: tmp_path / "error.log")
     monkeypatch.setattr(launcher, "show_message_box", lambda *args, **kwargs: True)
-    target = tmp_path / launcher.STARTUP_LOG_NAME
+    target = tmp_path / "spotm3u.log"
     try:
         launcher.configure_startup_log(target)
 
