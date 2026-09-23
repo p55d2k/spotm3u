@@ -1240,16 +1240,15 @@ form:has(.mode-option) > button {
 /* Track lists                                                         */
 /* ------------------------------------------------------------------ */
 
+/* The page is the one scrolling region. Capping the list here used to nest a
+   second scroller inside it, which trapped the wheel over the results (and
+   repeated that trap once per playlist in a batch). */
 .track-list {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-m);
   list-style: none;
   margin: 0;
-  max-height: 30rem;
-  overflow-y: auto;
   padding: var(--space-1);
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-  scrollbar-width: thin;
 }
 
 .track-list > li {
@@ -1266,6 +1265,17 @@ form:has(.mode-option) > button {
 
 .track-list > li:hover {
   background: var(--state-hover);
+}
+
+/* Playlist position, so the rows line up like a real track listing. The <ol>
+   already announces the order, so the number stays out of the a11y tree. */
+.track-number {
+  color: var(--color-text-faint);
+  flex: none;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.5rem;
+  text-align: right;
 }
 
 .track-art-row {

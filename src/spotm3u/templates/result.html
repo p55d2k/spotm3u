@@ -91,6 +91,7 @@
 
       <section aria-labelledby="tracks-heading">
         <h2 id="tracks-heading">Track results</h2>
+        {% if state.tracks %}
         {% if failed_tracks %}
         <div class="track-filters" role="group" aria-label="Filter track results">
           <button class="button-secondary button-small track-filter" type="button" data-track-filter="all" aria-pressed="true">
@@ -106,6 +107,8 @@
           {% set status = track.resolution or track.status or 'unknown' %}
           {% set row_class = 'complete' if status in ('local', 'downloaded') else status %}
           <li class="track-{{ row_class }}">
+            {# Playlist position, kept in step with the live track lists. #}
+            <span class="track-number" aria-hidden="true">{{ track.index + 1 }}</span>
             <div class="track-art-row">
               {% if track.artwork %}
               <div class="track-artwork">
@@ -139,7 +142,11 @@
           </li>
           {% endfor %}
         </ol>
-        <p id="no-tracks-match" class="page-note" role="status" hidden>No tracks match this filter.</p>
+        <p id="no-tracks-match" class="page-note" role="status" hidden>No tracks match this filter — choose All tracks to see the whole playlist.</p>
+        {% else %}
+        <p class="page-note" role="status">This playlist has no tracks to convert.</p>
+        <p class="field-help">Choose another playlist from this ZIP, or upload a different export, using the options below.</p>
+        {% endif %}
       </section>
 
       <section class="result-next" aria-labelledby="next-heading">

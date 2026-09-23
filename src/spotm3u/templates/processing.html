@@ -272,6 +272,11 @@
       function createTrackRow(track) {
         const item = document.createElement("li");
         item.classList.add("track-" + (track.resolution || track.status || "queued"));
+        const number = document.createElement("span");
+        number.className = "track-number";
+        number.setAttribute("aria-hidden", "true");
+        number.textContent = String(track.index + 1);
+        item.appendChild(number);
         const art = document.createElement("div");
         art.className = "track-artwork";
         art.setAttribute("aria-hidden", "true");
