@@ -135,6 +135,7 @@ def _fake_app(tmp_path: Path) -> Path:
         "CFBundleExecutable": "SpotM3U",
         "CFBundleIconFile": "icon.icns",
         "CFBundleIdentifier": "com.p55d2k.spotm3u",
+        "NSHighResolutionCapable": True,
     }
     (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
     ffmpeg = app / "Contents" / "Resources" / "ffmpeg"
@@ -232,6 +233,22 @@ def test_validate_app_rejects_a_background_only_app(tmp_path) -> None:
 
     with pytest.raises(SystemExit, match="LSBackgroundOnly"):
         verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_rejects_a_bundle_without_high_resolution_support(tmp_path) -> None:
+    # Without NSHighResolutionCapable macOS treats the app as low resolution and
+    # scales the icon instead of drawing its native-resolution representations.
+    app = _fake_app(tmp_path)
+    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    del plist["NSHighResolutionCapable"]
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
+
+    with pytest.raises(SystemExit, match="NSHighResolutionCapable"):
+        verify_macos_bundle.validate_app(app)
+
+
+def test_validate_app_reports_the_icon_it_presented(tmp_path) -> None:
+    assert verify_macos_bundle.validate_app(_fake_app(tmp_path)) == "icon.icns"
 
 
 def test_verify_rejects_a_background_only_bundle_inside_an_archive(tmp_path) -> None:

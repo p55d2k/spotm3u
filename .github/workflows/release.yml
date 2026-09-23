@@ -160,6 +160,26 @@ jobs:
             throw "$config does not enable loadFromRemoteSources"
           }
 
+      - name: Verify macOS app icon metadata
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          # A macOS bundle can build successfully and still be presented with
+          # the generic placeholder icon, so the icon metadata is checked on the
+          # freshly built .app -- before it is zipped, packaged, and uploaded --
+          # and not only after the release artifact exists.
+          uv run -q python packaging/verify_macos_bundle.py dist/SpotM3U.app
+
+      - name: Verify packaged application icon
+        if: matrix.platform != 'macos'
+        shell: bash
+        run: |
+          # Windows: the executable must embed exactly the generated .ico, which
+          # is what Explorer, the taskbar, and shortcuts draw. Linux: the bundle
+          # must carry the canonical icon.png the frozen app hands to GTK as its
+          # window icon. Both are checked before the bundle is archived.
+          uv run -q python packaging/verify_packaged_icons.py dist/SpotM3U
+
       - name: Package release archive
         shell: bash
         run: |

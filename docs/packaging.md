@@ -53,13 +53,29 @@ writer emits the same element set, so those builds stay tool-free and the
 containers remain inspectable off macOS. Local and GitHub Actions builds produce
 identical assets either way.
 
+Every platform build verifies the packaged result before it is archived, so a
+release cannot ship an application whose icon is missing or wrong:
+
+- Windows — `packaging/verify_packaged_icons.py` parses the resource directory
+  of `dist/SpotM3U/SpotM3U.exe` and compares its embedded icon resources member
+  for member against `assets/generated/icon.ico`.
+- Linux — the same script checks that the bundle carries the canonical
+  `icon.png` where the frozen app looks for it (`_internal/` first, then the
+  bundle root, the same candidates `spotm3u.runtime.bundle_roots` reports) and
+  that it is byte-identical to the tracked master artwork. That PNG is the
+  window icon the GTK backend applies; Linux gets no generated icon variants.
+
 The packaged macOS app is an ordinary foreground application: the spec overrides
 PyInstaller's `LSBackgroundOnly` default (PyInstaller sets it for console-mode
 executables) and sets `NSHighResolutionCapable`, so the Dock, Finder, and the
 Cmd-Tab switcher present the bundled `.icns` normally rather than falling back to
-the generic placeholder. `packaging/verify_macos_bundle.py` fails a release whose
-`Info.plist` drops `CFBundleIconFile`, names an icon that is not in the bundle,
-disables that override, or ships a malformed `.icns`.
+the generic placeholder. The release workflow therefore verifies the built
+`dist/SpotM3U.app` with `packaging/verify_macos_bundle.py` before the bundle is
+zipped, packaged, and uploaded, and the same check runs again on the published
+artifacts. It fails a bundle whose `Info.plist` drops `CFBundleIconFile`, names
+an icon that is not in the bundle, disables the `LSBackgroundOnly` override,
+omits `NSHighResolutionCapable` (which would make macOS scale the icon), or
+ships a malformed or truncated `.icns`.
 
 ## Build locally
 

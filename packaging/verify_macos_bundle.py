@@ -10,8 +10,10 @@ structural problems fail the build.
 The icon checks exist because a bundle can look complete and still be presented
 with the generic placeholder icon: an ``Info.plist`` whose ``CFBundleIconFile``
 names a file that is not in the bundle, an ``.icns`` that is not a real icon
-container, or ``LSBackgroundOnly`` -- which makes macOS treat the app as a
-background-only process with no Dock tile or Cmd-Tab icon at all.
+container, ``LSBackgroundOnly`` -- which makes macOS treat the app as a
+background-only process with no Dock tile or Cmd-Tab icon at all -- or a missing
+``NSHighResolutionCapable``, which makes macOS scale the icon instead of drawing
+its native-resolution representations.
 
 Accepts a release ZIP, an extracted ``SpotM3U.app``, or a directory containing
 either.
@@ -50,11 +52,12 @@ def _fail(message: str) -> NoReturn:
     raise SystemExit(f"invalid macOS bundle: {message}")
 
 
-def _validate_icon_metadata(info_plist: dict, has_icon) -> None:
+def _validate_icon_metadata(info_plist: dict, has_icon) -> str:
     """Reject icon metadata macOS would not use to present the application.
 
-    ``has_icon`` reports whether a bundle resource name is present; it lets the
-    same checks run against an extracted bundle and a release archive.
+    Returns the declared icon resource name. ``has_icon`` reports whether a
+    bundle resource name is present; it lets the same checks run against an
+    extracted bundle and a release archive.
     """
     icon_name = info_plist.get("CFBundleIconFile")
     if not icon_name:
@@ -66,6 +69,12 @@ def _validate_icon_metadata(info_plist: dict, has_icon) -> None:
             "Info.plist sets LSBackgroundOnly, so macOS would present the app "
             "as a background-only process without its icon"
         )
+    if not info_plist.get("NSHighResolutionCapable"):
+        _fail(
+            "Info.plist does not set NSHighResolutionCapable, so macOS would "
+            "scale the icon instead of using its native-resolution representations"
+        )
+    return str(icon_name)
 
 
 def _validate_icns(payload: bytes) -> None:
@@ -106,8 +115,11 @@ def _find_ffmpeg_directory(app: Path) -> Path | None:
     return None
 
 
-def validate_app(app: Path) -> None:
-    """Validate an extracted ``SpotM3U.app`` application bundle."""
+def validate_app(app: Path) -> str:
+    """Validate an extracted ``SpotM3U.app`` application bundle.
+
+    Returns the name of the icon resource the bundle presents.
+    """
     app = app.expanduser().resolve()
     if not app.is_dir() or app.name != APP_NAME:
         _fail(f"expected an extracted {APP_NAME} directory, got {app}")
@@ -134,11 +146,14 @@ def validate_app(app: Path) -> None:
     if icon is None:
         _fail(f"bundled application icon missing: {_REQUIRED_ICON}")
     _validate_icns(icon.read_bytes())
-    _validate_icon_metadata(metadata, lambda name: _find_resource(app, name) is not None)
+    icon_name = _validate_icon_metadata(
+        metadata, lambda name: _find_resource(app, name) is not None
+    )
 
     for relative in _REQUIRED_RESOURCES:
         if _find_resource(app, relative) is None:
             _fail(f"bundled resource missing: {relative}")
+    return icon_name
 
 
 def _validate_archive(archive: Path) -> None:
@@ -225,5 +240,5 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit(f"usage: {sys.argv[0]} <release.zip | {APP_NAME} | dir>")
     app = _find_app(Path(sys.argv[1]))
-    validate_app(app)
-    print(f"macOS bundle validated: {app}")
+    icon_name = validate_app(app)
+    print(f"macOS bundle validated: {app} (icon: {icon_name})")
