@@ -40,9 +40,10 @@ def test_the_import_page_is_an_intentional_empty_state() -> None:
 
     assert "No playlist imported" in page
     assert "Import an Exportify ZIP to start matching your local music." in page
-    # Onboarding stays short enough to read at a glance.
+    # Onboarding stays short enough to read at a glance, and is named for what
+    # it actually produces rather than a generic "how it works".
     assert page.count("<li><strong>") == 2
-    assert "How it works" in page
+    assert "Export your playlists" in page
 
 
 def test_the_result_page_explains_a_playlist_with_no_tracks(tmp_path, monkeypatch) -> None:
