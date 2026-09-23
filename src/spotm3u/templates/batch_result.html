@@ -1,3 +1,4 @@
+{% from "_empty_state.html" import empty_state %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -60,6 +61,9 @@
       <section class="batch-playlist">
         <h2>{{ state.playlist.name }}</h2>
         <p>{{ state.successful }} successful, {{ state.failed }} failed of {{ state.playlist.total_tracks }} tracks.</p>
+        {% if state.tracks and not state.counts.successful %}
+        {{ empty_state("No tracks matched", "Nothing in this playlist was found locally or downloaded, so there is no playlist to save.") }}
+        {% endif %}
         {% if state.stale_outputs %}
         <p class="error" role="alert">
           {{ state.stale_outputs }} track{{ '' if state.stale_outputs == 1 else 's' }}

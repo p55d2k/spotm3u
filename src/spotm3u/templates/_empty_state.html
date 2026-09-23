@@ -1,0 +1,23 @@
+{# The application's empty states, in one place.
+
+   Every empty state reads the same way: a short title naming what is missing,
+   one sentence saying why it matters or what to do about it, and - when the
+   page does not already offer the action - the control that fills it. No
+   illustrations, no decorative graphics.
+
+   Usage::
+
+     {% from "_empty_state.html" import empty_state %}
+     {{ empty_state("No tracks in this playlist", "There is nothing to match.") }}
+     {% call empty_state("No playlist imported", "Import an Exportify ZIP to start.") %}
+       <a class="button" href="...">Import ZIP</a>
+     {% endcall %}
+#}
+
+{% macro empty_state(title, message) -%}
+<div class="empty-state">
+  <p class="empty-state-title">{{ title }}</p>
+  <p class="empty-state-text">{{ message }}</p>
+  {% if caller %}<div class="empty-state-actions">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}

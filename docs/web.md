@@ -153,6 +153,30 @@ it is replacing so the fresh download gets fresh images (see
 run that produced them.
 
 
+## Empty states
+
+Every page that can have nothing to show uses one shape (`_empty_state.html`):
+a short title naming what is missing, one sentence on why it matters and what
+to do, and - where the page does not already offer it - the action that fills
+it. Nothing is illustrated and nothing is decorative.
+
+- **No playlist imported** - the import page before a ZIP has been chosen, with
+  the import action beside it.
+- **No playlists in this export** - the selection page for a readable ZIP that
+  turned out to have no playlists, offering to import a different one.
+- **No tracks in this playlist** - the result page for a playlist that carries
+  no tracks, pointing back to the selection page.
+- **No tracks matched** - the result page, and each playlist on the batch
+  result page, when nothing resolved locally or by download. The per-track
+  reasons stay listed below it rather than being hidden.
+- **No playlist was generated** - a conversion that did not finish, so there is
+  no M3U to save.
+
+Onboarding is deliberately short: the import page explains the workflow in
+three steps (open Exportify, export and download, import the ZIP here), so the
+workflow reads at a glance instead of requiring a tour. The sidebar keeps
+naming the current step on every page.
+
 ## M3U Download
 
 When processing completes, offer a `Save playlist (M3U)` link to

@@ -3,6 +3,7 @@
 import re
 from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 from conftest import (
     NoCandidates,
@@ -29,6 +30,64 @@ def test_homepage_renders() -> None:
     assert b"Download the playlist export ZIP" in response.data
     assert b'action="/upload"' in response.data
     assert b'accept=".zip,application/zip"' in response.data
+
+
+def test_the_import_page_is_an_intentional_empty_state() -> None:
+    """A fresh installation says what is empty and what to do about it."""
+    client = create_app().test_client()
+
+    page = client.get("/").get_data(as_text=True)
+
+    assert "No playlist imported" in page
+    assert "Import an Exportify ZIP to start matching your local music." in page
+    # Onboarding stays short enough to read at a glance.
+    assert page.count("<li><strong>") == 2
+    assert "How it works" in page
+
+
+def test_the_result_page_explains_a_playlist_with_no_tracks(tmp_path, monkeypatch) -> None:
+    """An empty playlist gets an explanation instead of a bare empty page."""
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    archive = BytesIO()
+    with ZipFile(archive, "w") as bundle:
+        # A playlist file with a header but no rows: a real, empty playlist.
+        bundle.writestr("empty.csv", "Track Name,Artist Name(s)\n")
+    upload = client.post(
+        "/upload",
+        data={"file": (BytesIO(archive.getvalue()), "export.zip")},
+        content_type="multipart/form-data",
+    )
+    assert upload.status_code == 201
+    job_id = _job_directory(tmp_path)
+    client.post(f"/playlists/{job_id}/select", data={"playlist_id": "0"})
+    client.post(f"/processing/{job_id}/0/start")
+    client.application.config["JOB_MANAGER"].get(job_id, "0").wait(timeout=10)
+
+    page = client.get(f"/processing/{job_id}/0/result").get_data(as_text=True)
+
+    assert "No tracks in this playlist" in page
+    assert "This playlist is empty, so there is nothing to match or download." in page
+
+
+def test_the_result_page_explains_when_nothing_matched(tmp_path, monkeypatch) -> None:
+    """A playlist where nothing resolved says so, keeping the track reasons."""
+    music = tmp_path / "music"
+    music.mkdir()
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": music}).test_client()
+    job_id, _selection = _upload_and_select(tmp_path, client)
+    client.post(f"/processing/{job_id}/1/start")
+    client.application.config["JOB_MANAGER"].get(job_id, "1").wait(timeout=10)
+
+    page = client.get(f"/processing/{job_id}/1/result").get_data(as_text=True)
+
+    assert "No tracks matched" in page
+    assert "Nothing in this playlist was found locally or downloaded" in page
+    # The per-track reasons stay listed below it rather than being hidden.
+    assert 'id="track-list"' in page
 
 
 def test_static_stylesheet_is_available() -> None:

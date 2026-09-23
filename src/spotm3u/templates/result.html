@@ -1,4 +1,5 @@
 {% from "_icons.html" import icon %}
+{% from "_empty_state.html" import empty_state %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -68,10 +69,13 @@
           <button class="button-secondary" type="submit">Add to Media Player</button>
         </form>
         {% endif %}
-        {% if not state.m3u_path %}
-        <p class="field-help">No M3U playlist was generated.</p>
-        {% endif %}
       </div>
+
+      {% if not state.m3u_path %}
+      {{ empty_state("No playlist was generated", "This conversion did not finish, so there is no M3U to save. Retry the unresolved tracks above, or import a different export.") }}
+      {% elif state.tracks and not state.counts.successful %}
+      {{ empty_state("No tracks matched", "Nothing in this playlist was found locally or downloaded, so there is nothing to play. Retry the unresolved tracks above, check that your music library folder is correct, or import a different export.") }}
+      {% endif %}
 
       <section aria-labelledby="result-heading">
         <h2 id="result-heading">Summary</h2>
@@ -145,8 +149,7 @@
         </ol>
         <p id="no-tracks-match" class="page-note" role="status" hidden>No tracks match this filter — choose All tracks to see the whole playlist.</p>
         {% else %}
-        <p class="page-note" role="status">This playlist has no tracks to convert.</p>
-        <p class="field-help">Choose another playlist from this ZIP, or import a different export, using the options below.</p>
+        {{ empty_state("No tracks in this playlist", "This playlist is empty, so there is nothing to match or download. Choose another playlist from this ZIP, or import a different export, using the options below.") }}
         {% endif %}
       </section>
 
