@@ -47,7 +47,7 @@ from .artwork_sources import (
     _get_coverart_candidates,
     _has_reliable_album,
     _is_trusted_artist_source,
-    _search_deezer_artist_artwork,
+    _resolve_artist_artwork,
     _search_itunes_artwork,
     _search_itunes_song_artwork,
     _search_musicbrainz_release,
@@ -384,9 +384,14 @@ def _find_artist_artwork(
 
     Artist images are keyed by artist alone and cached in their own directory,
     so every track credited to the same artist reuses a single download. The
-    track's ``album``/``title`` are only used to tell apart artists that share a
-    name. A failure returns ``(None, "not-found")`` and never raises: artist
-    artwork is optional enrichment and must not fail track generation.
+    track's ``album``/``title`` are passed through to establish *which* artist an
+    exact name refers to (see ``artwork_sources._resolve_artist_artwork``).
+
+    Only a verified identity is embedded, and only a verified marker is trusted
+    from the cache: an entry written when a name and a fan count were enough is
+    re-resolved instead of served. A failure returns ``(None, "not-found")`` and
+    never raises: artist artwork is optional enrichment and must not fail track
+    generation.
     """
     if not artist:
         return None, "not-found"
@@ -399,7 +404,7 @@ def _find_artist_artwork(
         return cached, "cache"
 
     def fetch() -> tuple[bytes | None, str | None]:
-        candidate = _search_deezer_artist_artwork(artist, album=album, title=title)
+        candidate = _resolve_artist_artwork(artist, album=album, title=title)
         if candidate is None:
             logger.info("Artist artwork not found artist=%s", artist)
             return None, "not-found"

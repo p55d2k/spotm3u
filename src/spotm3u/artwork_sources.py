@@ -13,7 +13,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, Literal
 
 import requests
 
@@ -327,27 +327,42 @@ def _image_mime(data: bytes) -> str:
 # services (MusicBrainz / Cover Art Archive / iTunes return no artist image).
 # Spotify itself is off limits: the project never uses the Spotify Web API and
 # never scrapes Spotify's site. The artist identity from the export is therefore
-# looked up in Deezer's public catalog, which serves profile images without auth.
-# How many of the most popular exact-name artists are checked against the
-# track's album/title before settling for popularity alone.
+# resolved through MusicBrainz and Deezer's public catalog, which serves profile
+# images without auth.
+
+# How certain the identity behind an image is. Only ``verified`` is ever
+# embedded; ``likely`` and ``unknown`` describe candidates that were found and
+# then rejected, and exist so rejections can say why.
+ArtistConfidence = Literal["verified", "likely", "unknown"]
+
+# How many exact-name candidates have their Deezer releases checked. Each check
+# is a request, and corroborating evidence -- not popularity -- is what decides.
 _ARTIST_VERIFICATION_LIMIT = 3
 
+# Deezer search hits kept as exact-name candidates, and MusicBrainz results
+# scanned for an exact name match.
+_ARTIST_SEARCH_LIMIT = 25
+_MUSICBRAINZ_ARTIST_LIMIT = 10
 
-# Artist images are recorded with the Deezer artist id they were taken from
-# (``deezer-artist:<id>``) so a wrong match can be traced to the artist it
-# actually belongs to. Markers written before ids were recorded carried only
-# the bare provider name and may be any namesake's image, so they are
-# re-verified instead of trusted.
+# Artist images are recorded with the Deezer artist id they were taken from and
+# the evidence that established the identity
+# (``deezer-artist:<id>:verified:<evidence>``), so a wrong match can be traced
+# to the artist it actually belongs to. Markers written by earlier releases
+# recorded only the id -- authorized by name and popularity alone -- or nothing
+# at all, so they are re-resolved instead of trusted.
 _ARTIST_ARTWORK_SOURCE = "deezer-artist"
+_VERIFIED_CONFIDENCE = "verified"
 
+# Evidence slugs recorded in the marker, in the order the resolver tries them.
+_EVIDENCE_MUSICBRAINZ_URL = "mb-artist-url"
+_EVIDENCE_MUSICBRAINZ_ARTIST = "mb-artist"
+_EVIDENCE_ALBUM = "deezer-release"
+_EVIDENCE_TRACK = "deezer-track"
+_EVIDENCE_SOLE_CANDIDATE = "sole-candidate"
 
-def _is_trusted_artist_source(value: str | None) -> bool:
-    """True when a cached artist image was resolved to a specific Deezer artist."""
-    if not value:
-        return False
-    provider, separator, artist_id = value.partition(":")
-    return bool(separator) and provider == _ARTIST_ARTWORK_SOURCE and artist_id.isdigit()
-
+# A Deezer artist page linked from MusicBrainz, e.g.
+# ``https://www.deezer.com/artist/75798`` or a localized ``/en/artist/75798``.
+_DEEZER_ARTIST_URL = re.compile(r"deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?artist/(\d+)")
 
 # Deezer picture fields, largest first. The largest available image is embedded
 # because ID3 APIC data is stored at full size in the file.
@@ -357,6 +372,49 @@ _DEEZER_PICTURE_FIELDS: tuple[tuple[str, int], ...] = (
     ("picture_medium", 250),
     ("picture_small", 56),
 )
+
+
+@dataclass(frozen=True)
+class ArtistIdentity:
+    """An artist profile image whose identity was established by evidence.
+
+    ``evidence`` names what established it and is recorded in the cache marker,
+    so a stored image can be audited later without re-deriving the identity.
+    """
+
+    url: str
+    size: int
+    artist_id: int
+    confidence: ArtistConfidence
+    evidence: str
+    name: str | None = None
+    mbid: str | None = None
+
+    @property
+    def source(self) -> str:
+        """Cache source marker recording the artist id and the evidence behind it."""
+        return f"{_ARTIST_ARTWORK_SOURCE}:{self.artist_id}:{self.confidence}:{self.evidence}"
+
+
+def _is_trusted_artist_source(value: str | None) -> bool:
+    """True when a cached artist image was resolved to a verified artist identity.
+
+    A marker that names an artist id but no verification came from a release that
+    authorized images on name and popularity alone, so it is re-resolved rather
+    than served: a wrong face is embedded permanently into the file.
+    """
+    if not value:
+        return False
+    parts = value.split(":")
+    if len(parts) != 4:
+        return False
+    provider, artist_id, confidence, evidence = parts
+    return (
+        provider == _ARTIST_ARTWORK_SOURCE
+        and artist_id.isdigit()
+        and confidence == _VERIFIED_CONFIDENCE
+        and bool(evidence)
+    )
 
 
 def _deezer_picture(record: dict[str, Any]) -> tuple[str, int] | None:
@@ -369,7 +427,12 @@ def _deezer_picture(record: dict[str, Any]) -> tuple[str, int] | None:
 
 
 def _deezer_artist_rank(record: dict[str, Any]) -> tuple[int, int, int]:
-    """Rank one Deezer artist record by how likely it is the requested artist."""
+    """Order Deezer artist records by popularity, then album count, then id.
+
+    Popularity orders which candidates are worth checking, so the common case
+    does not spend its requests on an obscure namesake. It never authorizes an
+    image: see :func:`_resolve_artist_artwork`.
+    """
     return (
         int(record.get("nb_fan") or 0),
         int(record.get("nb_album") or 0),
@@ -377,139 +440,400 @@ def _deezer_artist_rank(record: dict[str, Any]) -> tuple[int, int, int]:
     )
 
 
-def _deezer_artist_has_release(artist_id: int, *, album: str | None, title: str | None) -> bool:
-    """True when Deezer lists a release by this artist matching the track's album/title.
-
-    Deezer's artist releases include albums and singles, so an album-less track can
-    still be confirmed through a single carrying the track's title. Anything that
-    prevents the question from being answered -- a failed request, an unusable
-    response, no album/title to check -- reports False, which the caller reads as
-    "not confirmed" rather than as proof of a wrong artist.
-    """
-    album_key = _normalize_identity(_normalize_album_for_search(album)) if album else ""
-    title_key = _normalize_identity(title) if title else ""
-    if not album_key and not title_key:
-        return False
+def _deezer_get(url: str, params: dict[str, Any] | None = None) -> Any:
+    """Fetch one Deezer resource, returning None instead of raising."""
     try:
         response = requests.get(
-            f"{_ARTIST_API_BASE}/{artist_id}/albums",
-            params={"limit": 100},
+            url,
+            params=params or {},
             headers={"User-Agent": _USER_AGENT},
             timeout=_REQUEST_TIMEOUT,
         )
         response.raise_for_status()
-        releases = response.json().get("data", [])
+        return response.json()
     except (requests.RequestException, ValueError, AttributeError) as exc:
-        logger.debug("Artist releases lookup failed deezer_id=%s: %s", artist_id, exc)
-        return False
+        logger.debug("Deezer lookup failed url=%s: %s", url, exc)
+        return None
+
+
+def _deezer_exact_name_candidates(artist: str) -> list[dict[str, Any]]:
+    """Return exact-name Deezer artists offering a picture, most popular first.
+
+    Only the exact normalized name counts: Deezer's ranked search returns
+    ``Adèle & Zalem`` and ``Mortelle Adèle`` ahead of a requested ``Adele``, and
+    a partial name is not identity. Deezer also returns several artists named
+    exactly ``Adele``, so the caller has to establish which one is the artist
+    behind the track rather than taking the first or the most popular hit.
+    """
+    results = _deezer_get(_ARTIST_BASE, {"q": artist, "limit": _ARTIST_SEARCH_LIMIT})
+    data = results.get("data") if isinstance(results, dict) else None
+    target = _normalize_identity(artist)
+    candidates = [
+        record
+        for record in (data if isinstance(data, list) else [])
+        if isinstance(record, dict)
+        and _normalize_identity(str(record.get("name") or "")) == target
+        and str(record.get("id", "")).isdigit()
+        and _deezer_picture(record) is not None
+    ]
+    candidates.sort(key=_deezer_artist_rank, reverse=True)
+    return candidates
+
+
+def _deezer_artist_record(artist_id: int) -> dict[str, Any] | None:
+    """Return one Deezer artist by id, or None when it cannot be read."""
+    record = _deezer_get(f"{_ARTIST_API_BASE}/{artist_id}")
+    if not isinstance(record, dict) or str(record.get("id")) != str(artist_id):
+        return None
+    return record
+
+
+def _deezer_release_evidence(
+    artist_id: int, *, album: str | None, title: str | None
+) -> frozenset[str]:
+    """Return which of the track's identities appear in this artist's Deezer releases.
+
+    ``{_EVIDENCE_ALBUM}``, ``{_EVIDENCE_TRACK}`` or both. Deezer's artist releases
+    include albums and singles, so an album-less track can still be confirmed
+    through a single carrying its title. An unreadable release list reports no
+    evidence: identity that cannot be shown is not identity, and guessing is what
+    this function exists to prevent.
+    """
+    album_key = _normalize_identity(_normalize_album_for_search(album)) if album else ""
+    title_key = _normalize_identity(title) if title else ""
+    if not album_key and not title_key:
+        return frozenset()
+    data = _deezer_get(f"{_ARTIST_API_BASE}/{artist_id}/albums", {"limit": 100})
+    releases = data.get("data") if isinstance(data, dict) else None
+    evidence: set[str] = set()
     for release in releases if isinstance(releases, list) else []:
         if not isinstance(release, dict):
             continue
         release_key = _normalize_identity(
             _normalize_album_for_search(str(release.get("title") or ""))
         )
-        if release_key and release_key in {album_key, title_key}:
-            return True
-    return False
+        if not release_key:
+            continue
+        if album_key and release_key == album_key:
+            evidence.add(_EVIDENCE_ALBUM)
+        if title_key and release_key == title_key:
+            evidence.add(_EVIDENCE_TRACK)
+    return frozenset(evidence)
 
 
-def _pick_deezer_artist(
-    results: Any,
-    target: str,
-    *,
-    album: str | None = None,
-    title: str | None = None,
-) -> dict[str, Any] | None:
-    """Pick the Deezer artist record that is ``target``, or None.
-
-    The name must match exactly once normalized: a partial name is not evidence
-    of identity, and Deezer's ranked search happily returns 'Adèle & Zalem',
-    'Adele & Andy' and 'Mortelle Adèle' ahead of the requested artist. Namesakes
-    are common too -- ``q=adele`` returns four different artists named exactly
-    'Adele' -- so the most popular of the exact matches wins rather than the
-    first one, which is an unrelated act with a few hundred fans. Album count
-    and artist id break any remaining tie, so the pick is deterministic.
-
-    When the caller knows the track's album or title, the most popular exact
-    matches are checked against that artist's Deezer releases first, so a
-    namesake that fame alone cannot separate from the requested artist is
-    rejected on evidence. That check is a preference, not a gate: an artist
-    whose releases Deezer does not list, or cannot be reached, still wins on
-    popularity exactly as before, so a lookup failure never drops a correct
-    image.
-    """
-    if not isinstance(results, list):
-        return None
-    candidates = [
-        record
-        for record in results
-        if isinstance(record, dict)
-        and _normalize_identity(str(record.get("name") or "")) == target
-        and str(record.get("id", "")).isdigit()
-        and _deezer_picture(record) is not None
-    ]
-    if not candidates:
-        return None
-    candidates.sort(key=_deezer_artist_rank, reverse=True)
-    # With one candidate there is nothing to choose between, so skip the check.
-    if len(candidates) > 1 and (album or title):
-        for record in candidates[:_ARTIST_VERIFICATION_LIMIT]:
-            if _deezer_artist_has_release(int(record["id"]), album=album, title=title):
-                return record
-    return candidates[0]
-
-
-def _search_deezer_artist_artwork(
-    artist: str, *, album: str | None = None, title: str | None = None
-) -> ArtworkCandidate | None:
-    """Find one artist's profile image in Deezer's public catalog.
-
-    The artist is resolved by exact name, then by the track's own album/title
-    where Deezer can confirm it, then by popularity, instead of taking the first
-    plausible hit (see :func:`_pick_deezer_artist`). The resolved artist id is
-    part of the returned source so the image on disk can be traced back to the
-    Deezer entity it came from.
-    """
+def _musicbrainz_get(entity: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Fetch one MusicBrainz entity, returning an empty mapping on any failure."""
     try:
         response = requests.get(
-            _ARTIST_BASE,
-            params={"q": artist, "limit": 25},
+            f"{_MUSICBRAINZ_BASE}/{entity}",
+            params=params,
             headers={"User-Agent": _USER_AGENT},
             timeout=_REQUEST_TIMEOUT,
         )
         response.raise_for_status()
-        results = response.json().get("data", [])
+        data = response.json()
     except (requests.RequestException, ValueError, AttributeError) as exc:
-        logger.debug("Artist artwork lookup failed artist=%s: %s", artist, exc)
-        return None
+        logger.debug("MusicBrainz %s lookup failed: %s", entity, exc)
+        return {}
+    return data if isinstance(data, dict) else {}
 
-    record = _pick_deezer_artist(results, _normalize_identity(artist), album=album, title=title)
-    if record is None:
-        return None
 
+def _musicbrainz_credit_phrase(entry: dict[str, Any]) -> str:
+    """Return the credited artist name of one MusicBrainz entity.
+
+    Search responses carry the credit as ``artist-credit`` entries whose ``name``
+    holds the credited name and whose ``joinphrase`` holds the separator between
+    collaborators; only some endpoints also include a ready-made
+    ``artist-credit-phrase``. Both shapes are handled, so a missing phrase never
+    turns a real MusicBrainz match into no match.
+    """
+    phrase = entry.get("artist-credit-phrase")
+    if isinstance(phrase, str) and phrase.strip():
+        return phrase
+    credits = entry.get("artist-credit")
+    if not isinstance(credits, list):
+        return ""
+    parts: list[str] = []
+    for credit in credits:
+        if not isinstance(credit, dict):
+            continue
+        artist = credit.get("artist")
+        name = credit.get("name") or (artist.get("name") if isinstance(artist, dict) else "") or ""
+        parts.append(f"{name}{credit.get('joinphrase') or ''}")
+    return "".join(parts).strip()
+
+
+def _musicbrainz_credit_mbid(artist_credit: Any, artist: str) -> str | None:
+    """Return the MBID of an artist-credit entry naming ``artist`` exactly."""
+    target = _normalize_identity(artist)
+    entries = artist_credit if isinstance(artist_credit, list) else []
+    for credit in entries:
+        entry = credit.get("artist") if isinstance(credit, dict) else None
+        if not isinstance(entry, dict):
+            continue
+        if _normalize_identity(str(entry.get("name") or "")) != target:
+            continue
+        mbid = entry.get("id")
+        if isinstance(mbid, str) and mbid:
+            return mbid
+    return None
+
+
+def _musicbrainz_release_artist_mbid(artist: str, album: str) -> str | None:
+    """Return the artist MBID of a MusicBrainz release group for artist and album.
+
+    The release group has to match the requested album and be credited to an
+    artist with the requested name, so the MBID describes this track's release
+    rather than a same-named other act.
+    """
+    for group in _search_musicbrainz_release(artist, album):
+        if not isinstance(group, dict):
+            continue
+        credit_phrase = _musicbrainz_credit_phrase(group)
+        if not _artist_album_match(artist, album, credit_phrase, group.get("title")):
+            continue
+        mbid = _musicbrainz_credit_mbid(group.get("artist-credit"), artist)
+        if mbid:
+            return mbid
+    return None
+
+
+def _musicbrainz_recording_artist_mbid(artist: str, title: str) -> str | None:
+    """Return the artist MBID of a MusicBrainz recording for artist and title.
+
+    Used for tracks with no album to search a release by, so a single still has a
+    MusicBrainz identity to anchor on.
+    """
+    query = f"artist:{requests.utils.quote(artist)} AND recording:{requests.utils.quote(title)}"
+    data = _musicbrainz_get(
+        "recording", {"query": query, "fmt": "json", "limit": _MUSICBRAINZ_ARTIST_LIMIT}
+    )
+    recordings = data.get("recordings")
+    for recording in recordings if isinstance(recordings, list) else []:
+        if not isinstance(recording, dict):
+            continue
+        credit_phrase = _musicbrainz_credit_phrase(recording)
+        if not _artist_title_match(artist, title, credit_phrase, recording.get("title")):
+            continue
+        mbid = _musicbrainz_credit_mbid(recording.get("artist-credit"), artist)
+        if mbid:
+            return mbid
+    return None
+
+
+def _musicbrainz_artist_mbid(artist: str, *, album: str | None, title: str | None) -> str | None:
+    """Resolve the MusicBrainz identity of the artist behind one track."""
+    if album and _has_reliable_album(album):
+        mbid = _musicbrainz_release_artist_mbid(artist, album)
+        if mbid:
+            return mbid
+    if title:
+        return _musicbrainz_recording_artist_mbid(artist, title)
+    return None
+
+
+def _musicbrainz_artist_deezer_ids(mbid: str) -> list[int]:
+    """Return the Deezer artist ids MusicBrainz links this artist to, in order.
+
+    MusicBrainz artist entities carry editor-maintained URL relationships to the
+    artist's pages on other services, which is an exact external identity: it
+    says which Deezer artist this is, instead of searching for a display name.
+    An artist can be linked to more than one Deezer page (a canonical one and a
+    duplicate), so every linked id is returned for the caller to pick from.
+    """
+    data = _musicbrainz_get(f"artist/{mbid}", {"inc": "url-rels", "fmt": "json"})
+    relations = data.get("relations")
+    ids: list[int] = []
+    for relation in relations if isinstance(relations, list) else []:
+        if not isinstance(relation, dict):
+            continue
+        target = relation.get("url")
+        resource = target.get("resource") if isinstance(target, dict) else None
+        match = _DEEZER_ARTIST_URL.search(str(resource or ""))
+        if match and int(match.group(1)) not in ids:
+            ids.append(int(match.group(1)))
+    return ids
+
+
+def _musicbrainz_linked_identity(
+    artist: str, mbid: str, deezer_ids: list[int]
+) -> ArtistIdentity | None:
+    """Return the image of the artist MusicBrainz links to, or None.
+
+    Which page is used is decided by Deezer's own ranking (fans, then albums,
+    then id) *among the pages MusicBrainz attributes to this artist*: the
+    identity is already established by the relationship, so popularity only
+    chooses the artist's canonical page over a duplicate stub.
+    """
+    records = [
+        record
+        for record in (_deezer_artist_record(artist_id) for artist_id in deezer_ids)
+        if record is not None and _deezer_picture(record) is not None
+    ]
+    if not records:
+        return None
+    records.sort(key=_deezer_artist_rank, reverse=True)
+    return _artist_identity(
+        records[0], artist=artist, evidence=_EVIDENCE_MUSICBRAINZ_URL, mbid=mbid
+    )
+
+
+def _musicbrainz_exact_name_artists(artist: str) -> list[dict[str, Any]]:
+    """Return MusicBrainz artists whose name matches exactly once normalized."""
+    data = _musicbrainz_get(
+        "artist",
+        {
+            "query": f"artist:{requests.utils.quote(artist)}",
+            "fmt": "json",
+            "limit": _MUSICBRAINZ_ARTIST_LIMIT,
+        },
+    )
+    artists = data.get("artists")
+    target = _normalize_identity(artist)
+    return [
+        entry
+        for entry in (artists if isinstance(artists, list) else [])
+        if isinstance(entry, dict) and _normalize_identity(str(entry.get("name") or "")) == target
+    ]
+
+
+def _artist_identity(
+    record: dict[str, Any],
+    *,
+    artist: str,
+    evidence: str,
+    mbid: str | None = None,
+) -> ArtistIdentity | None:
+    """Build a verified identity from one Deezer artist record, or None."""
     picture = _deezer_picture(record)
     if picture is None:
         return None
     url, size = picture
-    artist_id = int(record["id"])
-    logger.debug(
-        "Artist artwork resolved artist=%s deezer_id=%s name=%s fans=%s",
-        artist,
-        artist_id,
-        record.get("name"),
-        record.get("nb_fan"),
-    )
-    return ArtworkCandidate(
+    identity = ArtistIdentity(
         url=url,
-        mime_type="image/jpeg",
-        source=f"{_ARTIST_ARTWORK_SOURCE}:{artist_id}",
-        width=size,
-        height=size,
-        artist=record.get("name"),
+        size=size,
+        artist_id=int(record["id"]),
+        confidence=_VERIFIED_CONFIDENCE,
+        evidence=evidence,
+        name=str(record.get("name") or "") or None,
+        mbid=mbid,
     )
+    logger.debug(
+        "Artist artwork resolved artist=%s provider=deezer artist_id=%s name=%s "
+        "confidence=%s evidence=%s mbid=%s",
+        artist,
+        identity.artist_id,
+        identity.name,
+        identity.confidence,
+        identity.evidence,
+        identity.mbid or "none",
+    )
+    return identity
+
+
+def _reject_artist_artwork(artist: str, reason: str, candidate_ids: str = "none") -> None:
+    """Log why an artist image was rejected, so a bad image is diagnosable later."""
+    logger.debug(
+        "Artist artwork rejected artist=%s candidate_ids=%s reason=%s",
+        artist,
+        candidate_ids,
+        reason,
+    )
+
+
+def _resolve_artist_artwork(
+    artist: str, *, album: str | None = None, title: str | None = None
+) -> ArtistIdentity | None:
+    """Resolve an artist profile image, or None when identity is not established.
+
+    Evidence is tried strongest first:
+
+    1. A MusicBrainz artist identity that links to a Deezer artist page, which is
+       an exact external identity and needs no name search at all.
+    2. MusicBrainz release/recording artist identity plus the track's Deezer
+       release/track evidence, or a single exact-name Deezer candidate.
+    3. Matching album/track evidence in the candidate's own Deezer releases,
+       unique among the exact-name candidates.
+    4. A sole exact-name Deezer candidate that MusicBrainz also knows by exactly
+       that name.
+
+    Everything weaker -- several exact-name artists with no corroborating
+    release, a release list that cannot be read, a name that only partly matches
+    -- is a ``likely`` or ``unknown`` candidate and returns None. Popularity is
+    never evidence of identity: a famous namesake is still a namesake, and a
+    wrong face is embedded permanently into the file.
+    """
+    mbid = _musicbrainz_artist_mbid(artist, album=album, title=title)
+    if mbid:
+        deezer_ids = _musicbrainz_artist_deezer_ids(mbid)
+        identity = _musicbrainz_linked_identity(artist, mbid, deezer_ids)
+        if identity is not None:
+            return identity
+        _reject_artist_artwork(
+            artist,
+            "musicbrainz lists no usable deezer page for this artist",
+            ",".join(str(value) for value in deezer_ids) or "none",
+        )
+
+    candidates = _deezer_exact_name_candidates(artist)
+    if not candidates:
+        _reject_artist_artwork(artist, "no deezer artist matches the name exactly")
+        return None
+
+    corroborated: list[tuple[dict[str, Any], frozenset[str]]] = []
+    for record in candidates[:_ARTIST_VERIFICATION_LIMIT]:
+        evidence = _deezer_release_evidence(int(record["id"]), album=album, title=title)
+        if evidence:
+            corroborated.append((record, evidence))
+
+    if len(corroborated) == 1:
+        record, evidence = corroborated[0]
+        return _artist_identity(record, artist=artist, evidence="-".join(sorted(evidence)))
+
+    if len(corroborated) > 1:
+        # Both the album and the track is stronger than either alone, but only
+        # when it still leaves one candidate: two namesakes each carrying an
+        # album of the same name are not something to guess between.
+        strongest = [item for item in corroborated if len(item[1]) > 1]
+        if len(strongest) == 1:
+            record, evidence = strongest[0]
+            return _artist_identity(record, artist=artist, evidence="-".join(sorted(evidence)))
+        _reject_artist_artwork(
+            artist,
+            "several exact-name artists carry a release matching the track",
+            ",".join(str(record["id"]) for record in candidates),
+        )
+        return None
+
+    # No release evidence anywhere. Only a single unambiguous candidate can be
+    # identified, and only when the second authority agrees that the name is
+    # unambiguous. Otherwise this is exactly the popularity guess this resolver
+    # must not make.
+    if len(candidates) == 1:
+        if mbid:
+            return _artist_identity(
+                candidates[0], artist=artist, evidence=_EVIDENCE_MUSICBRAINZ_ARTIST, mbid=mbid
+            )
+        if _musicbrainz_exact_name_artists(artist):
+            return _artist_identity(candidates[0], artist=artist, evidence=_EVIDENCE_SOLE_CANDIDATE)
+        _reject_artist_artwork(
+            artist,
+            "sole deezer candidate is not corroborated by musicbrainz",
+            str(candidates[0]["id"]),
+        )
+        return None
+
+    _reject_artist_artwork(
+        artist,
+        "several exact-name artists with no release or track evidence",
+        ",".join(str(record["id"]) for record in candidates),
+    )
+    return None
 
 
 __all__ = [
+    "ArtistConfidence",
+    "ArtistIdentity",
     "ArtworkCandidate",
     "_artist_album_match",
     "_image_mime",
