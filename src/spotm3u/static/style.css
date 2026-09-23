@@ -31,13 +31,14 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
 
-  /* Radius scale */
+  /* Radius scale. A desktop utility keeps surfaces nearly square, so the
+     scale tops out at 8px; --radius-full is for something that is genuinely
+     round (a status dot, a spinner), never for a pill-shaped label. */
   --radius-xs: 0.25rem;
   --radius-s: 0.375rem;
   --radius-m: 0.5rem;
-  --radius-l: 0.625rem;
-  --radius-xl: 0.75rem;
-  --radius-2xl: 1rem;
+  --radius-l: 0.5rem;
+  --radius-xl: 0.5rem;
   --radius-full: 999px;
 
   /* Layout */
@@ -89,8 +90,8 @@
   --state-accent-hover: rgb(35 100 230 / 0.14);
   --track: #e8ecf2;
   --scrollbar-thumb: #c9cfd8;
-  --shadow-panel: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
-  --shadow-raised: 0 3px 8px rgb(16 24 40 / 0.1);
+  /* Only an overlay casts a shadow; an ordinary surface separates with a
+     border and a surface tone, as it does in a desktop application. */
   --shadow-popover: 0 8px 24px rgb(16 24 40 / 0.14);
   --color-scrim: rgb(16 24 40 / 0.45);
   --focus-ring: 0 0 0 3px rgb(35 100 230 / 0.32);
@@ -138,8 +139,6 @@
   --state-accent-hover: rgb(77 141 255 / 0.18);
   --track: #2a313d;
   --scrollbar-thumb: #3a4250;
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-raised: 0 4px 10px rgb(0 0 0 / 0.4);
   --shadow-popover: 0 10px 28px rgb(0 0 0 / 0.5);
   --color-scrim: rgb(0 0 0 / 0.55);
   --focus-ring: 0 0 0 3px rgb(77 141 255 / 0.4);
@@ -290,7 +289,7 @@ main.page {
   flex: 1;
   flex-direction: column;
   overflow-y: auto;
-  padding: var(--space-8) var(--space-6) var(--space-12);
+  padding: var(--space-6) var(--space-6) var(--space-8);
   scrollbar-color: var(--scrollbar-thumb) transparent;
   scrollbar-width: thin;
 }
@@ -440,7 +439,7 @@ a.step-link:hover {
 .step-dot {
   align-items: center;
   border: 1px solid var(--color-line-strong);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full);
   color: var(--color-text-faint);
   display: inline-flex;
   flex: none;
@@ -648,7 +647,7 @@ body.has-native-titlebar .titlebar {
   flex-wrap: wrap;
   gap: var(--space-6);
   justify-content: space-between;
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
 }
 
 .content-head-text {
@@ -659,7 +658,7 @@ body.has-native-titlebar .titlebar {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   margin: 0 0 var(--space-2);
   text-transform: uppercase;
 }
@@ -703,19 +702,18 @@ body.has-native-titlebar .titlebar {
 /* ------------------------------------------------------------------ */
 
 section {
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
 }
 
 main.page section > h2 {
   font-size: var(--text-lg);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .panel {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-panel);
 }
 
 .panel-heading {
@@ -750,10 +748,10 @@ main.page section > h2 {
 .empty-state {
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-l);
+  border-radius: var(--radius-m);
   margin: var(--space-4) 0 0;
   max-width: 44rem;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
 }
 
 .empty-state-title {
@@ -1118,21 +1116,21 @@ input[type="radio"] {
 }
 
 .import-layout .panel {
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .steps {
   counter-reset: steps;
   display: block;
   list-style: none;
-  margin: var(--space-4) 0 0;
+  margin: var(--space-3) 0 0;
 }
 
 .steps li {
   align-items: flex-start;
   counter-increment: steps;
   display: block;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   padding-left: var(--space-8);
   position: relative;
 }
@@ -1140,7 +1138,7 @@ input[type="radio"] {
 .steps li::before {
   align-items: center;
   background: var(--color-accent-subtle);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full);
   color: var(--color-accent-ink);
   content: counter(steps);
   display: inline-flex;
@@ -1170,7 +1168,7 @@ input[type="radio"] {
   flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-2);
-  padding: var(--space-10) var(--space-6);
+  padding: var(--space-8) var(--space-5);
   text-align: center;
   transition: border-color 0.12s ease, background-color 0.12s ease;
 }
@@ -1219,15 +1217,15 @@ input[type="radio"] {
   clip: rect(0 0 0 0);
 }
 
+/* A plain glyph, not a tinted disc: the zone already says what it is for, so
+   the icon does not need a decorative tile around it. */
 .upload-icon {
   align-items: center;
-  background: var(--color-accent-subtle);
-  border-radius: var(--radius-full, 999px);
-  color: var(--color-accent-ink);
+  color: var(--color-text-faint);
   display: inline-flex;
-  height: 2.75rem;
+  height: 1.5rem;
   justify-content: center;
-  width: 2.75rem;
+  width: 1.5rem;
 }
 
 /* A file the page itself rejected marks the input, so the zone that wraps it
@@ -1266,12 +1264,11 @@ input[type="radio"] {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-panel);
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
-  padding: var(--space-5);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
 }
 
 .playlist-toolbar > label {
@@ -1300,21 +1297,20 @@ input[type="radio"] {
   align-items: flex-start;
   background: var(--color-surface);
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-l);
-  box-shadow: var(--shadow-panel);
+  border-radius: var(--radius-m);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   position: relative;
-  transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
+/* Hover and selection are a border and a surface tone, never a lift: a card
+   that floats off the baseline reads as a web page, not a list row. */
 .playlist-card:hover {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-raised);
-  transform: translateY(-1px);
+  border-color: var(--color-line-strong);
 }
 
 .playlist-card input[type="checkbox"] {
@@ -1384,16 +1380,13 @@ input[type="radio"] {
   color: var(--color-text);
 }
 
+/* The option is the one box on this screen; wrapping it in a second card
+   would only add a border for the border's sake. */
 form:has(.mode-option) {
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-panel);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
 }
 
 form:has(.mode-option) > button {
@@ -1410,7 +1403,7 @@ form:has(.mode-option) > button {
   font-size: var(--text-md);
   font-weight: var(--weight-medium);
   gap: var(--space-3);
-  margin: 0 0 var(--space-8);
+  margin: 0 0 var(--space-6);
   padding: var(--space-3) var(--space-4);
 }
 
@@ -1424,12 +1417,11 @@ form:has(.mode-option) > button {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-panel);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  margin-bottom: var(--space-8);
-  padding: var(--space-5);
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
 }
 
 .status-line {
@@ -1446,7 +1438,7 @@ form:has(.mode-option) > button {
 
 .progress-track {
   background: var(--track);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-s);
   flex: 1;
   height: 0.5rem;
   overflow: hidden;
@@ -1454,7 +1446,7 @@ form:has(.mode-option) > button {
 
 .progress-bar {
   background: var(--color-accent);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-s);
   height: 100%;
   transition: width 0.3s ease;
   width: 0;
@@ -1466,7 +1458,7 @@ form:has(.mode-option) > button {
 
 .eta-chip {
   background: var(--color-accent-subtle);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-s);
   color: var(--color-accent-ink);
   flex: none;
   font-size: var(--text-xs);
@@ -1482,18 +1474,13 @@ form:has(.mode-option) > button {
   margin: 0;
 }
 
+/* Plain label/value pairs, not a row of little cards: the numbers are the
+   content, and each one does not need a container of its own. */
 .stats {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   margin: 0;
-}
-
-.stats > div {
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-s);
-  padding: var(--space-3);
 }
 
 .stats dt {
@@ -1515,14 +1502,13 @@ form:has(.mode-option) > button {
 .batch-playlists {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .batch-playlist {
-  background: var(--color-surface-subtle);
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-l);
-  padding: var(--space-5);
+  border-radius: var(--radius-m);
+  padding: var(--space-4);
 }
 
 .batch-playlist.active {
@@ -1702,9 +1688,8 @@ form:has(.mode-option) > button {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-panel);
-  margin-top: var(--space-8);
-  padding: var(--space-6);
+  margin-top: var(--space-6);
+  padding: var(--space-5);
 }
 
 .result-next h2 {
@@ -1738,7 +1723,7 @@ form:has(.mode-option) > button {
 .lyrics-badge {
   background: var(--color-warning-subtle);
   border: 1px solid var(--color-warning-border);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-s);
   color: var(--color-warning-ink);
   flex: none;
   font-size: var(--text-xs);
@@ -1757,7 +1742,7 @@ form:has(.mode-option) > button {
   background: var(--color-success-subtle);
   border: 1px solid var(--color-success-border);
   border-radius: var(--radius-xl);
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .batch-import h2 {
@@ -1773,7 +1758,7 @@ form:has(.mode-option) > button {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xl);
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .import-list {
@@ -1784,13 +1769,14 @@ form:has(.mode-option) > button {
 
 .import-list li {
   align-items: baseline;
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-s);
+  border-bottom: 1px solid var(--color-line);
   display: flex;
   gap: var(--space-3);
-  margin-bottom: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.import-list li:last-child {
+  border-bottom: 0;
 }
 
 .import-name {
@@ -1804,7 +1790,7 @@ form:has(.mode-option) > button {
 }
 
 .import-list li.import-error {
-  border-color: var(--color-danger-border);
+  border-bottom-color: var(--color-danger-border);
 }
 
 .import-list li.import-error .import-detail {
@@ -1843,10 +1829,11 @@ form:has(.mode-option) > button {
   align-items: center;
   background: transparent;
   border: 0;
+  border-radius: var(--radius-s);
   color: var(--color-accent-ink);
   cursor: pointer;
   display: inline-flex;
-  font-size: 1.1rem;
+  font-size: var(--text-md);
   height: 1.5rem;
   justify-content: center;
   padding: 0;
@@ -1903,7 +1890,7 @@ form:has(.mode-option) > button {
 
 .toast-icon {
   align-items: center;
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-full);
   display: inline-flex;
   flex: none;
   height: 1.75rem;
@@ -1956,26 +1943,31 @@ form:has(.mode-option) > button {
   font-size: var(--text-xs);
 }
 
+/* The same secondary button the rest of the app uses, sized for a toast, so a
+   toast action is not a fifth button style. */
 .toast-action {
-  background: var(--color-accent-subtle);
-  border: 0;
+  align-items: center;
+  background: var(--color-muted-button);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-s);
-  color: var(--color-accent-ink);
+  color: var(--color-text);
+  display: inline-flex;
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
+  justify-content: center;
   min-height: 2rem;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   white-space: nowrap;
 }
 
 .toast-action:hover {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
+  background: var(--state-hover);
+  border-color: var(--color-line-strong);
+  color: var(--color-text);
 }
 
 .toast-action:active {
-  background: var(--color-accent-active);
-  color: var(--color-on-accent);
+  background: var(--state-active);
 }
 
 .tooltip {

@@ -200,6 +200,29 @@ def test_controls_report_their_error_and_loading_states() -> None:
     assert "setBusy(true);" in homepage
 
 
+def test_surfaces_stay_flat_square_and_unshaded() -> None:
+    """The anti-vibe-code rules: no gradients, small radii, borders not shadows."""
+    css = (Path(create_app().static_folder) / "style.css").read_text(encoding="utf-8")
+
+    # No gradient anywhere: this is a desktop utility, not a landing page.
+    assert "gradient(" not in css
+    # An ordinary surface separates with a border and a surface tone; only an
+    # overlay (dialog, toast, tooltip) casts a shadow.
+    assert "--shadow-panel" not in css
+    assert "--shadow-raised" not in css
+    assert "box-shadow: var(--shadow-popover)" in css
+    # The radius scale stays small, and 999px is reserved for something that is
+    # genuinely round (a status dot, a spinner) rather than a pill-shaped label.
+    radius = dict(re.findall(r"(--radius-[\w-]+): ([\d.]+rem);", css))
+    assert radius["--radius-xl"] == "0.5rem"
+    assert radius["--radius-l"] == "0.5rem"
+    assert "--radius-2xl" not in css
+    assert "border-radius: 999px" not in css
+    assert "border-radius: 9999px" not in css
+    # A card never floats off the baseline when it is pointed at.
+    assert "translateY(-1px)" not in css
+
+
 def test_artwork_styles_support_light_and_dark_themes() -> None:
     import pathlib
 
