@@ -11,9 +11,10 @@ The window is frameless. Windows and Linux draw their own title bar (see
 macOS instead re-enables the native traffic lights on the frameless NSWindow
 (see ``desktop_macos.py``) and keeps only a transparent drag strip in the page.
 :class:`WindowControls` is exposed to the page as ``pywebview.api`` so the HTML
-custom title-bar buttons can drive the native window on Windows/Linux and the
-M3U download can be saved through a native dialog. Only that API is exposed
-to the page, and the localhost URL stays hidden from normal users.
+custom title-bar buttons can drive the native window on Windows/Linux, the ZIP
+to import can be picked in the OS file dialog, and the M3U download can be
+saved through the OS save panel. Only that API is exposed to the page, and the
+localhost URL stays hidden from normal users.
 
 The WebView is a production shell only. Developers use ``uv run dev``, which
 starts the same Flask app in a normal browser, and never need the native window
@@ -91,22 +92,21 @@ def _downloads_root() -> Path:
     return (Path.home() / "Downloads").resolve()
 
 
-def _unique_download_target(job) -> Path:
-    """A playlist-derived, collision-free path under ``_downloads_root()``.
-
-    Names a file ``<playlist>.m3u`` from the sanitised playlist name, appending
-    `` (2)``, `` (3)`` … until the name is free so repeated saves never
-    silently overwrite an older copy.
-    """
+def _playlist_filename(job) -> str:
+    """The filename a playlist is offered under, derived from its name."""
     base = sanitize_filename_component(job.playlist_name) or job.playlist_id
-    root = _downloads_root()
-    root.mkdir(parents=True, exist_ok=True)
-    candidate = root / f"{base}.m3u"
-    counter = 2
-    while candidate.exists():
-        candidate = root / f"{base} ({counter}).m3u"
-        counter += 1
-    return candidate
+    return f"{base}.m3u"
+
+
+def _file_dialog_kinds() -> dict[str, int]:
+    """pywebview's file-dialog kinds, imported only when a dialog is opened.
+
+    pywebview is imported lazily throughout this module so importing it never
+    requires a desktop GUI stack (see the module docstring).
+    """
+    from webview import FileDialog
+
+    return {"open": int(FileDialog.OPEN), "save": int(FileDialog.SAVE)}
 
 
 class WindowControls:
@@ -124,6 +124,10 @@ class WindowControls:
         self.app = app
         self.window = None
         self._maximized = False
+        # The archive picked in the native open dialog, held here until the
+        # import route collects it (see choose_zip).
+        self._pending_import: Path | None = None
+        self._pending_lock = threading.Lock()
 
     def attach(self, window: object | None) -> None:
         """Bind the native window and mirror its maximize/restore state to the page.
@@ -203,21 +207,67 @@ class WindowControls:
         window.destroy()
         window.events.closed.wait(timeout=_CLOSE_TIMEOUT_SECONDS)
 
+    def choose_zip(self) -> dict[str, object]:
+        """Open the OS file picker for the Exportify ZIP and remember the choice.
+
+        The desktop shell imports a file the same way any desktop application
+        does, rather than through the browser's file control. The chosen path
+        is kept on this side and later collected by the import route (see
+        :meth:`take_pending_import`), so a path never travels through the page
+        and the server can only ever read a file the user picked here.
+
+        Returns the file name for the page to show, or ``cancelled`` when the
+        dialog was dismissed.
+        """
+        if self.window is None:
+            return {"error": "The native window is not available."}
+        kinds = _file_dialog_kinds()
+        try:
+            picked = self.window.create_file_dialog(
+                kinds["open"],
+                allow_multiple=False,
+                file_types=("Exportify export (*.zip)",),
+            )
+        except Exception:  # pragma: no cover - the native dialog is not testable here
+            _LOGGER.warning("the file picker could not be opened", exc_info=True)
+            return {"error": "The file picker could not be opened."}
+        # pywebview returns a sequence for an open dialog, or None if cancelled.
+        if not picked:
+            return {"cancelled": True}
+        path = Path(picked[0])
+        if path.suffix.lower() != ".zip" or not path.is_file():
+            return {"error": "Choose the ZIP file downloaded from Exportify."}
+        with self._pending_lock:
+            self._pending_import = path
+        return {"name": path.name}
+
+    def take_pending_import(self) -> Path | None:
+        """Collect the file ``choose_zip`` picked, clearing it as it is read.
+
+        Single-use on purpose: a second import has to go back through the
+        native dialog, so nothing can re-import a path that was chosen once.
+        """
+        with self._pending_lock:
+            path, self._pending_import = self._pending_import, None
+        return path
+
     def save_m3u(self, job_id: str, playlist_id: str, confirm: bool = False) -> dict[str, object]:
-        """Copy a generated playlist straight into the Downloads folder.
+        """Save a generated playlist where the user chooses.
 
         pywebview cannot deliver Flask's ``Content-Disposition: attachment``
         download the way a browser does, so the page hands the download to
         this bridge instead of following the link (see ``_save_m3u.html``).
-        The file is copied from the server-owned output directory to a unique
-        playlist-derived name under ``_downloads_root()``; no save panel is
-        opened, which keeps the action a single click. The returned ``path``
-        lets the page show a toast with an "Open folder" action.
+        The bridge asks the OS for a save panel, offered with the playlist's
+        name in the Downloads folder, and copies the server-owned output file
+        there. The returned ``path`` lets the page show a toast with an "Open
+        folder" action; a dismissed panel returns ``cancelled`` and nothing is
+        written.
 
         A playlist whose referenced files were deleted by hand is reported
-        back with ``confirm_required`` instead of being saved, so the page can
-        warn before writing a playlist that would skip those tracks. Passing
-        ``confirm`` (the "Download anyway" action) saves it regardless.
+        back with ``confirm_required`` instead of opening the panel, so the
+        page can confirm before writing a playlist that would skip those
+        tracks. Passing ``confirm`` (the dialog's "Download anyway" action)
+        saves it regardless.
         """
         job = self._find_job(job_id, playlist_id)
         if job is None or job.m3u_path is None:
@@ -235,13 +285,43 @@ class WindowControls:
                 "names": list(check.missing_names()),
             }
 
-        destination = _unique_download_target(job)
+        destination = self._ask_save_target(job)
+        if destination is None:
+            return {"cancelled": True}
         try:
             shutil.copyfile(source, destination)
         except OSError as error:
             _LOGGER.warning("could not save the M3U to %s: %s", destination, error)
             return {"error": "The playlist could not be saved."}
         return {"saved": True, "path": str(destination), "name": destination.name}
+
+    def _ask_save_target(self, job) -> Path | None:
+        """Where to write the playlist, from the OS save panel.
+
+        Offered as the playlist's own name in the Downloads folder, which is
+        where generated playlists live; the user can rename it or pick another
+        location. ``None`` means the panel was dismissed.
+        """
+        if self.window is None:
+            return None
+        kinds = _file_dialog_kinds()
+        root = _downloads_root()
+        try:
+            chosen = self.window.create_file_dialog(
+                kinds["save"],
+                directory=str(root),
+                save_filename=_playlist_filename(job),
+                file_types=("M3U playlist (*.m3u)",),
+            )
+        except Exception:  # pragma: no cover - the native dialog is not testable here
+            _LOGGER.warning("the save panel could not be opened", exc_info=True)
+            return None
+        # A save dialog returns the chosen path as a single-entry sequence.
+        if not chosen:
+            return None
+        target = Path(chosen[0] if isinstance(chosen, (list, tuple)) else chosen)
+        # A name typed without an extension keeps the playlist's own suffix.
+        return target if target.suffix else target.with_suffix(".m3u")
 
     def open_at(self, path: str) -> dict[str, str | bool]:
         """Reveal a saved playlist in the OS file manager.
@@ -392,9 +472,12 @@ def show_window(url: str, app: Flask | None = None) -> None:
     traffic lights are restored so the chrome stays AppKit-native, while
     Windows and Linux keep the page-drawn title bar.
     :class:`WindowControls` is exposed as ``pywebview.api`` so the HTML
-    title-bar buttons can drive the native window and the M3U download can be
-    saved through a native dialog. Only that API is exposed to the page, and
-    the localhost URL stays hidden from normal users.
+    title-bar buttons can drive the native window, the ZIP to import can be
+    picked in the OS file dialog, and the M3U download can be saved through the
+    OS save panel. Only that API is exposed to the page, and the localhost URL
+    stays hidden from normal users. The controls are also registered in the
+    Flask config so the import route can collect the picked file (see
+    ``WindowControls.take_pending_import``).
     """
     import webview
 
@@ -407,6 +490,10 @@ def show_window(url: str, app: Flask | None = None) -> None:
         settings["ALLOW_DOWNLOADS"] = True
 
     controls = WindowControls(app=app)
+    if app is not None:
+        # Lets the page's import route collect the file the native picker
+        # returned; the path itself never leaves this process.
+        app.config["WINDOW_CONTROLS"] = controls
     window = webview.create_window(
         WINDOW_TITLE,
         url,

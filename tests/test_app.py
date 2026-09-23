@@ -136,7 +136,9 @@ def test_controls_report_their_error_and_loading_states() -> None:
     assert "box-shadow: var(--focus-ring-error)" in css
     assert 'uploadInput.setAttribute("aria-invalid", "true")' in homepage
     # And an action in flight keeps its label next to a spinner.
-    assert 'uploadButton.setAttribute("aria-busy", "true")' in homepage
+    assert 'uploadButton.setAttribute("aria-busy", busy ? "true" : "false")' in homepage
+    # Both import paths go through that one busy state.
+    assert "setBusy(true);" in homepage
 
 
 def test_artwork_styles_support_light_and_dark_themes() -> None:
@@ -174,6 +176,101 @@ def test_fullscreen_macos_drops_the_traffic_light_gap_but_keeps_even_padding() -
     assert padding["padding-top"] == padding["padding-bottom"]
     # The page can only know about full screen through the window bridge.
     assert 'classList.toggle("is-fullscreen"' in titlebar
+
+
+class _StubWindowControls:
+    """Stands in for the desktop bridge's picked-file handoff."""
+
+    def __init__(self, path: Path | None) -> None:
+        self.path = path
+        self.takes = 0
+
+    def take_pending_import(self) -> Path | None:
+        self.takes += 1
+        path, self.path = self.path, None
+        return path
+
+
+def test_upload_picked_imports_the_archive_chosen_in_the_native_dialog(tmp_path) -> None:
+    archive = tmp_path / "export.zip"
+    archive.write_bytes(export_zip())
+    app = create_app({"UPLOAD_ROOT": tmp_path / "uploads"})
+    controls = _StubWindowControls(archive)
+    app.config["WINDOW_CONTROLS"] = controls
+    client = app.test_client()
+
+    response = client.post("/upload/picked")
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    # The page only needs somewhere to go, so the route answers with the page
+    # URL rather than a rendered page it would have to re-request.
+    assert payload["url"] == f"/playlists/{payload['job_id']}"
+    assert payload["playlists"] == 2
+    # The handoff is single-use: the path cannot be imported twice.
+    assert controls.take_pending_import() is None
+    # The import also opened the session the page navigates into, so the URL
+    # the route answers with really is the next page.
+    assert client.get(payload["url"]).status_code == 200
+
+
+def test_upload_picked_needs_a_file_from_the_native_dialog(tmp_path) -> None:
+    app = create_app({"UPLOAD_ROOT": tmp_path / "uploads"})
+    controls = _StubWindowControls(None)
+    app.config["WINDOW_CONTROLS"] = controls
+
+    response = app.test_client().post("/upload/picked")
+
+    assert response.status_code == 400
+    assert "Choose the Exportify ZIP file" in response.get_json()["error"]
+
+
+def test_upload_picked_reports_an_archive_it_cannot_read(tmp_path) -> None:
+    broken = tmp_path / "export.zip"
+    broken.write_text("this is not a zip", encoding="utf-8")
+    app = create_app({"UPLOAD_ROOT": tmp_path / "uploads"})
+    app.config["WINDOW_CONTROLS"] = _StubWindowControls(broken)
+
+    response = app.test_client().post("/upload/picked")
+
+    assert response.status_code == 400
+    assert "ZIP" in response.get_json()["error"]
+
+
+def test_the_import_page_uses_the_native_picker_when_the_bridge_is_present() -> None:
+    client = create_app().test_client()
+
+    homepage = client.get("/").get_data(as_text=True)
+
+    # The click opens the OS file dialog and the server is asked to take that
+    # file; the browser's own control and the drop zone stay as the fallback.
+    assert "nativePicker.choose_zip()" in homepage
+    assert 'fetch("/upload/picked"' in homepage
+    assert 'id="export-file"' in homepage
+
+
+def test_the_missing_files_confirmation_is_a_keyboard_accessible_dialog() -> None:
+    app = create_app()
+    css = (Path(app.static_folder) / "style.css").read_text(encoding="utf-8")
+    template = (Path(app.root_path) / "templates" / "_save_m3u.html").read_text(encoding="utf-8")
+
+    # A native modal element: Tab trapping, Escape to close and focus on open
+    # come from <dialog>, and the primary action holds that focus so Enter
+    # confirms it. Title and listed files make it self-explanatory.
+    assert "<dialog" in template
+    assert 'method="dialog"' in template
+    assert "autofocus" in template
+    assert "showModal()" in template
+    assert 'aria-labelledby="m3u-missing-title"' in template
+    assert 'id="m3u-missing-list"' in template
+
+    # Sized against the window so it can never be clipped: the group scrolls
+    # while the title and the actions stay put.
+    assert "max-height: calc(100vh - 2 * var(--space-8))" in css
+    assert "max-width: calc(100vw - 2 * var(--space-8))" in css
+    assert ".app-dialog::backdrop" in css
+    # An author display rule on a closed dialog would keep it on the page.
+    assert ".app-dialog[open] {" in css
 
 
 def test_playlist_selection_persists_state_and_redirects(tmp_path) -> None:

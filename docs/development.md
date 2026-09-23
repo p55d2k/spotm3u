@@ -39,7 +39,11 @@ and exits the process. The window is frameless. On Windows and Linux the page
 draws its own title bar (`templates/_titlebar.html`), whose minimize, maximize
 and close buttons call a small pywebview JS API; on macOS the native AppKit
 traffic lights are restored instead (`desktop_macos.py`), leaving the page's bar
-as a transparent drag strip over a full-bleed content view. `SPOTM3U_NO_WEBVIEW=1`
+as a transparent drag strip over a full-bleed content view. That same API
+(`WindowControls`) carries the two file operations that belong to the desktop
+rather than to a web page: the Exportify ZIP is picked in the OS file dialog
+(the chosen path stays in the shell and is collected by `POST /upload/picked`),
+and a generated M3U is saved through the OS save panel. `SPOTM3U_NO_WEBVIEW=1`
 skips the window and only serves,
 which is what the release smoke test uses. Developers are not required to use
 the desktop window; it never replaces the plain browser workflow above.

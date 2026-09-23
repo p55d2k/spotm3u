@@ -74,12 +74,21 @@
       const uploadTitle = document.getElementById("upload-title");
       const uploadFilename = document.getElementById("upload-filename");
       const uploadButton = document.getElementById("upload-button");
+      const uploadButtonLabel = uploadButton.textContent.trim();
       const idleTitle = uploadTitle.textContent.trim();
       const idleHint = uploadFilename.textContent.trim();
 
       // Report the chosen or dropped file where the choice was made, and keep
       // the file type complaint there too instead of letting the server answer
-      // a question the page can settle on its own.
+      // a question the page can settle on its own. The input is the labelled
+      // control, so the error is reported on it and the zone that wraps it
+      // picks up the error border.
+      const showImportError = (message) => {
+        uploadFilename.classList.add("is-error");
+        uploadFilename.textContent = message;
+        uploadInput.setAttribute("aria-invalid", "true");
+      };
+
       const selectFile = (file) => {
         uploadFilename.classList.remove("is-error");
         uploadInput.removeAttribute("aria-invalid");
@@ -88,15 +97,22 @@
           return true;
         }
         if (!file.name.toLowerCase().endsWith(".zip")) {
-          uploadFilename.classList.add("is-error");
-          // The input is the labelled control, so the error is reported on it
-          // and the zone (which wraps it) picks up the error border.
-          uploadInput.setAttribute("aria-invalid", "true");
-          uploadFilename.textContent = "That is not a ZIP file — choose the Exportify export.";
+          showImportError("That is not a ZIP file — choose the Exportify export.");
           return false;
         }
         uploadFilename.textContent = file.name;
         return true;
+      };
+
+      // One busy state for both import paths: the zone says what is happening
+      // and the action is no longer clickable.
+      const setBusy = (busy) => {
+        uploadZone.classList.toggle("is-busy", busy);
+        uploadTitle.textContent = busy ? "Reading your export…" : idleTitle;
+        uploadButton.disabled = busy;
+        uploadButton.setAttribute("aria-busy", busy ? "true" : "false");
+        uploadButton.textContent = busy ? "Importing…" : uploadButtonLabel;
+        uploadForm.setAttribute("aria-busy", busy ? "true" : "false");
       };
 
       uploadInput.addEventListener("change", () => selectFile(uploadInput.files[0]));
@@ -145,15 +161,66 @@
         }
       });
 
+      // In the desktop shell the Exportify ZIP is imported the way a desktop
+      // application imports a file: the click opens the OS file dialog, the
+      // chosen path stays in the shell, and the server is asked to take that
+      // file. Dropping a ZIP and the browser's own file control still work, so
+      // `uv run dev` behaves as before.
+      const nativePicker = window.pywebview && window.pywebview.api;
+      const usesNativePicker = Boolean(
+        nativePicker && typeof nativePicker.choose_zip === "function"
+      );
+
+      const importPicked = async () => {
+        uploadFilename.classList.remove("is-error");
+        uploadInput.removeAttribute("aria-invalid");
+        let picked;
+        try {
+          picked = await nativePicker.choose_zip();
+        } catch (error) {
+          console.error("opening the file picker failed", error);
+          showImportError("The file picker could not be opened.");
+          return;
+        }
+        if (!picked || picked.cancelled) {
+          return;
+        }
+        if (picked.error) {
+          showImportError(picked.error);
+          return;
+        }
+        uploadFilename.textContent = picked.name;
+        setBusy(true);
+        try {
+          const response = await fetch("/upload/picked", { method: "POST" });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || !payload || !payload.url) {
+            setBusy(false);
+            showImportError(
+              (payload && payload.error) || "That archive could not be imported."
+            );
+            return;
+          }
+          window.location.href = payload.url;
+        } catch (error) {
+          console.error("importing the picked archive failed", error);
+          setBusy(false);
+          showImportError("That archive could not be imported. Please try again.");
+        }
+      };
+
+      if (usesNativePicker) {
+        // Anywhere on the zone opens the picker, exactly as the label did.
+        uploadZone.addEventListener("click", (event) => {
+          event.preventDefault();
+          importPicked();
+        });
+      }
+
       uploadForm.addEventListener("submit", () => {
         // The file input stays enabled: disabling it here would strip the file
         // from the POST the browser is about to send.
-        uploadZone.classList.add("is-busy");
-        uploadTitle.textContent = "Reading your export…";
-        uploadButton.disabled = true;
-        uploadButton.setAttribute("aria-busy", "true");
-        uploadButton.textContent = "Importing…";
-        uploadForm.setAttribute("aria-busy", "true");
+        setBusy(true);
       });
     </script>
   </body>

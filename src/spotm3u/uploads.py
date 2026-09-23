@@ -10,6 +10,7 @@ import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import IO
 
 from .config import (
     DEFAULT_MAX_ARCHIVE_ENTRIES,
@@ -31,6 +32,20 @@ class UploadJob:
     extracted: Path
     state: Path
     output: Path
+
+
+@dataclass(frozen=True)
+class PickedFile:
+    """A file chosen outside the browser, presented like an uploaded one.
+
+    The desktop shell picks the Exportify archive in the OS file dialog and
+    hands the server a path rather than uploaded bytes, so this adapter carries
+    the two things :func:`store_upload` reads - a ``filename`` and a readable
+    binary ``stream`` - and both routes share one validation and storage path.
+    """
+
+    filename: str
+    stream: IO[bytes]
 
 
 def store_upload(

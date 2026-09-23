@@ -42,7 +42,7 @@ from .normalization import sanitize_filename_component
 from .online import describe_youtube_setup
 from .online.youtube_setup import set_pot_provider_timeout
 from .update import check_for_updates
-from .uploads import UploadError, default_upload_root, store_upload
+from .uploads import PickedFile, UploadError, default_upload_root, store_upload
 from .web_jobs import (
     _annotate_artwork,
     _annotate_lyrics,
@@ -154,15 +154,14 @@ def create_app(config: dict | None = None) -> Flask:
             return jsonify({"error": "The application icon is not available."}), 404
         return send_file(icon, mimetype="image/png", max_age=3600)
 
-    @app.post("/upload")
-    def upload():
-        uploaded_file = request.files.get("file")
-        if uploaded_file is None or not uploaded_file.filename:
-            return render_template(
-                "index.html",
-                error="Choose the Exportify ZIP file before uploading.",
-            ), 400
+    def _store_and_parse(uploaded_file):
+        """Store one Exportify archive and read its playlists.
 
+        Shared by the browser upload and the desktop shell's native picker:
+        both hand over something with a ``filename`` and a binary ``stream``.
+        Returns ``(job, playlists, error, status)`` with an error set instead
+        of roles when the archive could not be accepted.
+        """
         try:
             job = store_upload(
                 uploaded_file,
@@ -172,14 +171,10 @@ def create_app(config: dict | None = None) -> Flask:
                 max_archive_entries=app.config["MAX_ARCHIVE_ENTRIES"],
             )
         except UploadError as error:
-            return render_template("index.html", error=str(error), workflow_stage=1), 400
+            return None, None, str(error), 400
         except (OSError, ValueError):
             app.logger.exception("Unable to store uploaded archive")
-            return render_template(
-                "index.html",
-                error="The upload could not be stored. Please try again.",
-                workflow_stage=1,
-            ), 500
+            return None, None, "The upload could not be stored. Please try again.", 500
 
         _sweep_old_jobs(app)
 
@@ -187,14 +182,24 @@ def create_app(config: dict | None = None) -> Flask:
             playlists = parse_exportify(job.extracted)
         except ExportifyParseError as error:
             app.logger.info("Uploaded archive is not a valid Exportify export: %s", error)
-            return render_template("index.html", error=str(error), workflow_stage=1), 400
+            return None, None, str(error), 400
         except (OSError, UnicodeError):
             app.logger.exception("Unable to read uploaded Exportify archive")
+            return None, None, "The uploaded export could not be read. Please try again.", 400
+        return job, playlists, None, 201
+
+    @app.post("/upload")
+    def upload():
+        uploaded_file = request.files.get("file")
+        if uploaded_file is None or not uploaded_file.filename:
             return render_template(
                 "index.html",
-                error="The uploaded export could not be read. Please try again.",
-                workflow_stage=1,
+                error="Choose the Exportify ZIP file before uploading.",
             ), 400
+
+        job, playlists, error, status = _store_and_parse(uploaded_file)
+        if error is not None:
+            return render_template("index.html", error=error, workflow_stage=1), status
 
         session["job_id"] = job.job_id
         return render_template(
@@ -202,6 +207,42 @@ def create_app(config: dict | None = None) -> Flask:
             job_id=job.job_id,
             playlists=playlists,
             workflow_stage=2,
+        ), 201
+
+    @app.post("/upload/picked")
+    def upload_picked():
+        """Import the archive the desktop shell picked in the native dialog.
+
+        The path is collected from the window bridge rather than sent by the
+        page, so this route can only read a file the user chose in the OS file
+        dialog (see ``WindowControls.choose_zip``). Answers JSON because the
+        page is already showing the import form and only needs the new job to
+        navigate to.
+        """
+        controls = app.config.get("WINDOW_CONTROLS")
+        source_path = controls.take_pending_import() if controls is not None else None
+        if source_path is None:
+            return jsonify({"error": "Choose the Exportify ZIP file before uploading."}), 400
+
+        try:
+            with source_path.open("rb") as stream:
+                job, playlists, error, status = _store_and_parse(
+                    PickedFile(source_path.name, stream)
+                )
+        except OSError:
+            app.logger.exception("Unable to read the picked archive")
+            return jsonify({"error": "That file could not be read. Please choose it again."}), 500
+
+        if error is not None:
+            return jsonify({"error": error}), status
+
+        session["job_id"] = job.job_id
+        return jsonify(
+            {
+                "job_id": job.job_id,
+                "playlists": len(playlists),
+                "url": url_for("playlists", job_id=job.job_id),
+            }
         ), 201
 
     @app.get("/playlists/<job_id>")

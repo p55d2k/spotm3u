@@ -1,3 +1,33 @@
+{# The one confirmation in the application, and the reference for the dialog
+   pattern (see "Dialogs" in style.css). It is a compact, titled card with a
+   grouped list of the files the playlist references but cannot find, because
+   saving anyway writes a playlist that silently skips them.
+
+   ``<dialog>`` supplies the desktop behaviour: ``showModal`` traps Tab inside
+   the card, Escape closes it (returning nothing from ``returnValue``), the
+   primary button is focused on open, and the backdrop dims the page. Both
+   buttons submit, so Enter on the focused primary confirms it. #}
+<dialog
+  class="app-dialog"
+  id="m3u-missing-dialog"
+  aria-labelledby="m3u-missing-title"
+  aria-describedby="m3u-missing-summary"
+>
+  <form method="dialog" class="app-dialog-body">
+    <h2 class="app-dialog-title" id="m3u-missing-title"></h2>
+    <p class="app-dialog-summary" id="m3u-missing-summary">
+      Saving writes a playlist that skips these tracks.
+    </p>
+    <div class="app-dialog-group">
+      <p class="app-dialog-group-label" id="m3u-missing-list-label">Missing files</p>
+      <ul class="app-dialog-list" id="m3u-missing-list" aria-labelledby="m3u-missing-list-label"></ul>
+    </div>
+    <div class="app-dialog-actions">
+      <button class="button-secondary" type="submit" value="cancel">Cancel</button>
+      <button class="button" type="submit" value="confirm" autofocus>Save anyway</button>
+    </div>
+  </form>
+</dialog>
 <script>
   (() => {
     const links = document.querySelectorAll("a[data-save-m3u]");
@@ -5,11 +35,54 @@
 
     const feedback = window.SpotM3UFeedback;
     const SAVE_FAILED = "The playlist could not be saved.";
+    const missingDialog = document.getElementById("m3u-missing-dialog");
+
+    // Resolves true only when the primary button was used; Escape, Cancel and
+    // a click on the backdrop all count as "do not save".
+    function confirmMissingFiles(info) {
+      const missing = Number(info.missing) || 0;
+      const total = Number(info.total) || 0;
+      const names = Array.isArray(info.names) ? info.names : [];
+      const heading = missing + " of " + total + " tracks are missing";
+      if (!missingDialog || typeof missingDialog.showModal !== "function") {
+        // No <dialog> support: still ask, through the window's own confirm,
+        // rather than saving a degraded playlist without a word.
+        return Promise.resolve(
+          window.confirm(heading + ".\n\nSaving writes a playlist that skips these tracks.")
+        );
+      }
+      document.getElementById("m3u-missing-title").textContent = heading;
+      const list = document.getElementById("m3u-missing-list");
+      list.replaceChildren(
+        ...names.map((name) => {
+          const item = document.createElement("li");
+          item.textContent = name;
+          return item;
+        })
+      );
+      return new Promise((resolve) => {
+        missingDialog.addEventListener(
+          "close",
+          () => resolve(missingDialog.returnValue === "confirm"),
+          { once: true }
+        );
+        missingDialog.showModal();
+      });
+    }
+
+    // Clicking the backdrop is the usual "dismiss" gesture; the dialog's own
+    // click handler sees the card's contents as the target, so only a click
+    // outside the form lands here.
+    if (missingDialog) {
+      missingDialog.addEventListener("click", (event) => {
+        if (event.target === missingDialog) missingDialog.close("cancel");
+      });
+    }
 
     // pywebview cannot deliver Flask's attachment download, so the desktop
-    // shell saves the playlist straight into Downloads and reports the outcome
-    // through the shared toast. Every failure here is user-facing text; the
-    // technical detail goes to the console.
+    // shell saves the playlist through the OS save panel instead and reports
+    // the outcome through the shared toast. Every failure here is user-facing
+    // text; the technical detail goes to the console.
     async function save(link, confirm) {
       // Resolve the bridge at click time: pywebview injects window.pywebview
       // only after the page has finished loading, so reading it up front is
@@ -41,28 +114,24 @@
         link.dataset.saving = "false";
         link.removeAttribute("aria-busy");
       }
+      // A dismissed save panel is not a failure: the user chose not to save,
+      // so nothing is said about it.
+      if (result && result.cancelled) {
+        return;
+      }
       if (!result || result.error) {
         feedback.error(SAVE_FAILED, result ? result.error : "Try again in a moment.");
         return;
       }
-      // The save was refused because the playlist references missing files:
-      // warn, and offer to save it anyway (the same click, confirmed). The
-      // warning never expires into a dead end.
+      // The save was refused because the playlist references missing files.
+      // The dialog is the confirmation: confirming repeats the save, and
+      // cancelling writes nothing and leaves the warning one click away (the
+      // same save link) rather than stuck behind an expired notice.
       if (result.confirm_required) {
-        const missing = Number(result.missing) || 0;
-        const total = Number(result.total) || 0;
-        const names = Array.isArray(result.names) ? result.names : [];
-        feedback.warning(
-          missing + " of " + total + " tracks are missing from the download folder",
-          (names.length ? "Missing: " + names.join(", ") + ". " : "") +
-            "Download anyway to get a playlist that skips them.",
-          {
-            action: {
-              label: "Download anyway",
-              onClick: () => save(link, true),
-            },
-          }
-        );
+        const confirmed = await confirmMissingFiles(result);
+        if (confirmed) {
+          await save(link, true);
+        }
         return;
       }
 

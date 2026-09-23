@@ -130,14 +130,36 @@ class _FakeEvent:
 
 
 class _FakeWindow:
-    """Records native calls and evaluate_js scripts for assertions."""
+    """Records native calls, evaluate_js scripts and file dialogs."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.scripts: list[str] = []
+        # What the OS file dialog returns: None is a dismissed dialog.
+        self.dialog_result: object = None
+        self.dialogs: list[dict] = []
         self.events = SimpleNamespace(
             maximized=_FakeEvent(), restored=_FakeEvent(), closed=_FakeEvent()
         )
+
+    def create_file_dialog(
+        self,
+        dialog_type,
+        directory="",
+        allow_multiple=False,
+        save_filename="",
+        file_types=(),
+    ):
+        self.dialogs.append(
+            {
+                "dialog_type": dialog_type,
+                "directory": directory,
+                "allow_multiple": allow_multiple,
+                "save_filename": save_filename,
+                "file_types": file_types,
+            }
+        )
+        return self.dialog_result
 
     def minimize(self) -> None:
         self.calls.append("minimize")
@@ -250,39 +272,59 @@ def _controls_client(tmp_path) -> tuple[desktop.WindowControls, _FakeWindow, Fla
     return controls, window, app, job
 
 
-def test_save_m3u_copies_the_playlist_into_downloads(tmp_path, monkeypatch) -> None:
+def test_save_m3u_writes_to_the_path_chosen_in_the_save_panel(tmp_path, monkeypatch) -> None:
     downloads = tmp_path / "Downloads"
     monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
-    controls, _window, _app, job = _controls_client(tmp_path)
+    controls, window, _app, job = _controls_client(tmp_path)
     job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+    chosen = tmp_path / "elsewhere" / "My list.m3u"
+    chosen.parent.mkdir()
+    window.dialog_result = (str(chosen),)
 
     result = controls.save_m3u("job", "0")
 
     assert result["saved"] is True
-    assert Path(result["path"]) == downloads / "Hits.m3u"
-    assert result["name"] == "Hits.m3u"
-    assert (downloads / "Hits.m3u").read_text(encoding="utf-8") == "#EXTM3U\n"
+    assert Path(result["path"]) == chosen
+    assert result["name"] == "My list.m3u"
+    assert chosen.read_text(encoding="utf-8") == "#EXTM3U\n"
+    # The panel offers the playlist's own name in the Downloads folder, and the
+    # save kind is the one that takes a suggested filename.
+    call = window.dialogs[0]
+    assert call["save_filename"] == "Hits.m3u"
+    assert call["directory"] == str(downloads)
+    assert call["allow_multiple"] is False
 
 
-def test_save_m3u_uses_a_unique_name_when_collisions_exist(tmp_path, monkeypatch) -> None:
+def test_save_m3u_keeps_the_playlist_suffix_when_a_name_has_none(tmp_path, monkeypatch) -> None:
     downloads = tmp_path / "Downloads"
     monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
-    controls, _window, _app, job = _controls_client(tmp_path)
-    downloads.mkdir()
-    (downloads / "Hits.m3u").write_text("older copy", encoding="utf-8")
+    controls, window, _app, job = _controls_client(tmp_path)
     job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+    window.dialog_result = (str(tmp_path / "My list"),)
 
     result = controls.save_m3u("job", "0")
 
-    assert result["saved"] is True
-    assert result["name"] == "Hits (2).m3u"
-    assert result["path"] == str(downloads / "Hits (2).m3u")
+    assert Path(result["path"]) == tmp_path / "My list.m3u"
+    assert (tmp_path / "My list.m3u").is_file()
+
+
+def test_save_m3u_writes_nothing_when_the_save_panel_is_dismissed(tmp_path, monkeypatch) -> None:
+    downloads = tmp_path / "Downloads"
+    monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
+    controls, window, _app, job = _controls_client(tmp_path)
+    job.m3u_path.write_text("#EXTM3U\n", encoding="utf-8")
+    window.dialog_result = None
+
+    result = controls.save_m3u("job", "0")
+
+    assert result["cancelled"] is True
+    assert not downloads.exists()
 
 
 def test_save_m3u_asks_for_confirmation_when_files_are_missing(tmp_path, monkeypatch) -> None:
     downloads = tmp_path / "Downloads"
     monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
-    controls, _window, _app, job = _controls_client(tmp_path)
+    controls, window, _app, job = _controls_client(tmp_path)
     job.m3u_path.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
 
     result = controls.save_m3u("job", "0")
@@ -291,14 +333,18 @@ def test_save_m3u_asks_for_confirmation_when_files_are_missing(tmp_path, monkeyp
     assert result["missing"] == 1
     assert result["total"] == 1
     assert result["names"] == ["Artist - Song.mp3"]
+    # Nothing is asked for and nothing is written before the user confirms.
+    assert window.dialogs == []
     assert not downloads.exists()
 
 
 def test_save_m3u_saves_confirmed_playlists_with_missing_files(tmp_path, monkeypatch) -> None:
     downloads = tmp_path / "Downloads"
     monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
-    controls, _window, _app, job = _controls_client(tmp_path)
+    controls, window, _app, job = _controls_client(tmp_path)
     job.m3u_path.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
+    downloads.mkdir()
+    window.dialog_result = (str(downloads / "Hits.m3u"),)
 
     result = controls.save_m3u("job", "0", True)
 
@@ -309,14 +355,59 @@ def test_save_m3u_saves_confirmed_playlists_with_missing_files(tmp_path, monkeyp
 def test_save_m3u_needs_no_confirmation_when_every_file_is_present(tmp_path, monkeypatch) -> None:
     downloads = tmp_path / "Downloads"
     monkeypatch.setattr(desktop, "_downloads_root", lambda: downloads)
-    controls, _window, _app, job = _controls_client(tmp_path)
+    controls, window, _app, job = _controls_client(tmp_path)
     (tmp_path / "Artist - Song.mp3").write_bytes(b"audio")
     job.m3u_path.write_text("#EXTM3U\nArtist - Song.mp3\n", encoding="utf-8")
+    downloads.mkdir()
+    window.dialog_result = (str(downloads / "Hits.m3u"),)
 
     result = controls.save_m3u("job", "0")
 
     assert result["saved"] is True
     assert "confirm_required" not in result
+
+
+def test_choose_zip_holds_the_picked_path_for_the_import_route(tmp_path) -> None:
+    controls, window, _app, _job = _controls_client(tmp_path)
+    archive = tmp_path / "export.zip"
+    archive.write_bytes(b"PK\x03\x04")
+    window.dialog_result = (str(archive),)
+
+    picked = controls.choose_zip()
+
+    assert picked == {"name": "export.zip"}
+    # The path stays on this side: the page only ever sees the file name.
+    assert "path" not in picked
+    call = window.dialogs[0]
+    assert call["allow_multiple"] is False
+    assert call["file_types"] == ("Exportify export (*.zip)",)
+    # Taking the import clears it, so a path is only ever imported once.
+    assert controls.take_pending_import() == archive
+    assert controls.take_pending_import() is None
+
+
+def test_choose_zip_reports_a_dismissed_picker(tmp_path) -> None:
+    controls, window, _app, _job = _controls_client(tmp_path)
+    window.dialog_result = None
+
+    assert controls.choose_zip() == {"cancelled": True}
+    assert controls.take_pending_import() is None
+
+
+def test_choose_zip_rejects_files_that_are_not_zip_archives(tmp_path) -> None:
+    controls, window, _app, _job = _controls_client(tmp_path)
+    not_an_archive = tmp_path / "notes.txt"
+    not_an_archive.write_text("hello", encoding="utf-8")
+    window.dialog_result = (str(not_an_archive),)
+
+    assert "error" in controls.choose_zip()
+    assert controls.take_pending_import() is None
+
+
+def test_choose_zip_without_a_window_reports_the_missing_window() -> None:
+    controls = desktop.WindowControls()
+
+    assert "error" in controls.choose_zip()
 
 
 def test_save_m3u_reports_jobs_that_are_not_ready(tmp_path) -> None:

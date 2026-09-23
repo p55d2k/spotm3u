@@ -13,6 +13,16 @@ Exportify
 → M3U download
 ```
 
+The upload page accepts the Exportify ZIP in three ways: **Choose ZIP** (a file
+picker), drag and drop onto the window, or, in the desktop shell, the OS file
+dialog. There the picker is native - the click opens the platform's own file
+panel through the `WindowControls` `choose_zip` bridge, the chosen path stays
+in the shell, and the page asks the server to import it with
+`POST /upload/picked`, which collects that one path and answers with the job to
+navigate to. A page can never send a path of its own, so the route can only
+read a file that was chosen in the dialog. In a browser the field's own file
+control is used instead, and drag and drop works in both.
+
 The playlist selection page presents each parsed playlist as an independent
 button/card. Checkboxes also support Select all, Deselect all, and
 **Download selected playlists**. The batch flow reuses the single-playlist
@@ -149,10 +159,18 @@ Nothing is ever rewritten by this check - a playlist that is complete is served
 exactly as before, and an unreadable playlist is treated as complete so the
 check can never block a download.
 
-In the desktop shell the warning goes through the `WindowControls` `save_m3u`
-bridge instead: a save with missing files returns `confirm_required` with the
-missing count and names, and the page shows a toast whose **Download anyway**
-action repeats the save with `confirm=True`.
+The save itself is also a desktop operation in the shell: `WindowControls`
+`save_m3u` opens the OS save panel, offered as the playlist's own name in the
+Downloads folder, and copies the playlist where the user puts it. A dismissed
+panel reports `cancelled` and writes nothing.
+
+A save with missing files never reaches that panel unanswered: the bridge
+returns `confirm_required` with the missing count and names, and the page opens
+the app's one dialog - a compact, titled card listing the files, with **Cancel**
+and **Save anyway**. Escape, Cancel or a click on the backdrop all decline it;
+Enter takes the focused **Save anyway**, and confirming repeats the save with
+`confirm=True`. The dialog is a native `<dialog>` modal, so Tab stays inside it
+and focus returns to the page when it closes.
 
 ## In-App Update Notice
 
