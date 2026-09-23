@@ -71,11 +71,31 @@ itself is off limits (no Web API, no scraping), and MusicBrainz, Cover Art
 Archive and iTunes return no artist image. The artist identity from the export
 is therefore looked up in **Deezer's public catalog**
 (`api.deezer.com/search/artist`), which serves profile images (JPEG) without
-authentication. Only results whose artist identity matches strongly are used,
-and an exact name always outranks a substring match, so a tribute act or
-compilation page never replaces the requested artist. Deezer's JPEG images are
-embedded as returned; a format that ID3 does not support natively is detected
-by its magic bytes and only then would need conversion.
+authentication. Deezer's JPEG images are embedded as returned; a format that ID3
+does not support natively is detected by its magic bytes and only then would
+need conversion.
+
+Artist names are ambiguous, so the match is deliberately strict. Only a name
+that matches the requested one **exactly** once normalized is accepted: a partial
+name is not evidence of identity, and Deezer's own ranking puts `Adèle & Zalem`,
+`Adele & Andy` and `Mortelle Adèle` ahead of the requested `Adele`. Namesakes are
+common as well — `q=adele` returns several different artists named exactly
+"Adele" — so of the exact matches the one with the **most Deezer fans** wins,
+with album count and artist id breaking any remaining tie to keep the pick
+deterministic. Without that, the first exact-name hit in Deezer's response (an
+unrelated act with a few hundred fans) was indistinguishable from the real
+artist, whose image is what belongs in the file.
+
+The track's own album (or title) settles what fame cannot: the most popular
+exact-name matches are checked against that artist's Deezer releases
+(`api.deezer.com/artist/<id>/albums`) and a candidate that actually has a release
+matching the track is preferred, so two artists sharing a name are separated by
+evidence rather than by popularity alone. Because Deezer lists singles there too,
+an album-less track is still confirmed when a single carries the track's title.
+This is a **preference, not a gate**: an artist whose releases Deezer does not
+list -- or a Deezer that cannot be reached -- still resolves by popularity, so a
+failed check never costs a track its image. At most three candidates are checked,
+and none at all when the search returns a single exact-name match.
 
 Artist images are cached under `<download_dir>/artwork_cache/artists/`, keyed by
 normalized artist alone (a separate directory from the release cache, so artist
@@ -123,6 +143,12 @@ names are **never joined** into a malformed lookup string such as
   entries written before source tracking existed, may carry a wrong cover and
   are **re-verified** against the release on a later networked run; offline they
   remain the best-available image.
+- Artist images record the **Deezer artist id** they were taken from
+  (`deezer-artist:<id>`), so an embedded image can be traced back to the artist
+  entity it actually belongs to. Markers holding only the bare provider name were
+  written before that id was recorded and may be a namesake's image, so they are
+  re-verified rather than trusted: an install that cached the wrong artist image
+  replaces it on the next run without clearing the cache by hand.
 - A bounded in-process memo plus per-identity **in-flight deduplication**
   ensures concurrent workers resolving tracks from the same album share a
   single external fetch instead of repeating it.

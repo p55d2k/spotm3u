@@ -40,13 +40,13 @@ from .artwork_cache import (
     _write_cached_source,
 )
 from .artwork_sources import (
-    _ARTIST_ARTWORK_SOURCES,
     _ARTWORK_TRUSTED_SOURCES,
     ArtworkCandidate,
     _artist_album_match,
     _download_artwork,
     _get_coverart_candidates,
     _has_reliable_album,
+    _is_trusted_artist_source,
     _search_deezer_artist_artwork,
     _search_itunes_artwork,
     _search_itunes_song_artwork,
@@ -373,13 +373,20 @@ def _pick_candidate(
     return None, "not-found"
 
 
-def _find_artist_artwork(download_dir: Path, artist: str) -> tuple[bytes | None, str | None]:
+def _find_artist_artwork(
+    download_dir: Path,
+    artist: str,
+    *,
+    album: str | None = None,
+    title: str | None = None,
+) -> tuple[bytes | None, str | None]:
     """Find (or download) the profile image for one artist.
 
     Artist images are keyed by artist alone and cached in their own directory,
-    so every track credited to the same artist reuses a single download. A
-    failure returns ``(None, "not-found")`` and never raises: artist artwork is
-    optional enrichment and must not fail track generation.
+    so every track credited to the same artist reuses a single download. The
+    track's ``album``/``title`` are only used to tell apart artists that share a
+    name. A failure returns ``(None, "not-found")`` and never raises: artist
+    artwork is optional enrichment and must not fail track generation.
     """
     if not artist:
         return None, "not-found"
@@ -387,12 +394,12 @@ def _find_artist_artwork(download_dir: Path, artist: str) -> tuple[bytes | None,
     cache_dir = _artist_cache_dir(download_dir)
     cache_key = _artist_cache_key(artist)
     cached = _read_cached_image(cache_dir, cache_key)
-    if cached is not None and _read_cached_source(cache_dir, cache_key) in _ARTIST_ARTWORK_SOURCES:
+    if cached is not None and _is_trusted_artist_source(_read_cached_source(cache_dir, cache_key)):
         logger.debug("Artist artwork cache hit artist=%s", artist)
         return cached, "cache"
 
     def fetch() -> tuple[bytes | None, str | None]:
-        candidate = _search_deezer_artist_artwork(artist)
+        candidate = _search_deezer_artist_artwork(artist, album=album, title=title)
         if candidate is None:
             logger.info("Artist artwork not found artist=%s", artist)
             return None, "not-found"

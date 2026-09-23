@@ -1004,17 +1004,32 @@ def _install_artwork_requests(
     *,
     artist_results=None,
     artist_image=b"artist-image",
+    artist_images=None,
+    artist_albums=None,
     album=True,
     calls=None,
 ):
     """Mock the release and artist artwork requests used by enrichment."""
     if artist_results is None:
-        artist_results = [{"name": "Artist", "picture_xl": "https://cdn.example/artist-1000.jpg"}]
+        artist_results = [
+            {
+                "id": 1,
+                "name": "Artist",
+                "nb_album": 3,
+                "nb_fan": 10,
+                "picture_xl": "https://cdn.example/artist-1000.jpg",
+            }
+        ]
+    artist_images = dict(artist_images or {})
+    artist_albums = {int(k): list(v) for k, v in (artist_albums or {}).items()}
     calls = calls if calls is not None else []
 
     def fake_get(url, params=None, headers=None, timeout=None):
         calls.append(url)
         if "api.deezer.com" in url:
+            if url.endswith("/albums"):
+                releases = artist_albums.get(int(url.split("/")[-2]), [])
+                return _FakeJsonResponse({"data": [{"title": t} for t in releases]})
             return _FakeJsonResponse({"data": list(artist_results)})
         if "musicbrainz.org" in url:
             return _FakeJsonResponse({"release-groups": [{"id": "rg"}] if album else []})
@@ -1037,7 +1052,7 @@ def _install_artwork_requests(
             return _FakeJsonResponse({"results": []})
         if url == "http://example.com/art.jpg":
             return _FakeImageResponse(b"album-image")
-        return _FakeImageResponse(artist_image)
+        return _FakeImageResponse(artist_images.get(url, artist_image))
 
     monkeypatch.setattr("spotm3u.artwork_sources.requests.get", fake_get)
     return calls
@@ -1082,7 +1097,7 @@ def test_artist_artwork_is_embedded_when_available(tmp_path, monkeypatch, artist
     result = enrich_metadata(mp3, track, tmp_path)
 
     assert result.artist_artwork_embedded is True
-    assert result.artist_artwork_source == "deezer-artist"
+    assert result.artist_artwork_source == "deezer-artist:1"
     assert result.artwork_embedded is True
     frames = _apic_frames(mp3)
     assert frames[8].data == b"artist-image"
@@ -1166,7 +1181,12 @@ def test_artist_artwork_rejects_a_different_artist(tmp_path, monkeypatch, artist
     _install_artwork_requests(
         monkeypatch,
         artist_results=[
-            {"name": "Someone Else Entirely", "picture_xl": "https://cdn.example/wrong.jpg"}
+            {
+                "id": 42,
+                "name": "Someone Else Entirely",
+                "nb_fan": 999,
+                "picture_xl": "https://cdn.example/wrong.jpg",
+            }
         ],
     )
     track = Track("Song", ["Artist"], album="Album")
@@ -1177,6 +1197,143 @@ def test_artist_artwork_rejects_a_different_artist(tmp_path, monkeypatch, artist
 
     assert result.artist_artwork_embedded is False
     assert "artist artwork not found" in result.errors
+
+
+def test_artist_artwork_picks_the_popular_artist_not_the_first_namesake(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """Regression: pick the real artist, not the first namesake Deezer ranks.
+
+    ``q=adele`` returns several artists named exactly "Adele" before the real one; the
+    first is an unrelated act with a few hundred fans. Every one of them offers a
+    1000px picture, so the size tiebreaker that used to be the only distinction picked
+    the impostor's image -- and then cached it as authoritative.
+    """
+    impostor = "https://cdn.example/impostor.jpg"
+    real = "https://cdn.example/real.jpg"
+    _install_artwork_requests(
+        monkeypatch,
+        artist_results=[
+            {"id": 61817012, "name": "Adele", "nb_fan": 326, "picture_xl": impostor},
+            {"id": 5673798, "name": "Adele", "nb_fan": 12404, "picture_xl": impostor},
+            {"id": 75798, "name": "Adele", "nb_fan": 15475601, "picture_xl": real},
+        ],
+        artist_images={impostor: b"impostor-image", real: b"real-image"},
+    )
+    track = Track("Song", ["Adele"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_source == "deezer-artist:75798"
+    assert _apic_frames(mp3)[8].data == b"real-image"
+
+
+def test_artist_artwork_prefers_the_artist_that_has_the_album(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """The track's own album settles a namesake that fame alone cannot.
+
+    Both artists are named exactly "Adele" and the impostor is the more popular
+    one, so only Deezer's release list separates them: the real Adele has "19".
+    """
+    impostor = "https://cdn.example/impostor.jpg"
+    real = "https://cdn.example/real.jpg"
+    calls = _install_artwork_requests(
+        monkeypatch,
+        artist_results=[
+            {"id": 91111, "name": "Adele", "nb_fan": 99999999, "picture_xl": impostor},
+            {"id": 75798, "name": "Adele", "nb_fan": 15475601, "picture_xl": real},
+        ],
+        artist_images={impostor: b"impostor-image", real: b"real-image"},
+        artist_albums={91111: ["Be divine"], 75798: ["19", "21", "25"]},
+    )
+    track = Track("Song", ["Adele"], album="19")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_source == "deezer-artist:75798"
+    assert _apic_frames(mp3)[8].data == b"real-image"
+    assert any(url.endswith("/75798/albums") for url in calls)
+
+
+def test_artist_artwork_falls_back_to_popularity_without_release_evidence(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """A release list that confirms nobody must not drop the image.
+
+    Verification is a preference, not a gate: when Deezer cannot confirm either
+    namesake, the most popular exact-name artist still wins as before.
+    """
+    popular = "https://cdn.example/popular.jpg"
+    other = "https://cdn.example/other.jpg"
+    _install_artwork_requests(
+        monkeypatch,
+        artist_results=[
+            {"id": 2, "name": "Adele", "nb_fan": 100, "picture_xl": other},
+            {"id": 3, "name": "Adele", "nb_fan": 900, "picture_xl": popular},
+        ],
+        artist_images={popular: b"popular-image", other: b"other-image"},
+        artist_albums={},
+    )
+    track = Track("Song", ["Adele"], album="19")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_source == "deezer-artist:3"
+    assert _apic_frames(mp3)[8].data == b"popular-image"
+
+
+def test_artist_artwork_rejects_a_partial_name_match(tmp_path, monkeypatch, artist_artwork_toggle):
+    """A name that merely contains the requested one is not the requested artist.
+
+    "Adèle & Zalem" scored a perfect 100 because the requested name is a substring of
+    it, which let a different act through the identity gate.
+    """
+    _install_artwork_requests(
+        monkeypatch,
+        artist_results=[
+            {
+                "id": 5203567,
+                "name": "Adèle & Zalem",
+                "nb_fan": 1807,
+                "picture_xl": "https://cdn.example/zalem.jpg",
+            }
+        ],
+    )
+    track = Track("Song", ["Adele"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_embedded is False
+    assert "artist artwork not found" in result.errors
+
+
+def test_artist_artwork_written_before_ids_were_recorded_is_reverified(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """A bare ``deezer-artist`` marker may hold a namesake's image, so re-verify it."""
+    artist_dir = artwork_cache._artist_cache_dir(tmp_path)
+    key = artwork_cache._artist_cache_key("Artist")
+    artwork_cache._write_cached_image(artist_dir, key, b"wrong-namesake-image")
+    artwork_cache._write_cached_source(artist_dir, key, "deezer-artist")
+
+    _install_artwork_requests(monkeypatch)
+    track = Track("Song", ["Artist"], album="Album")
+    mp3 = tmp_path / "track.mp3"
+    mp3.write_bytes(b"fake-mp3-data")
+
+    result = enrich_metadata(mp3, track, tmp_path)
+
+    assert result.artist_artwork_source == "deezer-artist:1"
+    assert artwork_cache._read_cached_image(artist_dir, key) == b"artist-image"
 
 
 def test_same_artist_artwork_is_downloaded_once(tmp_path, monkeypatch, artist_artwork_toggle):

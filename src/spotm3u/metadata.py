@@ -354,15 +354,21 @@ def _embed_artist_artwork(
     download_dir: Path,
     artist: str,
     errors: list[str],
+    *,
+    album: str | None = None,
+    title: str | None = None,
 ) -> tuple[bool, str | None]:
     """Embed the artist's profile image as an ID3 artist picture (APIC type 8).
 
     Returns ``(embedded, source)``. Artist artwork is optional enrichment: a
     missing, invalid or unavailable image is recorded as a non-fatal error and
-    never propagates an exception or fails the track.
+    never propagates an exception or fails the track. ``album``/``title`` are the
+    track's, passed through to tell artists that share a name apart.
     """
     try:
-        artist_data, artist_source = _find_artist_artwork(download_dir, artist)
+        artist_data, artist_source = _find_artist_artwork(
+            download_dir, artist, album=album, title=title
+        )
     except Exception as exc:  # pragma: no cover - defensive behavior
         logger.warning("Artist artwork lookup failed path=%s: %s", audio_path, exc)
         errors.append(f"artist artwork failed: {exc}")
@@ -465,7 +471,12 @@ def enrich_metadata(
 
     if embeddings_on and artist_artwork_enabled() and track.artists:
         artist_artwork_embedded, artist_artwork_source = _embed_artist_artwork(
-            audio_path, download_path, track.artists[0], errors
+            audio_path,
+            download_path,
+            track.artists[0],
+            errors,
+            album=track.album,
+            title=track.title,
         )
 
     # Lyrics are skipped entirely in fast mode (``set_lyrics_enabled``) and by

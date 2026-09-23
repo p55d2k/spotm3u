@@ -31,6 +31,9 @@ _ITUNES_BASE = "https://itunes.apple.com/search"
 _ARTIST_BASE = "https://api.deezer.com/search/artist"
 
 
+_ARTIST_API_BASE = "https://api.deezer.com/artist"
+
+
 _REQUEST_TIMEOUT = 15
 
 
@@ -325,7 +328,25 @@ def _image_mime(data: bytes) -> str:
 # Spotify itself is off limits: the project never uses the Spotify Web API and
 # never scrapes Spotify's site. The artist identity from the export is therefore
 # looked up in Deezer's public catalog, which serves profile images without auth.
-_ARTIST_ARTWORK_SOURCES = frozenset({"deezer-artist"})
+# How many of the most popular exact-name artists are checked against the
+# track's album/title before settling for popularity alone.
+_ARTIST_VERIFICATION_LIMIT = 3
+
+
+# Artist images are recorded with the Deezer artist id they were taken from
+# (``deezer-artist:<id>``) so a wrong match can be traced to the artist it
+# actually belongs to. Markers written before ids were recorded carried only
+# the bare provider name and may be any namesake's image, so they are
+# re-verified instead of trusted.
+_ARTIST_ARTWORK_SOURCE = "deezer-artist"
+
+
+def _is_trusted_artist_source(value: str | None) -> bool:
+    """True when a cached artist image was resolved to a specific Deezer artist."""
+    if not value:
+        return False
+    provider, separator, artist_id = value.partition(":")
+    return bool(separator) and provider == _ARTIST_ARTWORK_SOURCE and artist_id.isdigit()
 
 
 # Deezer picture fields, largest first. The largest available image is embedded
@@ -338,12 +359,116 @@ _DEEZER_PICTURE_FIELDS: tuple[tuple[str, int], ...] = (
 )
 
 
-def _search_deezer_artist_artwork(artist: str) -> ArtworkCandidate | None:
+def _deezer_picture(record: dict[str, Any]) -> tuple[str, int] | None:
+    """Return the largest available picture on one Deezer record, or None."""
+    for field, size in _DEEZER_PICTURE_FIELDS:
+        url = record.get(field)
+        if isinstance(url, str) and url:
+            return url, size
+    return None
+
+
+def _deezer_artist_rank(record: dict[str, Any]) -> tuple[int, int, int]:
+    """Rank one Deezer artist record by how likely it is the requested artist."""
+    return (
+        int(record.get("nb_fan") or 0),
+        int(record.get("nb_album") or 0),
+        int(record["id"]),
+    )
+
+
+def _deezer_artist_has_release(artist_id: int, *, album: str | None, title: str | None) -> bool:
+    """True when Deezer lists a release by this artist matching the track's album/title.
+
+    Deezer's artist releases include albums and singles, so an album-less track can
+    still be confirmed through a single carrying the track's title. Anything that
+    prevents the question from being answered -- a failed request, an unusable
+    response, no album/title to check -- reports False, which the caller reads as
+    "not confirmed" rather than as proof of a wrong artist.
+    """
+    album_key = _normalize_identity(_normalize_album_for_search(album)) if album else ""
+    title_key = _normalize_identity(title) if title else ""
+    if not album_key and not title_key:
+        return False
+    try:
+        response = requests.get(
+            f"{_ARTIST_API_BASE}/{artist_id}/albums",
+            params={"limit": 100},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        releases = response.json().get("data", [])
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        logger.debug("Artist releases lookup failed deezer_id=%s: %s", artist_id, exc)
+        return False
+    for release in releases if isinstance(releases, list) else []:
+        if not isinstance(release, dict):
+            continue
+        release_key = _normalize_identity(
+            _normalize_album_for_search(str(release.get("title") or ""))
+        )
+        if release_key and release_key in {album_key, title_key}:
+            return True
+    return False
+
+
+def _pick_deezer_artist(
+    results: Any,
+    target: str,
+    *,
+    album: str | None = None,
+    title: str | None = None,
+) -> dict[str, Any] | None:
+    """Pick the Deezer artist record that is ``target``, or None.
+
+    The name must match exactly once normalized: a partial name is not evidence
+    of identity, and Deezer's ranked search happily returns 'Adèle & Zalem',
+    'Adele & Andy' and 'Mortelle Adèle' ahead of the requested artist. Namesakes
+    are common too -- ``q=adele`` returns four different artists named exactly
+    'Adele' -- so the most popular of the exact matches wins rather than the
+    first one, which is an unrelated act with a few hundred fans. Album count
+    and artist id break any remaining tie, so the pick is deterministic.
+
+    When the caller knows the track's album or title, the most popular exact
+    matches are checked against that artist's Deezer releases first, so a
+    namesake that fame alone cannot separate from the requested artist is
+    rejected on evidence. That check is a preference, not a gate: an artist
+    whose releases Deezer does not list, or cannot be reached, still wins on
+    popularity exactly as before, so a lookup failure never drops a correct
+    image.
+    """
+    if not isinstance(results, list):
+        return None
+    candidates = [
+        record
+        for record in results
+        if isinstance(record, dict)
+        and _normalize_identity(str(record.get("name") or "")) == target
+        and str(record.get("id", "")).isdigit()
+        and _deezer_picture(record) is not None
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=_deezer_artist_rank, reverse=True)
+    # With one candidate there is nothing to choose between, so skip the check.
+    if len(candidates) > 1 and (album or title):
+        for record in candidates[:_ARTIST_VERIFICATION_LIMIT]:
+            if _deezer_artist_has_release(int(record["id"]), album=album, title=title):
+                return record
+    return candidates[0]
+
+
+def _search_deezer_artist_artwork(
+    artist: str, *, album: str | None = None, title: str | None = None
+) -> ArtworkCandidate | None:
     """Find one artist's profile image in Deezer's public catalog.
 
-    Only results whose artist identity matches strongly are accepted, and an
-    exact name always outranks a substring match so a tribute act or a
-    compilation page never replaces the requested artist.
+    The artist is resolved by exact name, then by the track's own album/title
+    where Deezer can confirm it, then by popularity, instead of taking the first
+    plausible hit (see :func:`_pick_deezer_artist`). The resolved artist id is
+    part of the returned source so the image on disk can be traced back to the
+    Deezer entity it came from.
     """
     try:
         response = requests.get(
@@ -358,40 +483,30 @@ def _search_deezer_artist_artwork(artist: str) -> ArtworkCandidate | None:
         logger.debug("Artist artwork lookup failed artist=%s: %s", artist, exc)
         return None
 
-    target = _normalize_identity(artist)
-    best: tuple[tuple[int, float, int], ArtworkCandidate] | None = None
-    for result in results:
-        if not isinstance(result, dict):
-            continue
-        name = _normalize_identity(result.get("name"))
-        score = _identity_score(target, name)
-        if not name or score < 80.0:
-            continue
-        picture = next(
-            (
-                (result[field], size)
-                for field, size in _DEEZER_PICTURE_FIELDS
-                if isinstance(result.get(field), str) and result[field]
-            ),
-            None,
-        )
-        if picture is None:
-            continue
-        url, size = picture
-        rank = (1 if name == target else 0, score, size)
-        if best is None or rank > best[0]:
-            best = (
-                rank,
-                ArtworkCandidate(
-                    url=url,
-                    mime_type="image/jpeg",
-                    source="deezer-artist",
-                    width=size,
-                    height=size,
-                    artist=result.get("name"),
-                ),
-            )
-    return best[1] if best is not None else None
+    record = _pick_deezer_artist(results, _normalize_identity(artist), album=album, title=title)
+    if record is None:
+        return None
+
+    picture = _deezer_picture(record)
+    if picture is None:
+        return None
+    url, size = picture
+    artist_id = int(record["id"])
+    logger.debug(
+        "Artist artwork resolved artist=%s deezer_id=%s name=%s fans=%s",
+        artist,
+        artist_id,
+        record.get("name"),
+        record.get("nb_fan"),
+    )
+    return ArtworkCandidate(
+        url=url,
+        mime_type="image/jpeg",
+        source=f"{_ARTIST_ARTWORK_SOURCE}:{artist_id}",
+        width=size,
+        height=size,
+        artist=record.get("name"),
+    )
 
 
 __all__ = [
