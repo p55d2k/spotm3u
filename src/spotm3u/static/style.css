@@ -900,6 +900,37 @@ input[type="radio"] {
   border-color: var(--color-accent);
 }
 
+/* The zone is a label around a visually hidden file input, so a focused input
+   has to light up the zone for keyboard users to see where they are. */
+.upload-zone:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* Dragging is the one state that goes solid, so "release here" reads at a
+   glance without the zone needing to be any larger. */
+.upload-zone.is-dragging {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  border-style: solid;
+}
+
+.upload-zone.is-busy {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.upload-or {
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.upload-filename.is-error {
+  color: var(--color-danger-ink);
+}
+
 .upload-zone input {
   position: absolute;
   width: 1px;

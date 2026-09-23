@@ -26,9 +26,11 @@
         {% if error %}
         <p class="error" role="alert">{{ error }}</p>
         {% endif %}
-        <label class="upload-zone" for="export-file">
+        <label class="upload-zone" for="export-file" id="upload-zone">
           <span class="upload-icon" aria-hidden="true">↑</span>
-          <span class="upload-title">Choose your Spotify playlist export</span>
+          <span class="upload-title" id="upload-title">Drop your Exportify ZIP here</span>
+          <span class="upload-or">or</span>
+          <span class="button button-secondary button-small">Choose ZIP</span>
           <span class="upload-filename" id="upload-filename">ZIP file from Exportify · up to your configured upload limit</span>
           <input
             id="export-file"
@@ -39,7 +41,7 @@
           >
         </label>
         <p class="field-help">Large playlists may take a while; keep this window open while SpotM3U works.</p>
-        <button type="submit" id="upload-button">Upload playlist export</button>
+        <button type="submit" id="upload-button">Import ZIP</button>
       </form>
 
       <section class="panel" aria-labelledby="instructions-heading">
@@ -65,17 +67,87 @@
     </div>
 </div>
     <script>
-      document.getElementById("export-file").addEventListener("change", (event) => {
-        const file = event.target.files[0];
-        if (file) {
-          document.getElementById("upload-filename").textContent = file.name;
-          document.getElementById("upload-button").textContent = "Upload playlist export";
+      const uploadForm = document.getElementById("upload-form");
+      const uploadZone = document.getElementById("upload-zone");
+      const uploadInput = document.getElementById("export-file");
+      const uploadTitle = document.getElementById("upload-title");
+      const uploadFilename = document.getElementById("upload-filename");
+      const uploadButton = document.getElementById("upload-button");
+      const idleTitle = uploadTitle.textContent.trim();
+      const idleHint = uploadFilename.textContent.trim();
+
+      // Report the chosen or dropped file where the choice was made, and keep
+      // the file type complaint there too instead of letting the server answer
+      // a question the page can settle on its own.
+      const selectFile = (file) => {
+        uploadFilename.classList.remove("is-error");
+        if (!file) {
+          uploadFilename.textContent = idleHint;
+          return true;
+        }
+        if (!file.name.toLowerCase().endsWith(".zip")) {
+          uploadFilename.classList.add("is-error");
+          uploadFilename.textContent = "That is not a ZIP file — choose the Exportify export.";
+          return false;
+        }
+        uploadFilename.textContent = file.name;
+        return true;
+      };
+
+      uploadInput.addEventListener("change", () => selectFile(uploadInput.files[0]));
+
+      // The whole import page takes the drop — the zone is only where that
+      // shows up — so a ZIP dropped anywhere in the window is not ignored, and
+      // handling the default keeps the window from navigating to the file.
+      const carriesFiles = (event) => {
+        const types = (event.dataTransfer && event.dataTransfer.types) || [];
+        return Array.from(types).includes("Files");
+      };
+
+      // dragenter/dragleave also fire while moving between elements, so track
+      // depth instead of clearing the dragging state on the first dragleave.
+      let dragDepth = 0;
+      const setDragging = (dragging) => {
+        uploadZone.classList.toggle("is-dragging", dragging);
+        uploadTitle.textContent = dragging ? "Drop to import" : idleTitle;
+      };
+
+      window.addEventListener("dragenter", (event) => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        dragDepth += 1;
+        setDragging(true);
+      });
+      window.addEventListener("dragover", (event) => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      });
+      window.addEventListener("dragleave", (event) => {
+        if (!carriesFiles(event)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) {
+          setDragging(false);
         }
       });
-      document.getElementById("upload-form").addEventListener("submit", () => {
-        const button = document.getElementById("upload-button");
-        button.disabled = true;
-        button.textContent = "Uploading…";
+      window.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dragDepth = 0;
+        setDragging(false);
+        const dropped = event.dataTransfer ? event.dataTransfer.files[0] : null;
+        if (dropped && selectFile(dropped)) {
+          uploadInput.files = event.dataTransfer.files;
+        }
+      });
+
+      uploadForm.addEventListener("submit", () => {
+        // The file input stays enabled: disabling it here would strip the file
+        // from the POST the browser is about to send.
+        uploadZone.classList.add("is-busy");
+        uploadTitle.textContent = "Reading your export…";
+        uploadButton.disabled = true;
+        uploadButton.textContent = "Importing…";
+        uploadForm.setAttribute("aria-busy", "true");
       });
     </script>
   </body>
