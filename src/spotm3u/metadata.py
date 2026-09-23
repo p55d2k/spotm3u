@@ -21,7 +21,7 @@ from .artwork import (
     artist_artwork_enabled,
 )
 from .artwork_sources import _image_mime
-from .lyrics import fetch_lyrics, is_synced_lyrics, lyrics_enabled
+from .lyrics import Lyrics, fetch_lyrics, is_synced_lyrics, lyrics_enabled, parse_lyrics
 from .models import Track
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ TDRC = mutagen_id3.TDRC
 TCON = mutagen_id3.TCON
 COMM = mutagen_id3.COMM
 USLT = mutagen_id3.USLT
+SYLT = mutagen_id3.SYLT
 APIC = mutagen_id3.APIC
 
 _ORIGINAL_ID3 = ID3
@@ -52,11 +53,21 @@ _ORIGINAL_TDRC = TDRC
 _ORIGINAL_TCON = TCON
 _ORIGINAL_COMM = COMM
 _ORIGINAL_USLT = USLT
+_ORIGINAL_SYLT = SYLT
 _ORIGINAL_APIC = APIC
 
-# Standard ID3 frame holding a track's lyrics. Timestamped (LRC) lyrics are
-# stored verbatim, so players that read timed lyrics can use the frame.
+# The plain lyrics frame, holding timestamp-free text that any player can read.
 _USLT_FRAME = "USLT"
+
+# The synchronized lyrics frame, holding the same lines with their timing, for
+# players that support timed ID3 lyrics. Apple Music may ignore it for imported
+# local files; the plain frame then carries the text.
+_SYLT_FRAME = "SYLT"
+
+# The timestamp format SYLT carries: 3 is the LRC text format, where each time
+# is a millisecond offset. The frame type 1 marks the content as lyrics.
+_SYLT_FORMAT_LRC = 3
+_SYLT_TYPE_LYRICS = 1
 
 # Sidecar lyrics file written beside an audio file that has timestamped lyrics,
 # for the players that read an ``.lrc`` next to the track instead of ID3 frames.
@@ -312,32 +323,49 @@ def _embed_artwork(
         return False
 
 
-def _embed_lyrics(path: Path, lyrics: str) -> bool:
-    """Write lyrics into the file's standard lyrics frame.
+def _embed_lyrics(path: Path, lyrics: Lyrics) -> tuple[str, ...]:
+    """Write a track's lyrics into ID3, deriving both frames from one parse.
 
-    The text is stored as retrieved, so timestamped lyrics keep their LRC tags.
-    Only the USLT frame is replaced, so every other field (including embedded
-    album and artist artwork) is preserved.
+    ``USLT`` always holds the timestamp-free text; when the lyrics carry timing,
+    ``SYLT`` holds the same lines with their milliseconds. Both frames come from
+    the same structured :class:`Lyrics`, so the two representations cannot drift
+    apart. Only the lyrics frames are touched, so every other field (including
+    embedded album and artist artwork) is preserved. Returns the frames written,
+    or ``()`` when the file cannot hold them.
     """
     ID3_cls = _id3_symbol("ID3")
     ID3NoHeaderError_cls = _id3_symbol("ID3NoHeaderError")
     USLT_cls = _id3_symbol("USLT")
+    SYLT_cls = _id3_symbol("SYLT")
 
     try:
         tags = ID3_cls(str(path))
     except ID3NoHeaderError_cls:
         tags = ID3_cls()
 
+    written: list[str] = []
     if hasattr(tags, "delall"):
         tags.delall(_USLT_FRAME)
-    tags[_USLT_FRAME] = USLT_cls(encoding=3, lang="eng", desc="", text=lyrics)
+        tags.delall(_SYLT_FRAME)
+    tags[_USLT_FRAME] = USLT_cls(encoding=3, lang="eng", desc="", text=lyrics.text)
+    written.append(_USLT_FRAME)
+    if lyrics.synced:
+        tags[_SYLT_FRAME] = SYLT_cls(
+            encoding=3,
+            lang="eng",
+            format=_SYLT_FORMAT_LRC,
+            type=_SYLT_TYPE_LYRICS,
+            desc="",
+            text=[(line, round(seconds * 1000)) for seconds, line in lyrics.lines],
+        )
+        written.append(_SYLT_FRAME)
 
     try:
         tags.save(str(path), v2_version=3)
-        return True
+        return tuple(written)
     except (OSError, ValueError) as exc:
         logger.debug("Failed to embed lyrics path=%s: %s", path, exc)
-        return False
+        return ()
 
 
 def _write_lyrics_sidecar(path: Path, lyrics: str) -> bool:
@@ -355,27 +383,32 @@ def _write_lyrics_sidecar(path: Path, lyrics: str) -> bool:
         return False
 
 
-def _embed_track_lyrics(path: Path, track: Track) -> bool:
+def _embed_track_lyrics(path: Path, track: Track) -> tuple[str, ...]:
     """Retrieve and embed a track's lyrics, never failing the track.
 
     Lyrics are optional enrichment: retrieval, an unsupported audio format, or
     a metadata write problem are all contained here and reported through the
-    return value. Timestamped lyrics additionally get an ``.lrc`` sidecar —
+    return value. The raw result is parsed once into structured lyrics, then
+    both frames (plain ``USLT``, and ``SYLT`` for timed lyrics) are derived from
+    that single parse. Timestamped lyrics additionally get an ``.lrc`` sidecar —
     there is nothing to put in one for plain text, which the lyrics frame
     already holds. An existing sidecar is never deleted, matching how a missing
     result leaves the lyrics frame from an earlier run in place.
     """
     try:
-        lyrics = fetch_lyrics(track)
-        if not lyrics:
-            return False
-        embedded = _embed_lyrics(path, lyrics)
-        if is_synced_lyrics(lyrics):
-            _write_lyrics_sidecar(path, lyrics)
-        return embedded
+        raw = fetch_lyrics(track)
+        if not raw:
+            return ()
+        lyrics = parse_lyrics(raw)
+        if lyrics is None:
+            return ()
+        written = _embed_lyrics(path, lyrics)
+        if lyrics.synced:
+            _write_lyrics_sidecar(path, raw)
+        return written
     except Exception as exc:  # pragma: no cover - defensive behavior
         logger.debug("Lyrics enrichment failed path=%s: %s", path, exc)
-        return False
+        return ()
 
 
 LyricsForm = Literal["synced", "plain"]
@@ -384,11 +417,12 @@ LyricsForm = Literal["synced", "plain"]
 def embedded_lyrics_form(path: Path) -> LyricsForm | None:
     """Return how a file's embedded lyrics are stored, or ``None`` if it has none.
 
-    ``"synced"`` when the lyrics frame carries LRC timestamps and ``"plain"``
-    when it does not. The file is read directly rather than trusting what a run
-    intended to write, so a retagged or hand-tagged download is reported as it
-    really is. Only the lyrics frame is inspected: a sidecar ``.lrc`` is derived
-    from it and is not itself embedded lyrics.
+    ``"synced"`` when the file carries synchronized lyrics (an ``SYLT`` frame,
+    or a legacy ``USLT`` written back when timestamps lived in the plain field)
+    and ``"plain"`` when it does not. The file is read directly rather than
+    trusting what a run intended to write, so a retagged or hand-tagged download
+    is reported as it really is. Only the lyrics frames are inspected: a sidecar
+    ``.lrc`` is derived from them and is not itself embedded lyrics.
 
     A file that is gone or unreadable reports no lyrics: this only feeds a
     label in the interface, so it must never raise. ``MutagenError`` is caught
@@ -400,6 +434,9 @@ def embedded_lyrics_form(path: Path) -> LyricsForm | None:
         tags = ID3_cls(str(path))
     except (ID3NoHeaderError_cls, OSError, ValueError, MutagenError):
         return None
+    for frame in tags.getall(_SYLT_FRAME):
+        if getattr(frame, "text", None):
+            return "synced"
     for frame in tags.getall(_USLT_FRAME):
         text = getattr(frame, "text", None)
         if isinstance(text, str) and text.strip():
@@ -541,8 +578,7 @@ def enrich_metadata(
     # the metadata master switch, which avoids the lyrics provider requests as
     # well as the metadata write.
     if embeddings_on and lyrics_enabled() and track.title:
-        if _embed_track_lyrics(audio_path, track):
-            fields_written.append(_USLT_FRAME)
+        fields_written.extend(_embed_track_lyrics(audio_path, track))
 
     return MetadataResult(
         path=audio_path,

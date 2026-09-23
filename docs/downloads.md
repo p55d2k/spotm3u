@@ -198,16 +198,21 @@ lyrics sites, and hardcodes no provider URLs or parsers.
 
 **Synced lyrics are preferred.** The library looks for timed lyrics first and
 falls back to plain text, so a track gets the best form a provider has. When
-the lyrics are timed, the timestamps are kept in the lyrics field *and* an
-`.lrc` file is written next to the audio file (`song.mp3` -> `song.lrc`), which
-is what players that read a sidecar instead of ID3 frames look for. Plain
-lyrics go into the field only — there is nothing to time, so no sidecar is
-written. Deezer is not a lyrics source: its public API has no lyrics endpoint,
-and its only lyrics route is a private, broken web-player endpoint.
+the lyrics are timed, they are parsed once into structured timestamp/text pairs
+and written as two ID3 frames: the plain `USLT` frame holds only the clean,
+timestamp-free text (Apple Music reads this and would otherwise render the LRC
+tags literally), and the `SYLT` frame holds the same lines with their
+millisecond timing for players that support synchronized lyrics — Apple Music
+may ignore `SYLT` for imported local files, which is expected. An `.lrc` file
+is also written next to the audio file (`song.mp3` -> `song.lrc`), which is
+what players that read a sidecar instead of ID3 frames look for. Plain lyrics
+go into `USLT` only — there is nothing to time, so no `SYLT` and no sidecar.
+Deezer is not a lyrics source: its public API has no lyrics endpoint, and its
+only lyrics route is a private, broken web-player endpoint.
 
 Lyrics are optional enrichment and never affect resolution:
 
-- a track with no lyrics keeps an empty lyrics field
+- a track with no lyrics keeps empty lyrics fields
 - an unavailable provider or a network failure is logged at debug level and ignored
 - a malformed or empty library result is discarded
 - an audio file that cannot hold the field is left untouched

@@ -125,9 +125,10 @@ which renders per-track outcomes (status and reason) alongside the summary
 counts. While the job is still queued or running, that route redirects to the
 live processing page.
 
-Each track row also labels its lyrics: **Synced lyrics** when the file's lyrics
-frame carries timestamps and **Plain lyrics** when it does not, with no label
-for a track that has no embedded lyrics. The label is read from the audio file
+Each track row also labels its lyrics: **Synced lyrics** when the file carries
+timed lyrics (an `SYLT` frame, or a legacy `USLT` holding timestamps) and
+**Plain lyrics** when it does not, with no label for a track that has no
+embedded lyrics. The label is read from the audio file
 itself, so it describes what is really in a download even when it was tagged by
 an earlier run, and it appears only on the result pages — the live processing
 view is polled, so it stays out of that path.

@@ -241,8 +241,9 @@ def _annotate_artwork(job: ProcessingJob, state: dict[str, object]) -> None:
 def _annotate_lyrics(state: dict[str, object]) -> None:
     """Mark each track snapshot with how its embedded lyrics are stored.
 
-    ``"synced"`` when the lyrics frame carries timestamps, ``"plain"`` when it
-    does not, and ``None`` when the track has no embedded lyrics. Each track's
+    ``"synced"`` when the file carries synchronized lyrics (an ``SYLT`` frame,
+    or a legacy ``USLT`` holding timestamps), ``"plain"`` when it does not, and
+    ``None`` when the track has no embedded lyrics. Each track's
     own ``local_path`` is read, so a track tagged by an earlier run or by hand is
     reported as it really is, and a download that was deleted reports nothing.
     Unlike artwork, no job lookup is needed for it.

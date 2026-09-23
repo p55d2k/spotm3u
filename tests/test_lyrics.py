@@ -12,10 +12,12 @@ import requests
 
 from spotm3u.audio import LocalAudioResolver
 from spotm3u.lyrics import (
+    Lyrics,
     fetch_lyrics,
     is_synced_lyrics,
     lyrics_search_term,
     normalize_lyrics,
+    parse_lyrics,
     set_lyrics_enabled,
 )
 from spotm3u.metadata import MetadataResult, embedded_lyrics_form, enrich_metadata
@@ -75,6 +77,10 @@ def _uslt_texts(path: Path) -> list[str]:
     return [frame.text for frame in mutagen_id3.ID3(str(path)).getall("USLT")]
 
 
+def _sylt_pairs(path: Path) -> list[list[tuple[str, int]]]:
+    return [frame.text for frame in mutagen_id3.ID3(str(path)).getall("SYLT")]
+
+
 def test_lyrics_are_written_to_the_standard_lyrics_field(tmp_path, monkeypatch, lyrics_on):
     """Plain lyrics go into the field and get no sidecar, which would be untimed."""
     calls = _stub_search(monkeypatch, LYRICS)
@@ -94,19 +100,55 @@ def test_lyrics_are_written_to_the_standard_lyrics_field(tmp_path, monkeypatch, 
     ("audio_name", "sidecar_name"),
     [("track.mp3", "track.lrc"), ("song.flac", "song.lrc"), ("a.b.m4a", "a.b.lrc")],
 )
-def test_synced_lyrics_are_kept_and_written_to_a_sidecar(
+def test_synced_lyrics_are_written_to_both_frame_types_and_a_sidecar(
     tmp_path, monkeypatch, lyrics_on, audio_name, sidecar_name
 ):
-    """Timestamps survive into the field, and LRC-reading players get a sidecar."""
+    """Timed lyrics produce a clean USLT, a timed SYLT and an .lrc sidecar."""
     _stub_search(monkeypatch, SYNCED_LYRICS)
     path = _write_mp3(tmp_path, audio_name)
 
     result = enrich_metadata(path, TRACK, tmp_path)
 
     assert "USLT" in result.fields_written
-    assert _uslt_texts(path) == [SYNCED_LYRICS]
+    assert "SYLT" in result.fields_written
+    assert _uslt_texts(path) == [LYRICS]
+    assert _sylt_pairs(path) == [
+        [("Today is gonna be the day", 6210), ("That they're gonna throw it back to you", 11000)]
+    ]
     sidecar = tmp_path / sidecar_name
     assert sidecar.read_text(encoding="utf-8") == SYNCED_LYRICS
+
+
+def test_uslt_never_contains_timestamps(tmp_path, monkeypatch, lyrics_on):
+    """The plain lyrics field is clean text, even when the source was LRC."""
+    _stub_search(monkeypatch, "[00:12.00][01:20.00]Repeated chorus\n[00:24.22] More lyrics")
+    path = _write_mp3(tmp_path)
+
+    enrich_metadata(path, TRACK, tmp_path)
+
+    assert _uslt_texts(path) == ["Repeated chorus\nMore lyrics"]
+    assert "[00:" not in _uslt_texts(path)[0]
+
+
+def test_sylt_keeps_the_timestamps_in_milliseconds(tmp_path, monkeypatch, lyrics_on):
+    """SYLT carries absolute timestamps, so timed players can use them."""
+    _stub_search(monkeypatch, "[01:20.00] Hello\n[02:30.25] World")
+    path = _write_mp3(tmp_path)
+
+    enrich_metadata(path, TRACK, tmp_path)
+
+    assert _sylt_pairs(path) == [[("Hello", 80000), ("World", 150250)]]
+
+
+def test_multiple_timestamps_on_one_line_give_one_pair_each(tmp_path, monkeypatch, lyrics_on):
+    """``[00:12.00][01:20.00]Repeated chorus`` yields both times, one USLT line."""
+    _stub_search(monkeypatch, "[00:12.00][01:20.00]Repeated chorus")
+    path = _write_mp3(tmp_path)
+
+    enrich_metadata(path, TRACK, tmp_path)
+
+    assert _uslt_texts(path) == ["Repeated chorus"]
+    assert _sylt_pairs(path) == [[("Repeated chorus", 12000), ("Repeated chorus", 80000)]]
 
 
 def test_missing_lyrics_leaves_the_lyrics_field_empty(tmp_path, monkeypatch, lyrics_on):
@@ -135,7 +177,7 @@ def test_unusable_lyrics_result_is_ignored(tmp_path, monkeypatch, lyrics_on, unu
 
 
 def test_unwritable_sidecar_still_keeps_the_embedded_lyrics(tmp_path, monkeypatch, lyrics_on):
-    """A blocked sidecar path is contained: the lyrics frame is already written."""
+    """A blocked sidecar path is contained: the lyrics frames are already written."""
     _stub_search(monkeypatch, SYNCED_LYRICS)
     path = _write_mp3(tmp_path)
     # A directory where the .lrc file would go makes the write fail.
@@ -144,7 +186,9 @@ def test_unwritable_sidecar_still_keeps_the_embedded_lyrics(tmp_path, monkeypatc
     result = enrich_metadata(path, TRACK, tmp_path)
 
     assert "USLT" in result.fields_written
-    assert _uslt_texts(path) == [SYNCED_LYRICS]
+    assert "SYLT" in result.fields_written
+    assert _uslt_texts(path) == [LYRICS]
+    assert _sylt_pairs(path)
     assert "TIT2" in result.fields_written
 
 
@@ -220,6 +264,28 @@ def test_embedded_lyrics_form_ignores_an_empty_frame(tmp_path):
     tags.save(str(path))
 
     assert embedded_lyrics_form(path) is None
+
+
+def test_embedded_lyrics_form_looks_at_sylt_not_uslt_timestamps(tmp_path, monkeypatch, lyrics_on):
+    """A clean USLT with an SYLT frame reads as synced; USLT alone reads as plain."""
+    synced = tmp_path / "synced.mp3"
+    _stub_search(monkeypatch, SYNCED_LYRICS)
+    _write_mp3(tmp_path, "synced.mp3")
+    enrich_metadata(synced, TRACK, tmp_path)
+    assert embedded_lyrics_form(synced) == "synced"
+
+    plain = tmp_path / "plain.mp3"
+    _stub_search(monkeypatch, LYRICS)
+    _write_mp3(tmp_path, "plain.mp3")
+    enrich_metadata(plain, TRACK, tmp_path)
+    assert embedded_lyrics_form(plain) == "plain"
+
+    legacy = tmp_path / "legacy.mp3"
+    _write_mp3(tmp_path, "legacy.mp3")
+    tags = mutagen_id3.ID3()
+    tags["USLT"] = mutagen_id3.USLT(encoding=3, lang="eng", desc="", text=SYNCED_LYRICS)
+    tags.save(str(legacy))
+    assert embedded_lyrics_form(legacy) == "synced"
 
 
 def test_lyrics_disabled_skips_retrieval_entirely(tmp_path, monkeypatch, lyrics_off):
@@ -315,3 +381,59 @@ def test_normalize_lyrics(raw, expected):
 )
 def test_is_synced_lyrics(lyrics, expected):
     assert is_synced_lyrics(lyrics) is expected
+
+
+def test_parse_lyrics_keeps_plain_text_plain():
+    parsed = parse_lyrics(LYRICS)
+
+    assert isinstance(parsed, Lyrics)
+    assert parsed.text == LYRICS
+    assert parsed.lines == ()
+    assert parsed.synced is False
+
+
+def test_parse_lyrics_splits_lrc_into_structured_pairs():
+    parsed = parse_lyrics(SYNCED_LYRICS)
+
+    assert parsed is not None
+    assert parsed.text == LYRICS
+    assert parsed.lines == (
+        (6.21, "Today is gonna be the day"),
+        (11.0, "That they're gonna throw it back to you"),
+    )
+    assert parsed.synced is True
+
+
+def test_parse_lyrics_drops_lrc_metadata_tags():
+    parsed = parse_lyrics(
+        "[ar:Oasis]\n[ti:Wonderwall]\n[00:06.21]Today is gonna be the day\n[00:11.00] That "
+        "they're gonna throw it back to you"
+    )
+
+    assert parsed is not None
+    assert parsed.text == LYRICS
+    assert parsed.lines == (
+        (6.21, "Today is gonna be the day"),
+        (11.0, "That they're gonna throw it back to you"),
+    )
+
+
+def test_parse_lyrics_handles_multiple_timestamps_on_one_line():
+    parsed = parse_lyrics("[00:12.00][01:20.00]Repeated chorus")
+
+    assert parsed is not None
+    assert parsed.text == "Repeated chorus"
+    assert parsed.lines == (
+        (12.0, "Repeated chorus"),
+        (80.0, "Repeated chorus"),
+    )
+
+
+@pytest.mark.parametrize("unusable", ["", "   ", 42, {"lyrics": LYRICS}, b"bytes", None])
+def test_parse_lyrics_rejects_unusable_input(unusable):
+    assert parse_lyrics(unusable) is None
+
+
+def test_parse_lyrics_rejects_lrc_without_any_lyric_text():
+    """Timestamps timing nothing are not lyrics."""
+    assert parse_lyrics("[00:06.21]\n[00:11.00]") is None

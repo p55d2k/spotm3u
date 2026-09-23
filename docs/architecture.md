@@ -220,12 +220,15 @@ hardcodes provider URLs and parsers.
 
 The library is asked for its default target, which searches for synced lyrics
 first and falls back to plain text, so a result is either timestamped LRC or
-plain. Either form is written into the standard lyrics field (ID3 `USLT`) as
-retrieved, alongside the existing tags, preserving all other metadata and
-embedded artwork. Timestamped lyrics also get an `.lrc` sidecar next to the
-audio file (same stem, `song.mp3` -> `song.lrc`) for the players that read a
-sidecar rather than ID3 frames; plain lyrics get none, since there is nothing
-to time.
+plain. The raw result is parsed once (in `lyrics.py`) into structured lyrics,
+and two ID3 frames are derived from that single parse: the plain `USLT` frame
+holds the timestamp-free text, and a timed result also writes the `SYLT` frame
+with the same lines and their millisecond timestamps — timestamps never reach
+`USLT` (Apple Music renders them literally). Written alongside the existing
+tags, preserving all other metadata and embedded artwork. Timestamped lyrics
+also get an `.lrc` sidecar next to the audio file (same stem, `song.mp3` ->
+`song.lrc`) for the players that read a sidecar rather than ID3 frames; plain
+lyrics get `USLT` only, since there is nothing to time.
 
 Retrieval is optional enrichment: a missing match, a provider or network
 failure, an unusable result, or an audio format that cannot hold the field
