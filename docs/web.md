@@ -216,33 +216,36 @@ default 24 hours) and reports whether a newer version than the running
 limits, missing releases and unknown assets all report "no update" without
 raising, so an offline or stale machine works exactly as before.
 
-When an update is available, the header shows a banner with the new version, a
-**Release notes** link, a dismiss control (remembered per version in
-`localStorage`), and **Download update**. SpotM3U never replaces a running
-application on its own - a packaged bundle cannot safely overwrite its own
-files - so the action downloads the correct platform installer instead:
+When an update is available, one quiet row appears in the sidebar footer, above
+the theme toggle: **Update to <version>**, with the running version in its
+tooltip and accessible name. It takes no page space and has no dismiss control,
+because it disappears with the update rather than nagging. SpotM3U never
+replaces a running application on its own - a packaged bundle cannot safely
+overwrite its own files - so clicking the row downloads the correct platform
+installer instead:
 
 - macOS downloads `SpotM3U-<version>-macos-<arch>.pkg`,
 - Windows and Linux download `SpotM3U-<version>-<platform>-<arch>.zip`.
 
 In the desktop shell the download goes through the `WindowControls`
-`download_update` bridge into the Downloads folder with an **Open folder** toast
-(the same flow as saving an M3U). Both flows report through the shared toast in
-`templates/_feedback.html`, so the download shows the same layout as the
-playlist save: the downloaded filename plus the next step, *quit SpotM3U and
-open the file to install*. A finished download also clears the banner and
-remembers the dismissal for that version, so the notice stops prompting once the
-installer is on disk. In a plain browser the asset URL opens in a new tab.
-Downloads travel over HTTPS to the GitHub release asset URL only and are never
-launched or extracted by the app.
+`download_update` bridge into the Downloads folder (the same flow as saving an
+M3U). Both flows report through the shared toast in `templates/_feedback.html`,
+so the download shows the same layout as the playlist save: the downloaded
+filename, the next step *quit SpotM3U and open the file to install*, and - for
+the update - two actions, **Release notes** (the release page in your browser)
+and **Open folder** (reveals the installer, since the app never launches it).
+The sidebar row stays put afterwards: the running application is still the old
+version, so the notice remains true until it is actually updated. In a plain
+browser the release page opens in a new tab, where both the notes and the
+installer are. Downloads travel over HTTPS to the GitHub release asset URL only
+and are never launched or extracted by the app.
 
-Small choices like that dismissed notice, and the sidebar's light/dark theme,
-live in the WebView's own storage. The desktop shell points that storage at the
-platform's application-data directory (`%LOCALAPPDATA%\SpotM3U` on Windows,
-`~/Library/Application Support/SpotM3U` on macOS, `$XDG_DATA_HOME/spotm3u` on
-Linux) instead of leaving pywebview in its default private mode, which clears
-the store on every launch; without it the theme and the dismissed notice would
-reset each time the application started.
+The sidebar's light/dark theme is kept in the WebView's own storage. The
+desktop shell points that storage at the platform's application-data directory
+(`%LOCALAPPDATA%\SpotM3U` on Windows, `~/Library/Application Support/SpotM3U` on
+macOS, `$XDG_DATA_HOME/spotm3u` on Linux) instead of leaving pywebview in its
+default private mode, which clears the store on every launch; without it the
+chosen theme would reset each time the application started.
 
 The check can be disabled wholesale with `[update] check = false` in
 `config.toml`, and its repository overridden with `[update] github_repo`.

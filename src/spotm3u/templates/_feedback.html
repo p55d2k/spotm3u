@@ -4,7 +4,8 @@
    of building its own toast, so saves, update downloads and failures all look
    and behave the same: an icon from the same set the track statuses use (see
    ``_status_icons.html``), a short headline, one muted line of detail, and at
-   most one action button.
+   most one action button - or a short set, for a flow whose next step really
+   has two useful moves (``actions`` rather than ``action``).
 
    Tones match the vocabulary the rest of the UI speaks — success, warning,
    error — and each carries its own colour pair and how long it stays up.
@@ -49,7 +50,7 @@
       toast.hidden = true;
     }
 
-    function show({ tone = "ok", title = "", detail = "", action = null, timeout } = {}) {
+    function show({ tone = "ok", title = "", detail = "", action = null, actions = null, timeout } = {}) {
       const safeTone = ICONS[tone] ? tone : "ok";
       const node = ensureToast();
       node.className = "app-toast is-" + safeTone;
@@ -74,14 +75,18 @@
       }
       node.appendChild(text);
 
-      if (action && action.label) {
+      // ``action`` is the common case; ``actions`` lists a small set for a
+      // flow that has two genuinely useful next steps.
+      const buttons = Array.isArray(actions) ? actions : action ? [action] : [];
+      for (const entry of buttons) {
+        if (!entry || !entry.label) continue;
         const button = document.createElement("button");
         button.type = "button";
         button.className = "toast-action";
-        button.textContent = action.label;
+        button.textContent = entry.label;
         button.addEventListener("click", () => {
           dismiss();
-          action.onClick();
+          entry.onClick();
         });
         node.appendChild(button);
       }

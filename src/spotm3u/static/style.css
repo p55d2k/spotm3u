@@ -469,14 +469,21 @@ a.step-link:hover {
   background: var(--state-selected);
 }
 
+/* The sidebar footer's rows: the update notice and the theme toggle. Both are
+   ghost buttons (see the button hierarchy below) that fill the footer, so only
+   the layout they need on top of the variant is set here. The update notice
+   ships hidden, so the footer is a single row until there is something to
+   say. */
 .sidebar-footer {
   border-top: 1px solid var(--color-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   padding: var(--space-3);
 }
 
-/* A ghost button (see the button hierarchy below) that fills the sidebar
-   footer; only the layout it needs on top of the variant is set here. */
-.theme-toggle {
+.theme-toggle,
+.update-notice {
   border-radius: var(--radius-m);
   font-size: var(--text-md);
   gap: var(--space-3);
@@ -485,7 +492,8 @@ a.step-link:hover {
   width: 100%;
 }
 
-.theme-toggle-label {
+.theme-toggle-label,
+.update-notice-label {
   text-align: left;
 }
 
@@ -1035,20 +1043,11 @@ button.button-danger:active:not([disabled]):not([aria-disabled="true"]) {
   background: var(--color-danger-active);
 }
 
-/* The two size modifiers, shared by every variant. */
+/* The one size modifier, shared by every variant. */
 .button-small {
   font-size: var(--text-sm);
   min-height: 2rem;
   padding: var(--space-2) var(--space-3);
-}
-
-/* An icon-only control: square, and the same height as .button-small so it
-   lines up with the text buttons beside it. */
-.button-icon {
-  justify-content: center;
-  min-height: 2rem;
-  padding: 0;
-  width: 2rem;
 }
 
 input[type="text"],
@@ -1795,34 +1794,6 @@ form:has(.mode-option) > button {
 }
 
 /* ------------------------------------------------------------------ */
-/* Update banner                                                       */
-/* ------------------------------------------------------------------ */
-
-.update-banner {
-  align-items: center;
-  background: var(--color-accent-subtle);
-  border-bottom: 1px solid var(--color-accent-border);
-  color: var(--color-accent-ink);
-  display: flex;
-  flex: none;
-  font-size: var(--text-md);
-  gap: var(--space-4);
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-6);
-}
-
-.update-banner-text strong {
-  font-weight: var(--weight-semibold);
-}
-
-.update-banner-actions {
-  align-items: center;
-  display: flex;
-  flex: none;
-  gap: var(--space-2);
-}
-
-/* ------------------------------------------------------------------ */
 /* Toasts and tooltips                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -1922,6 +1893,8 @@ form:has(.mode-option) > button {
 
 /* The same secondary button the rest of the app uses, sized for a toast, so a
    toast action is not a fifth button style. */
+/* A toast may carry two next steps; each action keeps its size and the text
+   column gives way first, so neither is squeezed off the end. */
 .toast-action {
   align-items: center;
   background: var(--color-muted-button);
@@ -1929,6 +1902,7 @@ form:has(.mode-option) > button {
   border-radius: var(--radius-s);
   color: var(--color-text);
   display: inline-flex;
+  flex: none;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   justify-content: center;

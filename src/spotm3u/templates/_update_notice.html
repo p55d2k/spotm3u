@@ -1,0 +1,102 @@
+{# In-app update notice: a quiet row in the sidebar footer, beside the theme
+   toggle. Every page asks ``GET /update/check`` and the row appears only when
+   a newer SpotM3U release exists. There is nothing to dismiss, because it
+   takes no page space and goes away with the update.
+
+   Clicking it downloads the installer for this platform - through the
+   ``WindowControls`` bridge in the desktop shell, and as the release page in a
+   browser run. The shared toast (see _feedback.html) then carries the rest:
+   the release notes, and the folder the installer landed in. #}
+{% from "_icons.html" import icon %}
+<button
+  class="button button-ghost update-notice"
+  type="button"
+  data-update-notice
+  hidden
+>
+  {{ icon("download") }}
+  <span class="update-notice-label" data-update-label>Update available</span>
+</button>
+<script>
+  (() => {
+    const notice = document.querySelector("[data-update-notice]");
+    if (!notice) return;
+
+    const feedback = window.SpotM3UFeedback;
+    const label = notice.querySelector("[data-update-label]");
+    const RELEASES = "https://github.com/p55d2k/spotm3u/releases";
+
+    let info = null;
+
+    fetch("/update/check")
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data || !data.update_available) return;
+        info = data;
+        // The row says what it does and the tooltip says what you are on, so
+        // the version detail is available without widening the sidebar.
+        const description =
+          "Update to SpotM3U " + data.latest_version +
+          " (you are on " + data.current_version + ")";
+        label.textContent = "Update to " + data.latest_version;
+        notice.setAttribute("aria-label", description);
+        notice.title = description;
+        notice.hidden = false;
+      })
+      .catch(() => {});
+
+    const openPage = (url) => () =>
+      window.open(url || RELEASES, "_blank", "noopener");
+
+    const openFolder = (api, path) => async () => {
+      try {
+        await api.open_at(path);
+      } catch (error) {
+        // Revealing failed; the toast already names the file.
+        console.error("revealing the downloaded update failed", error);
+      }
+    };
+
+    notice.addEventListener("click", async () => {
+      if (!info) return;
+      const api = window.pywebview && window.pywebview.api;
+      if (!api || typeof api.download_update !== "function" || !info.asset_url) {
+        // No download bridge (a browser run): the release page carries both the
+        // notes and the installer, so it is the honest destination.
+        window.open(info.release_url || RELEASES, "_blank", "noopener");
+        return;
+      }
+      notice.disabled = true;
+      notice.setAttribute("aria-busy", "true");
+      let result;
+      try {
+        result = await api.download_update(info.asset_url, info.asset_name);
+      } catch (error) {
+        // The dialog stays user-facing; the raw failure goes to the console.
+        console.error("downloading the update failed", error);
+        result = { error: "Check your connection and try again." };
+      }
+      // Always restore the row: a failed or finished download must not leave
+      // it stuck looking busy, since it has no label to reset.
+      notice.disabled = false;
+      notice.removeAttribute("aria-busy");
+      if (!result || result.error) {
+        feedback.error(
+          "The update could not be downloaded.",
+          result ? result.error : "Try again in a moment."
+        );
+        return;
+      }
+      // The installer is never launched for the user, so the muted line spells
+      // out that they should quit SpotM3U and open the file. Two useful next
+      // steps, so the toast carries both: what changed, and where it landed.
+      feedback.success(result.name, "Downloaded to Downloads. Quit SpotM3U, then open it to install.", {
+        actions: [
+          { label: "Release notes", onClick: openPage(info.release_url) },
+          { label: "Open folder", onClick: openFolder(api, result.path) },
+        ],
+        timeout: 7000,
+      });
+    });
+  })();
+</script>

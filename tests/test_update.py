@@ -1,5 +1,6 @@
 """Tests for in-app GitHub release update checks."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -228,18 +229,27 @@ def test_check_route_caches_within_interval(monkeypatch) -> None:
     assert len(calls) == 1
 
 
-def test_homepage_includes_update_banner() -> None:
+def test_the_update_notice_ships_in_the_sidebar_footer() -> None:
     client = create_app().test_client()
 
     response = client.get("/")
 
     assert response.status_code == 200
-    # The strip itself ships in the page, not just the script that drives it:
-    # a script querying an element that is never rendered is how the banner
+    page = response.get_data(as_text=True)
+    # The control itself ships in the page, not just the script that drives it:
+    # a script querying an element that is never rendered is how the notice
     # silently stopped appearing once already.
-    assert b'class="update-banner" data-update-banner hidden' in response.data
-    assert b"data-update-latest>" in response.data
-    assert b"data-update-current>" in response.data
-    assert b"data-update-download>" in response.data
-    assert b"data-update-dismiss" in response.data
-    assert b"/update/check" in response.data
+    assert 'class="button button-ghost update-notice"' in page
+    assert "data-update-label>" in page
+    assert "/update/check" in page
+    # It belongs in the sidebar footer beside the theme toggle. As a page-level
+    # banner it pushed the whole page down every time the check resolved.
+    assert "data-update-notice" in page.split('class="sidebar-footer"', 1)[1]
+    sidebar = (Path(create_app().root_path) / "templates" / "_sidebar.html").read_text(
+        encoding="utf-8"
+    )
+    assert '{% include "_update_notice.html" %}' in sidebar
+    header = (Path(create_app().root_path) / "templates" / "_header.html").read_text(
+        encoding="utf-8"
+    )
+    assert "_update_notice.html" not in header
