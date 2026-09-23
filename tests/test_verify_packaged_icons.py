@@ -3,9 +3,12 @@
 `packaging/verify_packaged_icons.py` inspects what the packaged application
 actually carries: the icon resources embedded in the Windows executable, and the
 canonical PNG the frozen Linux build reads for its GTK window icon. These tests
-generate real icon assets from the tracked master artwork, model the two
-containers the checker parses, and pin the failure modes that would otherwise
-ship an application with the wrong icon.
+generate real icon assets, model the two containers the checker parses, and pin
+the failure modes that would otherwise ship an application with the wrong icon.
+
+Generating an icon set costs a couple of seconds, so the checker tests share one
+``.ico`` built from the smallest accepted master; nothing they assert depends on
+the size of the master artwork.
 """
 
 import importlib.util
@@ -32,8 +35,16 @@ checker = _load("verify_packaged_icons")
 icons = _load("generate_icons")
 
 
-def _generated_ico(tmp_path: Path) -> Path:
-    return icons.generate(_ICON_PNG, tmp_path / "generated")["ico"]
+@pytest.fixture(scope="module")
+def generated_ico(tmp_path_factory) -> Path:
+    """One generated .ico shared by the icon-resource tests."""
+    directory = tmp_path_factory.mktemp("icons")
+    master = directory / "icon.png"
+    size = icons.MIN_SOURCE_SIZE
+    master.write_bytes(
+        icons._encode_png(bytes([0x40, 0x80, 0xC0, 0xFF]) * (size * size), size, size)
+    )
+    return icons.generate(master, directory / "generated")["ico"]
 
 
 def _group_icon(members: list[tuple[int, bytes]]) -> bytes:
@@ -64,17 +75,15 @@ def _image_map(members: list[tuple[int, bytes]]) -> dict[int, bytes]:
     return {index: data for index, (_, data) in enumerate(members, start=1)}
 
 
-def test_read_ico_lists_every_generated_member(tmp_path) -> None:
-    ico = _generated_ico(tmp_path)
-
-    members = checker.read_ico(ico.read_bytes())
+def test_read_ico_lists_every_generated_member(generated_ico) -> None:
+    members = checker.read_ico(generated_ico.read_bytes())
 
     assert [size for size, _ in members] == [16, 24, 32, 48, 64, 128, 256]
     assert all(data.startswith(b"\x89PNG") for _, data in members)
 
 
-def test_windows_bundle_accepts_the_generated_icon(tmp_path, monkeypatch) -> None:
-    ico = _generated_ico(tmp_path)
+def test_windows_bundle_accepts_the_generated_icon(tmp_path, monkeypatch, generated_ico) -> None:
+    ico = generated_ico
     members = checker.read_ico(ico.read_bytes())
     _patch_resources(monkeypatch, _group_icon(members), _image_map(members))
 
@@ -83,8 +92,8 @@ def test_windows_bundle_accepts_the_generated_icon(tmp_path, monkeypatch) -> Non
     assert summary == f"SpotM3U.exe embeds all {len(members)} icon sizes from {ico.name}"
 
 
-def test_windows_bundle_rejects_a_missing_size(tmp_path, monkeypatch) -> None:
-    ico = _generated_ico(tmp_path)
+def test_windows_bundle_rejects_a_missing_size(tmp_path, monkeypatch, generated_ico) -> None:
+    ico = generated_ico
     members = checker.read_ico(ico.read_bytes())[:-1]  # the 256x256 member is gone
     _patch_resources(monkeypatch, _group_icon(members), _image_map(members))
 
@@ -92,8 +101,8 @@ def test_windows_bundle_rejects_a_missing_size(tmp_path, monkeypatch) -> None:
         checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
 
 
-def test_windows_bundle_rejects_a_stale_icon(tmp_path, monkeypatch) -> None:
-    ico = _generated_ico(tmp_path)
+def test_windows_bundle_rejects_a_stale_icon(tmp_path, monkeypatch, generated_ico) -> None:
+    ico = generated_ico
     members = checker.read_ico(ico.read_bytes()) + [(20, b"\x89PNG stale artwork")]
     _patch_resources(monkeypatch, _group_icon(members), _image_map(members))
 
@@ -101,8 +110,10 @@ def test_windows_bundle_rejects_a_stale_icon(tmp_path, monkeypatch) -> None:
         checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
 
 
-def test_windows_bundle_rejects_a_different_image_payload(tmp_path, monkeypatch) -> None:
-    ico = _generated_ico(tmp_path)
+def test_windows_bundle_rejects_a_different_image_payload(
+    tmp_path, monkeypatch, generated_ico
+) -> None:
+    ico = generated_ico
     members = checker.read_ico(ico.read_bytes())
     images = _image_map(members)
     images[1] = b"\x89PNG different artwork"
@@ -112,8 +123,10 @@ def test_windows_bundle_rejects_a_different_image_payload(tmp_path, monkeypatch)
         checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
 
 
-def test_windows_bundle_rejects_a_declared_size_that_differs(tmp_path, monkeypatch) -> None:
-    ico = _generated_ico(tmp_path)
+def test_windows_bundle_rejects_a_declared_size_that_differs(
+    tmp_path, monkeypatch, generated_ico
+) -> None:
+    ico = generated_ico
     members = checker.read_ico(ico.read_bytes())
     size, data = members[0]
     truncated = _group_icon([(size, data[:-1]), *members[1:]])
@@ -123,22 +136,22 @@ def test_windows_bundle_rejects_a_declared_size_that_differs(tmp_path, monkeypat
         checker.verify_windows_bundle(_windows_bundle(tmp_path), ico)
 
 
-def test_windows_bundle_rejects_a_missing_executable(tmp_path) -> None:
+def test_windows_bundle_rejects_a_missing_executable(tmp_path, generated_ico) -> None:
     bundle = tmp_path / "SpotM3U"
     bundle.mkdir()
 
     with pytest.raises(SystemExit, match="missing"):
-        checker.verify_windows_bundle(bundle, _generated_ico(tmp_path))
+        checker.verify_windows_bundle(bundle, generated_ico)
 
 
-def test_windows_bundle_without_embedded_icons_fails(tmp_path, monkeypatch) -> None:
+def test_windows_bundle_without_embedded_icons_fails(tmp_path, monkeypatch, generated_ico) -> None:
     def no_icon(_path):
         raise SystemExit("invalid packaged icon: SpotM3U.exe embeds no application icon")
 
     monkeypatch.setattr(checker, "pe_icon_resources", no_icon)
 
     with pytest.raises(SystemExit, match="embeds no application icon"):
-        checker.verify_windows_bundle(_windows_bundle(tmp_path), _generated_ico(tmp_path))
+        checker.verify_windows_bundle(_windows_bundle(tmp_path), generated_ico)
 
 
 def test_pe_resource_walk_reads_a_real_windows_executable() -> None:
