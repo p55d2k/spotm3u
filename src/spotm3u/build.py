@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -163,6 +164,15 @@ def build_frontend() -> None:
         if status != 0:
             print(f"{description} failed (exit status {status}).", file=sys.stderr)
             raise SystemExit(status)
+    index = frontend.FRONTEND_DIR / frontend.DIST_DIRNAME / frontend.INDEX
+    referenced_assets = re.findall(r'(?:src|href)="([^"]+)"', index.read_text(encoding="utf-8"))
+    missing = [
+        asset
+        for asset in referenced_assets
+        if asset.startswith("/") and not (index.parent / asset.lstrip("/")).is_file()
+    ]
+    if missing:
+        raise SystemExit(f"frontend build references missing assets: {', '.join(missing)}")
 
 
 def main(argv: list[str] | None = None) -> None:

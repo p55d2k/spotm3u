@@ -1,4 +1,3 @@
-# -*- mode: python ; coding: utf-8 -*-
 """PyInstaller specification for the SpotM3U standalone application.
 
 Build a one-folder (onedir) bundle so the executable starts quickly and the
@@ -88,7 +87,13 @@ if ICON_PNG.is_file():
 # quietly producing an application whose interface answers 404, unless the
 # caller explicitly asked to package without rebuilding it.
 if (FRONTEND_DIST / "index.html").is_file():
-    datas.append((str(FRONTEND_DIST), "frontend"))
+    # Collect files individually rather than handing PyInstaller the whole
+    # directory. This keeps hashed Vite assets in the bundle reliably across
+    # platforms and archive extraction tools.
+    for path in FRONTEND_DIST.rglob("*"):
+        if path.is_file():
+            destination = Path("frontend") / path.relative_to(FRONTEND_DIST).parent
+            datas.append((str(path), str(destination)))
 elif os.environ.get(SKIP_FRONTEND_ENV) != "1":
     raise SystemExit(
         f"missing frontend build at {FRONTEND_DIST}; run `uv run build`, or set "
