@@ -41,7 +41,12 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
       const next = await getProcessingStatus(jobId);
       if (!mountedRef.current) return;
       if (next.status === "running") {
-        etaRef.current.record(next.completed, next.started_at ?? 0);
+        etaRef.current.record(
+          next.searched,
+          next.resolved,
+          next.completed,
+          next.started_at ?? 0,
+        );
       }
       setState(next);
       setPhase("active");
@@ -170,6 +175,8 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
                       status: state.status,
                       started_at: state.started_at,
                       progress_total: state.total,
+                      searched: state.searched,
+                      resolved: state.resolved,
                       completed: state.completed,
                     },
                     etaRef.current,

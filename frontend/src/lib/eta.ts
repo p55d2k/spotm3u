@@ -1,10 +1,7 @@
 /**
- * The remaining-time estimate the progress screens draw, migrated from the
- * Flask processing pages. It measures actual per-track completion intervals
- * across polls so the ETA adapts to this machine's speed and to how long
- * downloads really take, instead of extrapolating total elapsed time against
- * the bar. Pure frontend display logic - nothing here knows or cares how the
- * backend estimates anything.
+ * The remaining-time estimate the progress screens draw. It measures
+ * per-stage track rates across polls and combines the sequential search stage
+ * with the overlapping audio and metadata stages.
  */
 
 export function progressFraction(
@@ -40,50 +37,72 @@ export function formatRemaining(remainingSeconds: number): string {
 
 const SECS_PER_TRACK_BASELINE = 45;
 
-export type EtaSample = { t: number; completed: number };
+export type EtaSample = {
+  t: number;
+  searched: number;
+  resolved: number;
+  completed: number;
+};
 
 export class EtaEstimator {
   samples: EtaSample[] = [];
   anchorAt: number | null = null;
-  lastCompleted: number | null = null;
+  lastCounts: [number, number, number] | null = null;
 
-  /** Record a completion boundary, anchoring the very first sample. */
-  record(completed: number, startedAtMs: number): void {
+  /** Record stage progress, anchoring the very first sample. */
+  record(searched: number, resolved: number, completed: number, startedAtMs: number): void {
     const now = Date.now();
     if (this.anchorAt === null) {
       this.anchorAt = startedAtMs > 0 ? startedAtMs : now;
-      this.samples.push({ t: this.anchorAt, completed: 0 });
-      this.lastCompleted = null;
+      this.samples.push({ t: this.anchorAt, searched: 0, resolved: 0, completed: 0 });
+      this.lastCounts = null;
     }
-    if (completed !== this.lastCompleted) {
-      this.samples.push({ t: now, completed });
-      this.lastCompleted = completed;
+    const counts: [number, number, number] = [searched, resolved, completed];
+    if (
+      this.lastCounts === null ||
+      counts.some((count, index) => count !== this.lastCounts?.[index])
+    ) {
+      this.samples.push({ t: now, searched, resolved, completed });
+      this.lastCounts = counts;
     }
   }
 
-  /** Seconds per track from the completion deltas (or the elapsed average). */
-  secondsPerTrack(completed: number, elapsedSecs: number): number | null {
-    const deltas: number[] = [];
+  /** Return an EMA of seconds per track for each pipeline stage. */
+  secondsPerTrack(
+    searched: number,
+    resolved: number,
+    completed: number,
+    elapsedSecs: number,
+  ): [number, number, number] {
+    const deltas: [number, number, number][] = [];
     for (let i = 1; i < this.samples.length; i += 1) {
-      const dCompleted = this.samples[i].completed - this.samples[i - 1].completed;
       const dt = (this.samples[i].t - this.samples[i - 1].t) / 1000;
-      if (dCompleted > 0 && dt > 0) {
-        deltas.push(dt / dCompleted);
+      if (dt > 0) {
+        deltas.push(
+          [0, 1, 2].map((index) => {
+            const key = ["searched", "resolved", "completed"][index] as
+              | "searched"
+              | "resolved"
+              | "completed";
+            const delta = this.samples[i][key] - this.samples[i - 1][key];
+            return delta > 0 ? dt / delta : 0;
+          }) as [number, number, number],
+        );
       }
     }
-    if (deltas.length) {
-      // Exponentially weighted average: recent completions influence the
-      // estimate more than the first ones, so slow end-of-playlist downloads
-      // pull the rate up quickly.
-      const alpha = 0.35;
-      let ema = deltas[0];
-      for (let i = 1; i < deltas.length; i += 1) {
-        ema = alpha * deltas[i] + (1 - alpha) * ema;
+    return [0, 1, 2].map((index) => {
+      const stageDeltas = deltas.map((delta) => delta[index]).filter((delta) => delta > 0);
+      if (stageDeltas.length) {
+        const alpha = 0.35;
+        let ema = stageDeltas[0];
+        for (let i = 1; i < stageDeltas.length; i += 1) {
+          ema = alpha * stageDeltas[i] + (1 - alpha) * ema;
+        }
+        return ema;
       }
-      return ema;
-    }
-    if (completed > 0) return elapsedSecs / completed;
-    return null;
+      const count = [searched, resolved, completed][index];
+      return count > 0 ? elapsedSecs / count : SECS_PER_TRACK_BASELINE;
+    }) as [number, number, number];
   }
 }
 
@@ -96,6 +115,8 @@ export function remainingLabel(state: {
   status: string;
   started_at: number | null;
   progress_total: number;
+  searched: number;
+  resolved: number;
   completed: number;
 }, estimator: EtaEstimator): string {
   if (state.status !== "running") return "";
@@ -104,17 +125,17 @@ export function remainingLabel(state: {
   const now = Date.now();
   const elapsedSecs = (now - startedAt) / 1000;
   if (!Number.isFinite(elapsedSecs) || elapsedSecs < 1) return "";
-  let secs = estimator.secondsPerTrack(state.completed, elapsedSecs);
-  if (secs === null || !Number.isFinite(secs) || secs <= 0) {
-    // No completed track to measure yet (the very first ones are still being
-    // searched/resolved): use a neutral per-track baseline so the ETA is
-    // visible from the start and refines once completions arrive.
-    secs = SECS_PER_TRACK_BASELINE;
-  }
-  // The countdown is frozen while the current track is in flight: the value
-  // only moves at a completion boundary, so a slow last track re-estimates in
-  // clear steps instead of drifting the ETA upward second by second.
-  const remainingCount = state.progress_total - state.completed;
-  if (state.progress_total <= 0 || remainingCount <= 0) return "";
-  return formatRemaining(secs * remainingCount);
+  if (state.progress_total <= 0) return "";
+  const [searchSecs, audioSecs, metadataSecs] = estimator.secondsPerTrack(
+    state.searched,
+    state.resolved,
+    state.completed,
+    elapsedSecs,
+  );
+  const remainingSearch = Math.max(0, state.progress_total - state.searched) * searchSecs;
+  const remainingAudio = Math.max(0, state.progress_total - state.resolved) * audioSecs;
+  const remainingMetadata = Math.max(0, state.progress_total - state.completed) * metadataSecs;
+  // Search prepares the pipeline first; downloads and metadata overlap after
+  // that, so their remaining durations are governed by the slower stage.
+  return formatRemaining(remainingSearch + Math.max(remainingAudio, remainingMetadata));
 }

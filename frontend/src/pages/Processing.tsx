@@ -45,7 +45,12 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
       const next = await getPlaylistProcessingStatus(jobId, playlistId);
       if (!mountedRef.current) return;
       if (next.status === "running") {
-        etaRef.current.record(next.completed, next.started_at ?? 0);
+        etaRef.current.record(
+          next.searched,
+          next.resolved,
+          next.completed,
+          next.started_at ?? 0,
+        );
         setPhase("active");
       } else if (next.status === "completed") {
         navigate(`/jobs/${jobId}/playlists/${playlistId}/result`);
