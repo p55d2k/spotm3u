@@ -31,6 +31,7 @@ def _run_local_match_job(tmp_path, monkeypatch):
     """Convert playlist 1 (track "Second") with a matching local file."""
     music = tmp_path / "music"
     music.mkdir()
+    monkeypatch.setattr("spotm3u.api.media_player_available", lambda: True)
     (music / "Artist - Second.mp3").write_bytes(b"audio")
     monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = _client(tmp_path, music)
