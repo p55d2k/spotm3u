@@ -49,13 +49,17 @@ function BusySpinner({ busy }: BusyProps) {
   return <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />;
 }
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & BusyProps;
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  BusyProps & {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+  };
 
-export function Button({ busy, className = "", children, ...props }: ButtonProps) {
+export function Button({ busy, variant = "primary", size = "default", className = "", children, ...props }: ButtonProps) {
   return (
     <button
       aria-busy={busy ? "true" : undefined}
-      className={`${buttonClasses()} ${className}`}
+      className={`${buttonClasses(variant, size)} ${className}`}
       {...props}
     >
       <BusySpinner busy={busy} />

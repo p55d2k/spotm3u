@@ -1,5 +1,6 @@
 import { ArrowLeftRight, Check, CircleCheck, ListMusic, Moon, Sun, Upload } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { appUrl } from "../lib/router";
 import { useShell } from "./Shell";
 import { UpdateNotice } from "./UpdateNotice";
 import { useTheme } from "../hooks/useTheme";
@@ -22,7 +23,7 @@ type SidebarStep = {
 };
 
 const STEPS: SidebarStep[] = [
-  { name: "Import", number: 1, icon: Upload, href: "/app/" },
+  { name: "Import", number: 1, icon: Upload, href: appUrl("/") },
   { name: "Choose playlists", number: 2, icon: ListMusic },
   { name: "Convert", number: 3, icon: ArrowLeftRight },
   { name: "Done", number: 4, icon: CircleCheck },
@@ -44,7 +45,7 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
         className={`px-4 ${trafficGap ? "" : framed && platform === "mac" ? "pb-5 pt-5" : "pb-4 pt-5"}`}
         style={trafficGap ? { paddingTop: trafficGap } : undefined}
       >
-        <a href="/app/" aria-label="SpotM3U home" className="inline-flex items-center gap-3 text-ink no-underline">
+        <a href={appUrl("/")} aria-label="SpotM3U home" className="inline-flex items-center gap-3 text-ink no-underline">
           <img src="/api/icon.png" alt="" width="28" height="28" className="block size-7 flex-none rounded-[0.375rem]" />
           <span className="text-base font-bold tracking-[-0.02em]">SpotM3U</span>
         </a>
