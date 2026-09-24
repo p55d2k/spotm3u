@@ -15,6 +15,9 @@ Exportify
 
 ![SpotM3U demo workflow](images/demo.gif)
 
+The same workflow is available to the React frontend through the JSON API
+described in [api.md](api.md); both frontends share the job state on disk.
+
 The upload page accepts the Exportify ZIP in three ways: **Choose ZIP** (a file
 picker), drag and drop onto the window, or, in the desktop shell, the OS file
 dialog. There the picker is native - the click opens the platform's own file

@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
+from .api import register_api
 from .artwork import (
     cached_artwork_path,
     set_album_artwork_enabled,
@@ -41,8 +42,7 @@ from .metadata import (
 from .normalization import sanitize_filename_component
 from .online import describe_youtube_setup
 from .online.youtube_setup import set_pot_provider_timeout
-from .update import check_for_updates
-from .uploads import PickedFile, UploadError, default_upload_root, store_upload
+from .uploads import PickedFile, default_upload_root
 from .web_jobs import (
     _annotate_artwork,
     _annotate_lyrics,
@@ -55,8 +55,9 @@ from .web_jobs import (
     _save_job_state,
     _selected_playlist_ids,
     _selection_matches,
-    _sweep_old_jobs,
     _valid_playlist_index,
+    store_and_parse,
+    update_payload,
 )
 
 
@@ -106,32 +107,8 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/update/check")
     def update_check():
-        """Report whether a newer SpotM3U release is available.
-
-        The check is cached server-side by ``[update] check_interval_hours``
-        and degrades to "no update known" on any network problem, so the page
-        never blocks or errors on the GitHub API.
-        """
-        from . import __version__
-
-        if not app.config.get("UPDATE_CHECK", True):
-            return jsonify(
-                {
-                    "update_available": False,
-                    "latest_version": None,
-                    "current_version": __version__,
-                    "error": "Update checks are disabled.",
-                }
-            )
-        interval = int(app.config.get("UPDATE_CHECK_INTERVAL_HOURS", 24)) * 60 * 60
-        repo = str(app.config.get("UPDATE_REPO", "p55d2k/spotm3u"))
-        info = check_for_updates(
-            repo=repo,
-            current_version=__version__,
-            interval_seconds=interval,
-            timeout=float(app.config.get("UPDATE_REQUEST_TIMEOUT", 10)),
-        )
-        return jsonify(info.as_dict())
+        """Report whether a newer SpotM3U release is available (see web_jobs)."""
+        return jsonify(update_payload(app))
 
     @app.get("/")
     def index():
@@ -154,40 +131,6 @@ def create_app(config: dict | None = None) -> Flask:
             return jsonify({"error": "The application icon is not available."}), 404
         return send_file(icon, mimetype="image/png", max_age=3600)
 
-    def _store_and_parse(uploaded_file):
-        """Store one Exportify archive and read its playlists.
-
-        Shared by the browser upload and the desktop shell's native picker:
-        both hand over something with a ``filename`` and a binary ``stream``.
-        Returns ``(job, playlists, error, status)`` with an error set instead
-        of roles when the archive could not be accepted.
-        """
-        try:
-            job = store_upload(
-                uploaded_file,
-                upload_root=app.config["UPLOAD_ROOT"],
-                max_upload_size=app.config["MAX_CONTENT_LENGTH"],
-                max_decompressed_size=app.config["MAX_DECOMPRESSED_SIZE"],
-                max_archive_entries=app.config["MAX_ARCHIVE_ENTRIES"],
-            )
-        except UploadError as error:
-            return None, None, str(error), 400
-        except (OSError, ValueError):
-            app.logger.exception("Unable to store uploaded archive")
-            return None, None, "The upload could not be stored. Please try again.", 500
-
-        _sweep_old_jobs(app)
-
-        try:
-            playlists = parse_exportify(job.extracted)
-        except ExportifyParseError as error:
-            app.logger.info("Uploaded archive is not a valid Exportify export: %s", error)
-            return None, None, str(error), 400
-        except (OSError, UnicodeError):
-            app.logger.exception("Unable to read uploaded Exportify archive")
-            return None, None, "The uploaded export could not be read. Please try again.", 400
-        return job, playlists, None, 201
-
     @app.post("/upload")
     def upload():
         uploaded_file = request.files.get("file")
@@ -197,7 +140,7 @@ def create_app(config: dict | None = None) -> Flask:
                 error="Choose the Exportify ZIP file before uploading.",
             ), 400
 
-        job, playlists, error, status = _store_and_parse(uploaded_file)
+        job, playlists, error, status = store_and_parse(app, uploaded_file)
         if error is not None:
             return render_template("index.html", error=error, workflow_stage=1), status
 
@@ -226,8 +169,8 @@ def create_app(config: dict | None = None) -> Flask:
 
         try:
             with source_path.open("rb") as stream:
-                job, playlists, error, status = _store_and_parse(
-                    PickedFile(source_path.name, stream)
+                job, playlists, error, status = store_and_parse(
+                    app, PickedFile(source_path.name, stream)
                 )
         except OSError:
             app.logger.exception("Unable to read the picked archive")
@@ -744,5 +687,10 @@ def create_app(config: dict | None = None) -> Flask:
             "index.html",
             error="That file is too large to upload.",
         ), 413
+
+    # The JSON API the React frontend uses (see spotm3u.api and docs/api.md).
+    # It shares this application's job state and helpers, so both frontends can
+    # coexist while the migration is in progress.
+    register_api(app)
 
     return app

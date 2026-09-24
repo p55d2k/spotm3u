@@ -97,10 +97,11 @@ npm run typecheck      # type-check only
 ```
 
 Requests to Flask use same-origin `/api/...` paths (see
-`frontend/src/lib/api.ts`): the frontend adds the `/api` prefix and the Vite
-development proxy strips it again. Because `/api` is same-origin by design, a
-production build needs no proxy and no backend address, so no environment
-values are read at build time.
+`frontend/src/lib/api.ts` and the endpoint reference in [api.md](api.md)): the
+frontend only knows the `/api` namespace and the Vite development proxy
+forwards it to Flask unchanged. That namespace is same-origin in production
+too, so a production build needs no proxy, no backend address, and no
+environment values at build time.
 
 ## Checks
 
@@ -124,8 +125,9 @@ pre-commit configuration also runs the full test suite.
 
 ```text
 src/spotm3u/
-  app.py                 Flask routes and application setup
-  web_jobs.py            job, batch, and artwork helpers used by the Flask routes
+  app.py                 Flask page routes and application setup
+  api.py                 `/api` JSON routes used by the React frontend
+  web_jobs.py            job, batch, and artwork helpers shared by the routes
   artwork.py             artwork lookup order, embedding, and cleanup
   artwork_sources.py     MusicBrainz/iTunes/Deezer lookups and candidate matching
   artwork_cache.py       artwork cache layout, cache keys, and the in-process memo

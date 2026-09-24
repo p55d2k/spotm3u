@@ -15,6 +15,7 @@ from flask import Flask, request, session
 
 from .artwork import cached_artwork_path
 from .audio.resolver import LocalAudioResolver
+from .exportify import ExportifyParseError, parse_exportify
 from .fast import FastSourceSearcher, FastTrackResolver
 from .ffmpeg import locate_ffmpeg_location
 from .jobs import ProcessingJob
@@ -24,7 +25,8 @@ from .models import Playlist
 from .online import OnlineSourceSearcher, download_track
 from .online.cache import DownloadCache
 from .resolution import TrackResolver
-from .uploads import cleanup_jobs
+from .update import check_for_updates
+from .uploads import UploadError, UploadJob, cleanup_jobs, store_upload
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -59,12 +61,81 @@ def _current_job_directory(app: Flask, job_id: str) -> Path | None:
     return _job_directory(app.config["UPLOAD_ROOT"], job_id)
 
 
-def _save_job_state(job_directory: Path, state: dict[str, str]) -> None:
-    """Persist small workflow state inside the server-owned job directory."""
+def _save_job_state(job_directory: Path, state: dict[str, object]) -> None:
+    """Persist small workflow state inside the server-owned job directory.
+
+    Values are the JSON the frontend already expects for this key: a playlist
+    id string for a single selection, a list of them for a batch.
+    """
     state_path = job_directory / "state.json"
     temporary_path = job_directory / "state.json.tmp"
     temporary_path.write_text(json.dumps(state), encoding="utf-8")
     temporary_path.replace(state_path)
+
+
+def store_and_parse(
+    app: Flask, uploaded_file
+) -> tuple[UploadJob | None, list[Playlist] | None, str | None, int]:
+    """Store one Exportify archive and read its playlists.
+
+    Shared by the browser upload, the desktop shell's native picker, and the
+    JSON API: all three hand over something with a ``filename`` and a binary
+    ``stream``. Returns ``(job, playlists, error, status)`` with an error set
+    instead of roles when the archive could not be accepted.
+    """
+    try:
+        job = store_upload(
+            uploaded_file,
+            upload_root=app.config["UPLOAD_ROOT"],
+            max_upload_size=app.config["MAX_CONTENT_LENGTH"],
+            max_decompressed_size=app.config["MAX_DECOMPRESSED_SIZE"],
+            max_archive_entries=app.config["MAX_ARCHIVE_ENTRIES"],
+        )
+    except UploadError as error:
+        return None, None, str(error), 400
+    except (OSError, ValueError):
+        app.logger.exception("Unable to store uploaded archive")
+        return None, None, "The upload could not be stored. Please try again.", 500
+
+    _sweep_old_jobs(app)
+
+    try:
+        playlists = parse_exportify(job.extracted)
+    except ExportifyParseError as error:
+        app.logger.info("Uploaded archive is not a valid Exportify export: %s", error)
+        return None, None, str(error), 400
+    except (OSError, UnicodeError):
+        app.logger.exception("Unable to read uploaded Exportify archive")
+        return None, None, "The uploaded export could not be read. Please try again.", 400
+    return job, playlists, None, 201
+
+
+def update_payload(app: Flask) -> dict[str, object]:
+    """Report whether a newer SpotM3U release is available.
+
+    The check is cached server-side by ``[update] check_interval_hours`` and
+    degrades to "no update known" on any network problem, so no caller ever
+    blocks or errors on the GitHub API. Both the Jinja notice and the JSON API
+    serve this one payload.
+    """
+    from . import __version__
+
+    if not app.config.get("UPDATE_CHECK", True):
+        return {
+            "update_available": False,
+            "latest_version": None,
+            "current_version": __version__,
+            "error": "Update checks are disabled.",
+        }
+    interval = int(app.config.get("UPDATE_CHECK_INTERVAL_HOURS", 24)) * 60 * 60
+    repo = str(app.config.get("UPDATE_REPO", "p55d2k/spotm3u"))
+    info = check_for_updates(
+        repo=repo,
+        current_version=__version__,
+        interval_seconds=interval,
+        timeout=float(app.config.get("UPDATE_REQUEST_TIMEOUT", 10)),
+    )
+    return info.as_dict()
 
 
 def _selection_matches(job_directory: Path, playlist_id: str) -> bool:

@@ -24,13 +24,11 @@ export default defineConfig(({ mode }) => {
       // origins while developing; ``/api`` stays same-origin by design, so a
       // production build needs no proxy and no backend address.
       proxy: {
-        // Frontend code always calls ``/api/...`` (see src/lib/api.ts) and never
-        // learns the backend host or port. The prefix is stripped again because
-        // the Flask routes being migrated to still live at the top level
-        // (``/upload``, ``/processing/...``).
+        // Frontend code always calls ``/api/...`` (see src/lib/api.ts and
+        // docs/api.md) and never learns the backend host or port. The path is
+        // forwarded unchanged: the API lives under ``/api`` on both sides.
         "/api": {
           target: backend,
-          rewrite: (path) => path.replace(/^\/api/, ""),
         },
       },
     },
