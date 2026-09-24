@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Vite build output
+dist/
+dist-ssr/
+*.local
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/*
+ * The desktop-oriented surface colors that later tasks build the migrated
+ * interface on. They are intentionally plain, low-contrast neutrals rather
+ * than a themed palette.
+ */
+@theme {
+  --color-surface: #f6f6f7;
+  --color-surface-raised: #ffffff;
+  --color-edge: #d9d9de;
+  --color-ink: #1c1c1f;
+  --color-ink-muted: #6b6b74;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

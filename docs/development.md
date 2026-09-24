@@ -6,6 +6,8 @@
 - [`uv`](https://docs.astral.sh/uv/)
 - FFmpeg on `PATH` for tests or development flows that perform online audio
   conversion
+- Node.js `^20.19.0` or `>=22.12.0` with npm, only when working on the React
+  frontend under `frontend/`
 
 Install the locked development environment from the repository root:
 
@@ -58,6 +60,28 @@ disabled and the Windows build is windowed instead of console-based; see
 [packaging.md](packaging.md). Build a local distributable with
 `uv run build`.
 
+The Python application in `src/spotm3u/` is unchanged by the React frontend:
+Flask keeps serving its existing templates and static files, and the frontend is
+not yet part of the application build. It is a new foundation that later tasks
+migrate to.
+
+## Frontend
+
+The React + TypeScript frontend lives in `frontend/` and is built with Vite,
+Tailwind CSS, and Lucide. It is developed on its own for now, in a second
+terminal next to the Flask server:
+
+```bash
+cd frontend
+npm install            # once
+npm run dev            # Vite dev server on http://127.0.0.1:5173/
+npm run build          # type-check and emit frontend/dist/
+npm run typecheck      # type-check only
+```
+
+Requests to Flask use same-origin `/api/...` paths (see
+`frontend/src/lib/api.ts`), so no host or port is hardcoded in frontend code.
+
 ## Checks
 
 ```bash
@@ -98,6 +122,7 @@ src/spotm3u/
   m3u/                   playlist writing
   templates/             Jinja templates
   static/                CSS
+frontend/                React + Vite frontend (foundation; not yet built by the app)
 tests/                   pytest suite
 packaging/               PyInstaller spec and release helpers
 docs/                    public project documentation
