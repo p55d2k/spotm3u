@@ -217,8 +217,10 @@ def load_config(path: str | Path | None = None) -> Config:
 
     merged: dict[str, Any] = {}
     for file_key, attribute in _FIELD_ATTRIBUTES.items():
-        section, name = file_key.split(".")
-        raw_section = data.get(section)
+        section, name = file_key.rsplit(".", 1)
+        raw_section: Any = data
+        for part in section.split("."):
+            raw_section = raw_section.get(part) if isinstance(raw_section, dict) else None
         if not isinstance(raw_section, dict) or name not in raw_section:
             continue
         expected = _FIELD_TYPES[attribute]

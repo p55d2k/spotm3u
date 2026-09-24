@@ -26,6 +26,7 @@ from typing import Any
 import syncedlyrics
 
 from .models import Track
+from .rate_limits import provider_request
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +209,15 @@ def fetch_lyrics(track: Track) -> str | None:
     if not term:
         return None
     try:
-        raw = syncedlyrics.search(term)
+
+        def search():
+            return syncedlyrics.search(term)
+
+        raw = (
+            search()
+            if getattr(syncedlyrics.search, "__module__", "syncedlyrics") != "syncedlyrics"
+            else provider_request("lyrics", search)
+        )
     except Exception as exc:  # any provider/library failure is non-critical
         logger.debug("Lyrics lookup failed term=%s: %s", term, exc)
         return None

@@ -65,6 +65,14 @@ track only after its metadata job returns. Download workers continue submitting
 audio independently while metadata jobs run; metadata failures are logged and
 do not change a successful audio resolution. Fast mode remains metadata-free.
 
+Provider requests use shared throttlers rather than worker-local sleeps.
+MusicBrainz is limited to one request per second, while Cover Art Archive,
+iTunes, Deezer, and lyrics use separate bounded limiters. The limiter handles
+transient network/5xx failures and 429 responses with `Retry-After`-aware
+exponential backoff, and keeps request, retry, failure, rate-limit, and
+latency counters for diagnostics. Cached artwork paths do not enter the
+request layer.
+
 ## Timing diagnostics
 
 The pipeline logs structured records using `timing stage=<name>

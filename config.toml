@@ -102,6 +102,7 @@
 [metadata]
 # Maximum number of bounded metadata workers used while downloads continue.
 # workers = 3
+
 # Master switch for writing anything into the downloaded audio file. Set to
 # false for "just the audio": no text tags, album cover, artist image or
 # lyrics are embedded (nothing is downloaded for them either), so the MP3s stay

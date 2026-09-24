@@ -17,6 +17,8 @@ from typing import Any, Literal
 
 import requests
 
+from .rate_limits import provider_request
+
 logger = logging.getLogger(__name__)
 
 _MUSICBRAINZ_BASE = "https://musicbrainz.org/ws/2"
@@ -45,6 +47,25 @@ _MUSICBRAINZ_ARTIST_LIMIT = 10
 
 
 _USER_AGENT = "spotm3u/0.1 (https://github.com/zk/spotm3u)"
+
+
+def _provider_get(url: str, **kwargs: Any):
+    provider = (
+        "musicbrainz"
+        if "musicbrainz.org" in url
+        else "coverartarchive"
+        if "coverartarchive.org" in url
+        else "itunes"
+        if "itunes.apple.com" in url
+        else "deezer"
+    )
+
+    def request():
+        return requests.get(url, **kwargs)
+
+    if getattr(requests.get, "__module__", "requests.api") != "requests.api":
+        return request()
+    return provider_request(provider, request)
 
 
 @dataclass(frozen=True)
@@ -193,7 +214,7 @@ def _search_musicbrainz_release(artist: str, album: str) -> list[dict[str, Any]]
     headers = {"User-Agent": _USER_AGENT}
 
     try:
-        resp = requests.get(url, params=params, headers=headers, timeout=_REQUEST_TIMEOUT)
+        resp = _provider_get(url, params=params, headers=headers, timeout=_REQUEST_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
         return data.get("release-groups", [])
@@ -208,7 +229,7 @@ def _get_coverart_candidates(release_group_id: str) -> list[ArtworkCandidate]:
     headers = {"User-Agent": _USER_AGENT}
 
     try:
-        resp = requests.get(url, headers=headers, timeout=_REQUEST_TIMEOUT)
+        resp = _provider_get(url, headers=headers, timeout=_REQUEST_TIMEOUT)
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
@@ -250,7 +271,7 @@ def _search_itunes_artwork(artist: str, album: str, title: str = "") -> list[Art
         if not params["term"].strip():
             continue
         try:
-            response = requests.get(
+            response = _provider_get(
                 _ITUNES_BASE,
                 params={**params, "limit": 25, "media": "music"},
                 headers={"User-Agent": _USER_AGENT},
@@ -291,7 +312,7 @@ def _search_itunes_song_artwork(artist: str, title: str) -> list[ArtworkCandidat
     if not term:
         return []
     try:
-        response = requests.get(
+        response = _provider_get(
             _ITUNES_BASE,
             params={"term": term, "entity": "song", "limit": 25, "media": "music"},
             headers={"User-Agent": _USER_AGENT},
@@ -331,7 +352,7 @@ def _download_artwork(url: str) -> bytes | None:
     """Download artwork image data."""
     headers = {"User-Agent": _USER_AGENT}
     try:
-        resp = requests.get(url, headers=headers, timeout=_REQUEST_TIMEOUT)
+        resp = _provider_get(url, headers=headers, timeout=_REQUEST_TIMEOUT)
         resp.raise_for_status()
         content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].lower()
         data = resp.content
@@ -468,7 +489,7 @@ def _deezer_artist_rank(record: dict[str, Any]) -> tuple[int, int, int]:
 def _deezer_get(url: str, params: dict[str, Any] | None = None) -> Any:
     """Fetch one Deezer resource, returning None instead of raising."""
     try:
-        response = requests.get(
+        response = _provider_get(
             url,
             params=params or {},
             headers={"User-Agent": _USER_AGENT},
@@ -549,7 +570,7 @@ def _deezer_release_evidence(
 def _musicbrainz_get(entity: str, params: dict[str, Any]) -> dict[str, Any]:
     """Fetch one MusicBrainz entity, returning an empty mapping on any failure."""
     try:
-        response = requests.get(
+        response = _provider_get(
             f"{_MUSICBRAINZ_BASE}/{entity}",
             params=params,
             headers={"User-Agent": _USER_AGENT},
