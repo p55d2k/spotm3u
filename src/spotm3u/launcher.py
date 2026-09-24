@@ -8,7 +8,8 @@ WebView window instead of an external browser. Closing the window shuts Flask
 down and the process exits.
 
 Developers never need the native window: ``uv run dev`` (``spotm3u.dev``)
-serves the same app in a normal browser with the debug reloader.
+serves the same app in a normal browser with the debug reloader, next to the
+Vite development server for the React frontend.
 
 The helpers here -- free-port selection, server readiness polling, bundle
 config discovery, and native error reporting -- are shared with the desktop

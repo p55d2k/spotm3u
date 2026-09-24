@@ -1,21 +1,42 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// The React frontend is developed against the Flask backend, which runs
-// separately (``uv run dev``). Task 103 wires the ``/api`` development proxy
-// between the two; until then this config only builds and serves the app.
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  server: {
-    // Fixed, strict port so the address in use never changes silently while
-    // the backend is started alongside the dev server.
-    host: "127.0.0.1",
-    port: 5173,
-    strictPort: true,
-  },
-  build: {
-    outDir: "dist",
-    emptyOutDir: true,
-  },
+// ``uv run dev`` starts this server next to Flask and passes the address Flask
+// ended up on, so the proxy below and the backend can never disagree.
+// ``npm run dev`` on its own keeps working: the default is the port Flask
+// prefers (see ``web.port`` in config.toml).
+const DEFAULT_BACKEND = "http://127.0.0.1:5001";
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, ".", "SPOTM3U_");
+  const backend = env.SPOTM3U_DEV_BACKEND || DEFAULT_BACKEND;
+
+  return {
+    plugins: [react(), tailwindcss()],
+    server: {
+      // Fixed, strict port so the address in use never changes silently while
+      // the backend is started alongside the dev server.
+      host: "127.0.0.1",
+      port: 5173,
+      strictPort: true,
+      // Development only. The proxy exists because Vite and Flask are two
+      // origins while developing; ``/api`` stays same-origin by design, so a
+      // production build needs no proxy and no backend address.
+      proxy: {
+        // Frontend code always calls ``/api/...`` (see src/lib/api.ts) and never
+        // learns the backend host or port. The prefix is stripped again because
+        // the Flask routes being migrated to still live at the top level
+        // (``/upload``, ``/processing/...``).
+        "/api": {
+          target: backend,
+          rewrite: (path) => path.replace(/^\/api/, ""),
+        },
+      },
+    },
+    build: {
+      outDir: "dist",
+      emptyOutDir: true,
+    },
+  };
 });

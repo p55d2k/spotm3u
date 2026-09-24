@@ -152,10 +152,12 @@ uv sync
 uv run dev
 ```
 
-`uv run dev` starts the Flask development server on
-<http://127.0.0.1:5001/> (binding to loopback only) with the debug reloader, so
-frontend and backend changes are picked up without rebuilding. The UI is used
-in a normal browser with full developer tools.
+`uv run dev` starts the Flask development server (bound to loopback only, with
+the debug reloader) and the Vite development server for the React frontend
+together; open <http://127.0.0.1:5173/>, which forwards `/api/*` to Flask on
+port 5001. Backend changes reload and the frontend hot-reloads, so nothing
+needs rebuilding, and Ctrl+C stops both. The UI is used in a normal browser
+with full developer tools.
 
 Use `uv run app` to try the production desktop workflow from source: it starts
 the same Flask app on a free loopback port and shows it inside a native

@@ -6,8 +6,8 @@
 - [`uv`](https://docs.astral.sh/uv/)
 - FFmpeg on `PATH` for tests or development flows that perform online audio
   conversion
-- Node.js `^20.19.0` or `>=22.12.0` with npm, only when working on the React
-  frontend under `frontend/`
+- Node.js `^20.19.0` or `>=22.12.0` with npm, needed by `uv run dev` and the
+  React frontend under `frontend/`
 
 Install the locked development environment from the repository root:
 
@@ -15,18 +15,33 @@ Install the locked development environment from the repository root:
 uv sync --locked --dev
 ```
 
-Start the development server with:
+Start both development servers with one command:
 
 ```bash
 uv run dev
 ```
 
+It runs the Flask application and the Vite development server for the React
+frontend side by side, forwarding the output of both to this terminal labelled
+per process:
+
+```text
+  frontend  http://127.0.0.1:5173/  (proxies /api)
+  backend   http://127.0.0.1:5001/
+```
+
+Open the frontend address: Vite serves the React app and forwards `/api/*` to
+Flask, so the browser never talks to Flask directly and no host or port is
+hardcoded in frontend code. Ctrl+C stops both processes, and when either one
+exits on its own the other is stopped with it.
+
 Configuration is optional and is read from `./config.toml`, or from the path
-in `SPOTM3U_CONFIG`. The development server binds to loopback (`127.0.0.1`)
-and prefers the configured `web.port` (default 5001), falling back to a free
-port when that one is taken. Flask's debug reloader is enabled, so frontend and
-backend changes are picked up without rebuilding anything; the UI is used in a
-normal browser with full developer tools.
+in `SPOTM3U_CONFIG`. Both servers bind to loopback (`127.0.0.1`) and prefer
+their conventional port (Flask's configured `web.port`, default 5001; Vite's
+5173), each falling back to a free port when one is taken. Flask's debug
+reloader is enabled, so backend changes are picked up without restarting, and
+Vite hot-reloads the frontend; the UI is used in a normal browser with full
+developer tools.
 
 The native desktop application is a separate, production-only workflow:
 
@@ -68,19 +83,24 @@ migrate to.
 ## Frontend
 
 The React + TypeScript frontend lives in `frontend/` and is built with Vite,
-Tailwind CSS, and Lucide. It is developed on its own for now, in a second
-terminal next to the Flask server:
+Tailwind CSS, and Lucide. `uv run dev` starts it together with Flask: Vite
+serves it on <http://127.0.0.1:5173/> and proxies `/api/*` to the backend.
+
+It can also be run on its own against the default Flask port (`web.port`):
 
 ```bash
 cd frontend
 npm install            # once
-npm run dev            # Vite dev server on http://127.0.0.1:5173/
+npm run dev            # Vite dev server only
 npm run build          # type-check and emit frontend/dist/
 npm run typecheck      # type-check only
 ```
 
 Requests to Flask use same-origin `/api/...` paths (see
-`frontend/src/lib/api.ts`), so no host or port is hardcoded in frontend code.
+`frontend/src/lib/api.ts`): the frontend adds the `/api` prefix and the Vite
+development proxy strips it again. Because `/api` is same-origin by design, a
+production build needs no proxy and no backend address, so no environment
+values are read at build time.
 
 ## Checks
 
@@ -112,7 +132,7 @@ src/spotm3u/
   metadata.py            ID3 metadata read/write and enrichment
   config.py              optional TOML and environment configuration
   desktop.py             native WebView shell used by the packaged application
-  dev.py                 ``uv run dev`` development server
+  dev.py                 ``uv run dev`` supervisor for the Flask and Vite servers
   build.py               ``uv run build`` PyInstaller shortcut
   jobs.py                upload/job lifecycle
   resolution.py          track resolution orchestration

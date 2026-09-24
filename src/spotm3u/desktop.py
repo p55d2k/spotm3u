@@ -19,8 +19,8 @@ WebView storage location, so the choices the pages keep (the theme, a dismissed
 update notice) survive a restart as they would in any desktop application.
 
 The WebView is a production shell only. Developers use ``uv run dev``, which
-starts the same Flask app in a normal browser, and never need the native window
-or a packaged executable. ``SPOTM3U_NO_WEBVIEW=1`` (equivalently
+starts the same Flask app in a normal browser next to the Vite frontend server,
+and never need the native window or a packaged executable. ``SPOTM3U_NO_WEBVIEW=1`` (equivalently
 ``open_window=False``) disables the native window and simply serves; that is how
 the release smoke test drives a packaged build over HTTP on a headless runner.
 
