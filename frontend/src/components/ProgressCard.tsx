@@ -11,6 +11,7 @@ export function ProgressCard({
   statusLine,
   percent,
   searched,
+  resolved,
   completed,
   total,
   successful,
@@ -23,6 +24,7 @@ export function ProgressCard({
   statusLine: string;
   percent: number;
   searched: number;
+  resolved: number;
   completed: number;
   total: number;
   successful: number;
@@ -33,7 +35,7 @@ export function ProgressCard({
   error?: string | null;
   children?: ReactNode;
 }) {
-  const width = `${Math.round(percent * 100)}%`;
+  const stageWidth = (value: number) => `${Math.min(100, (value / (total || 1)) * 100 / 3)}%`;
   return (
     <section className="mb-6 flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
       <p className="m-0 text-md font-semibold">{statusLine}</p>
@@ -45,10 +47,26 @@ export function ProgressCard({
           aria-valuemax={100}
           aria-valuenow={Math.round(percent * 100)}
         >
-          <div
-            className="h-full rounded-sm bg-accent transition-[width] duration-300"
-            style={{ width, background: percent >= 1 ? "var(--spot-success)" : undefined }}
-          />
+          <div className="flex h-full gap-px">
+            <div
+              className="h-full bg-accent transition-[width] duration-300"
+              style={{ width: stageWidth(searched) }}
+              title="Search progress"
+            />
+            <div
+              className="h-full bg-accent/80 transition-[width] duration-300"
+              style={{ width: stageWidth(resolved) }}
+              title="Audio resolution progress"
+            />
+            <div
+              className="h-full rounded-r-sm bg-success transition-[width] duration-300"
+              style={{
+                width: stageWidth(completed),
+                background: percent >= 1 ? "var(--spot-success)" : undefined,
+              }}
+              title="Metadata and finalization progress"
+            />
+          </div>
         </div>
         {eta && (
           <span
@@ -64,6 +82,12 @@ export function ProgressCard({
           <dt className="text-xs font-medium tracking-[0.04em] text-ink-muted uppercase">Searched</dt>
           <dd className="mt-1 m-0 text-lg font-semibold">
             {fmt(searched)} / {fmt(total)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium tracking-[0.04em] text-ink-muted uppercase">Audio ready</dt>
+          <dd className="mt-1 m-0 text-lg font-semibold">
+            {fmt(resolved)} / {fmt(total)}
           </dd>
         </div>
         <div>

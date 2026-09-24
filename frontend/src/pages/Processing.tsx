@@ -118,6 +118,12 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
     state?.playlist.total_tracks ??
     header?.playlists.find((p) => p.id === playlistId)?.track_count ??
     null;
+  const activeStage =
+    state?.tracks.find((track) => track.status === "downloading")?.status ??
+    state?.tracks.find((track) => track.status === "validating-audio")?.status ??
+    state?.tracks.find((track) => track.status === "enriching-metadata")?.status ??
+    state?.tracks.find((track) => track.status === "searching")?.status ??
+    state?.current_track?.status;
 
   return (
     <>
@@ -148,14 +154,20 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
 
       {state && phase === "active" && (
         <ProgressCard
-          statusLine={statusLabel(state.status)}
-          percent={progressFraction(
-            state.searched,
-            state.completed,
-            state.progress_total || state.playlist.total_tracks,
-          )}
-          searched={state.searched}
-          completed={state.completed}
+        statusLine={
+          activeStage
+            ? statusLabel(activeStage)
+            : statusLabel(state.status)
+        }
+        percent={progressFraction(
+          state.searched,
+          state.resolved,
+          state.completed,
+          state.progress_total || state.playlist.total_tracks,
+        )}
+        searched={state.searched}
+        resolved={state.resolved}
+        completed={state.completed}
           total={state.progress_total || state.playlist.total_tracks}
           successful={state.successful}
           failed={state.failed}

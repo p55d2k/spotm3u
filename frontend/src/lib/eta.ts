@@ -7,10 +7,15 @@
  * backend estimates anything.
  */
 
-export function progressFraction(searched: number, completed: number, total: number): number {
+export function progressFraction(
+  searched: number,
+  resolved: number,
+  completed: number,
+  total: number,
+): number {
   const base = total || 1;
   if (base <= 0) return 0;
-  return Math.min(1, (searched / base) * 0.5 + (completed / base) * 0.5);
+  return Math.min(1, (searched + resolved + completed) / base / 3);
 }
 
 function secondsToParts(remainingSeconds: number): string[] {

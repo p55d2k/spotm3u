@@ -146,10 +146,19 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
                 ? "Batch complete"
                 : state.status === "failed"
                   ? "Batch finished with errors"
-                  : "Processing playlists"
+                  : state.playlists.some((playlist) =>
+                      playlist.tracks.some((track) => track.status === "downloading"),
+                    )
+                    ? "Downloading audio"
+                    : state.playlists.some((playlist) =>
+                        playlist.tracks.some((track) => track.status === "enriching-metadata"),
+                      )
+                      ? "Finalizing metadata"
+                      : "Searching for audio"
             }
-            percent={progressFraction(state.searched, state.completed, state.total)}
+            percent={progressFraction(state.searched, state.resolved, state.completed, state.total)}
             searched={state.searched}
+            resolved={state.resolved}
             completed={state.completed}
             total={state.total}
             successful={state.successful}
@@ -181,7 +190,8 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
                   <h3 className="m-0 text-base">{playlist.playlist.name}</h3>
                   <p className="m-0 text-sm text-ink-muted" role="status">
                     {statusLabel(playlist.status)} · {playlist.searched} /{" "}
-                    {playlist.playlist.total_tracks} found · {playlist.completed} /{" "}
+                    {playlist.playlist.total_tracks} found · {playlist.resolved} /{" "}
+                    {playlist.playlist.total_tracks} audio ready · {playlist.completed} /{" "}
                     {playlist.playlist.total_tracks} tracks · {playlist.successful} successful ·{" "}
                     {playlist.failed} failed
                   </p>

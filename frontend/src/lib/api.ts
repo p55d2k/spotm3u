@@ -142,6 +142,7 @@ export type JobState = {
   completed: number;
   progress_total: number;
   searched: number;
+  resolved: number;
   successful: number;
   failed: number;
   ambiguous: number;
@@ -173,6 +174,7 @@ export type BatchState = {
   status: "completed" | "running" | "failed";
   completed: number;
   searched: number;
+  resolved: number;
   total: number;
   successful: number;
   failed: number;

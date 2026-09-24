@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -171,6 +171,7 @@ class ProcessingJob:
         self._status: JobStatus = "queued"
         self._current_index: int | None = None
         self._searched: int = 0
+        self._resolved: int = 0
         self._error: str | None = None
         self._m3u_path: Path | None = None
         self._deadline: float | None = time.monotonic() + timeout if timeout is not None else None
@@ -281,6 +282,7 @@ class ProcessingJob:
             self._forget_artwork_for_missing_outputs()
             self._pending = indices
             self._searched = 0
+            self._resolved = 0
             self._error = None
             self._status = "running"
             self._deadline = time.monotonic() + self.timeout if self.timeout is not None else None
@@ -410,22 +412,35 @@ class ProcessingJob:
             max_workers=self.max_metadata_workers,
             thread_name_prefix=f"spotm3u-metadata-{self.job_id}",
         )
-        metadata_futures = []
+        metadata_errors: list[Exception] = []
+
+        def finalize_metadata(
+            future: Future,
+            index: int,
+            result: TrackResolution,
+        ) -> None:
+            try:
+                metadata_result = future.result()
+            except Exception as exc:
+                metadata_errors.append(exc)
+                return
+            if metadata_result.errors:
+                TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
+                    "metadata enrichment errors=%s", "; ".join(metadata_result.errors)
+                )
+            self._finalize_track(index, result)
 
         def submit_metadata(index: int, result: TrackResolution) -> None:
+            with self._lock:
+                self._resolved += 1
             if not result.successful or result.local_path is None:
                 self._finalize_track(index, result)
                 return
             self._set_track_status(index, "enriching-metadata")
-            metadata_futures.append(
-                (
-                    index,
-                    result,
-                    metadata_pool.submit(
-                        MetadataJob(self.tracks[index], self.output_dir, result.local_path).run
-                    ),
-                )
+            future = metadata_pool.submit(
+                MetadataJob(self.tracks[index], self.output_dir, result.local_path).run
             )
+            future.add_done_callback(lambda completed: finalize_metadata(completed, index, result))
 
         if self.max_workers <= 1 or len(selected) <= 1:
             for index in selected:
@@ -435,18 +450,9 @@ class ProcessingJob:
                 result = resolver.resolve(tracks[index], stage_callback=self._stage_reporter(index))
                 submit_metadata(index, result)
                 self._mark_searched(index)
-            future_to_metadata = {
-                future: (index, result) for index, result, future in metadata_futures
-            }
-            for future in as_completed(future_to_metadata):
-                index, result = future_to_metadata[future]
-                metadata_result = future.result()
-                if metadata_result.errors:
-                    TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
-                        "metadata enrichment errors=%s", "; ".join(metadata_result.errors)
-                    )
-                self._finalize_track(index, result)
             metadata_pool.shutdown()
+            if metadata_errors:
+                raise metadata_errors[0]
             return
 
         def phase_one(index):
@@ -498,16 +504,9 @@ class ProcessingJob:
                     self._check_deadline()
                     index = future_to_index[future]
                     submit_metadata(index, future.result())
-        future_to_metadata = {future: (index, result) for index, result, future in metadata_futures}
-        for future in as_completed(future_to_metadata):
-            index, result = future_to_metadata[future]
-            metadata_result = future.result()
-            if metadata_result.errors:
-                TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
-                    "metadata enrichment errors=%s", "; ".join(metadata_result.errors)
-                )
-            self._finalize_track(index, result)
         metadata_pool.shutdown()
+        if metadata_errors:
+            raise metadata_errors[0]
 
     def _check_deadline(self) -> None:
         """Raise when the whole job has exceeded its ``timeout`` budget."""
@@ -655,6 +654,7 @@ class ProcessingJob:
                 # progress bar is measured against the retry set, not the playlist.
                 "progress_total": len(progress),
                 "searched": self._searched,
+                "resolved": self._resolved,
                 "successful": sum(state.status == "complete" for state in self._track_states),
                 "failed": sum(state.status == "failed" for state in self._track_states),
                 "ambiguous": sum(state.status == "ambiguous" for state in self._track_states),

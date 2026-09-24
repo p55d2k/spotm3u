@@ -168,6 +168,7 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
     total = sum(int(state["playlist"]["total_tracks"]) for state in states)
     completed = sum(int(state["completed"]) for state in states)
     searched = sum(int(state["searched"]) for state in states)
+    resolved = sum(int(state["resolved"]) for state in states)
     return {
         "status": (
             "completed"
@@ -178,6 +179,7 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
         ),
         "completed": completed,
         "searched": searched,
+        "resolved": resolved,
         "total": total,
         "successful": sum(int(state["successful"]) for state in states),
         "failed": sum(int(state["failed"]) for state in states),

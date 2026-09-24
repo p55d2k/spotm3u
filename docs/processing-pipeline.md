@@ -58,6 +58,14 @@ existing `MetadataResult`, preserving provider behavior and cache semantics.
 This is a queueable boundary for Task 97 without starting additional workers
 or changing request rates in this task.
 
+Live job snapshots expose three separate milestones: `searched` counts tracks
+whose local/online search phase has finished, `resolved` counts tracks whose
+audio resolution (local match, download, or terminal failure) has finished, and
+`completed` counts tracks whose metadata enrichment and finalization have also
+finished. The processing UI displays all three as equal thirds of the progress
+bar, so slow downloads or metadata work cannot look like an idle job; download
+and metadata progress can advance concurrently in their own thirds.
+
 Task 97 now uses a bounded metadata pool. Normal web jobs defer enrichment
 from the resolver, submit completed audio files to up to
 `metadata.workers` workers (default `3`, capped at `8`), and finalize each
