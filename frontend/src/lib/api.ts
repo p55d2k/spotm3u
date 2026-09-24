@@ -3,9 +3,8 @@
  * the development proxy and the packaged application can each route ``/api``
  * to the backend without frontend code knowing the host or port.
  *
- * The payload types mirror ``docs/api.md`` and the job snapshots the Jinja
- * pages already consume (``ProcessingJob.snapshot()`` and the batch summary in
- * ``spotm3u/web_jobs.py``). No backend logic lives here: the client only names
+ * The payload types mirror ``docs/api.md`` and the job snapshots exposed by
+ * ``spotm3u/web_jobs.py``. No backend logic lives here: the client only names
  * the endpoints and shapes a typed answer from what the API returns.
  */
 export const API_PREFIX = "/api";

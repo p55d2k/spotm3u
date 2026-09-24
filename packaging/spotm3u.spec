@@ -95,8 +95,7 @@ elif os.environ.get(SKIP_FRONTEND_ENV) != "1":
         f"{SKIP_FRONTEND_ENV}=1 to package an existing build deliberately"
     )
 
-# spotm3u package data: templates and static assets live inside the package.
-datas += collect_data_files("spotm3u")
+# All other spotm3u data files are collected inside the module itself.
 hiddenimports += collect_submodules("spotm3u")
 
 # pywebview (the desktop WebView shell) loads its platform backend dynamically;

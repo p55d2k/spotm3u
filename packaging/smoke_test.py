@@ -1,8 +1,8 @@
 """End-to-end smoke test for a packaged SpotM3U bundle or release archive.
 
 Starts the bundled executable directly -- no system Python, uv, or FFmpeg is
-used -- then exercises the web server, a rendered template, static assets, the
-built React application, and the bundled FFmpeg binaries. Understands both the
+used -- then exercises the web server, the built React application and its
+assets, and the bundled FFmpeg binaries. Understands both the
 onedir layout (executable and ``_internal`` beside each other) and the macOS
 ``SpotM3U.app`` bundle layout.
 Exits non-zero on any failure so CI treats the run as a failed build.
@@ -32,10 +32,10 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-HOME_MARKER = "Open Exportify"
 # The mount point Flask serves the built React application from
 # (``spotm3u.frontend.MOUNT``); kept literal so this helper stays standalone.
-_REACT_MOUNT = "/app"
+# An empty string places it at ``/``.
+_REACT_MOUNT = ""
 # The root element ``frontend/index.html`` renders the React tree into.
 _REACT_MARKER = 'id="root"'
 _SCRIPT_SRC = re.compile(r"<script[^>]+src=\"([^\"]+)\"")
@@ -179,12 +179,12 @@ def check_react_ui(port: int) -> None:
 def check_reported_version(port: int, expected: str) -> None:
     """Assert the packaged app reports the release it was built from.
 
-    ``/update/check`` always echoes the running ``spotm3u.__version__``, even
+    ``/api/update`` always echoes the running ``spotm3u.__version__``, even
     when the GitHub request itself fails, so this verifies the release workflow
     stamped the version into the frozen bundle without depending on the network
     or on GitHub being reachable at build time.
     """
-    status, body = _get(f"http://127.0.0.1:{port}/update/check")
+    status, body = _get(f"http://127.0.0.1:{port}/api/update")
     assert status == 200, f"update check returned {status}"
     reported = json.loads(body).get("current_version")
     assert reported == expected, f"app reports version {reported!r}, expected {expected!r}"
@@ -212,18 +212,14 @@ def smoke_test(bundle: Path, expected_version: str | None = None) -> None:
     try:
         port, status, body = wait_for_home(proc, log_path)
         assert status == 200, f"home returned {status}"
-        assert HOME_MARKER in body, f"home template marker {HOME_MARKER!r} missing"
-
-        status, css = _get(f"http://127.0.0.1:{port}/static/style.css")
-        assert status == 200, f"static returned {status}"
-        assert css.strip(), "static stylesheet is empty"
+        assert _REACT_MARKER in body, "packaged home page is missing its React root element"
 
         check_react_ui(port)
 
         if expected_version:
             check_reported_version(port, expected_version)
 
-        assert _get(f"http://127.0.0.1:{port}/no-such-route")[0] == 404
+        assert _get(f"http://127.0.0.1:{port}/missing-asset.js")[0] == 404
         print(f"smoke test passed: {exe} on 127.0.0.1:{port}")
     finally:
         proc.terminate()

@@ -198,7 +198,7 @@ live processing rows for completed tracks. The `<img>` element has a consistent
 fixed size, aspect ratio and border radius in both light and dark themes; when
 artwork is missing or fails to load, a clean placeholder is shown instead of a
 broken image. Artwork is served locally from the artwork cache
-(`GET /processing/<job_id>/<playlist_id>/artwork/<index>`); the pages do not
+(`GET /api/jobs/<job_id>/playlists/<playlist_id>/artwork/<index>`); the client does not
 block on, or depend on, artwork being available.
 
 A track whose audio file was deleted by hand shows the placeholder, not its

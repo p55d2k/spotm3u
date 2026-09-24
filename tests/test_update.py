@@ -1,6 +1,5 @@
 """Tests for in-app GitHub release update checks."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -187,7 +186,7 @@ def test_check_route_with_an_available_update(monkeypatch) -> None:
     monkeypatch.setattr(update.sys, "platform", "linux")
 
     client = create_app().test_client()
-    response = client.get("/update/check")
+    response = client.get("/api/update")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -201,7 +200,7 @@ def test_check_route_honours_disabled_updates(monkeypatch) -> None:
     reset_cache(monkeypatch)
     client = create_app({"UPDATE_CHECK": False}).test_client()
 
-    response = client.get("/update/check")
+    response = client.get("/api/update")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -221,44 +220,9 @@ def test_check_route_caches_within_interval(monkeypatch) -> None:
     app = create_app({"UPDATE_CHECK_INTERVAL_HOURS": 24})
     client = app.test_client()
 
-    first = client.get("/update/check").get_json()
-    second = client.get("/update/check").get_json()
+    first = client.get("/api/update").get_json()
+    second = client.get("/api/update").get_json()
 
     assert first["update_available"] is True
     assert second == first
     assert len(calls) == 1
-
-
-def test_the_update_notice_ships_in_the_sidebar_footer() -> None:
-    client = create_app().test_client()
-
-    response = client.get("/")
-
-    assert response.status_code == 200
-    page = response.get_data(as_text=True)
-    # The control itself ships in the page, not just the script that drives it:
-    # a script querying an element that is never rendered is how the notice
-    # silently stopped appearing once already.
-    assert 'class="button button-ghost update-notice"' in page
-    assert "data-update-label>" in page
-    assert "/update/check" in page
-    # It belongs in the sidebar footer beside the theme toggle. As a page-level
-    # banner it pushed the whole page down every time the check resolved.
-    assert "data-update-notice" in page.split('class="sidebar-footer"', 1)[1]
-    # The toast's "Release notes" action has to go through the shell bridge:
-    # window.open does nothing in the desktop WebView, which is how the link
-    # used to do nothing at all. A browser run keeps window.open as the fallback.
-    notice = (Path(create_app().root_path) / "templates" / "_update_notice.html").read_text(
-        encoding="utf-8"
-    )
-    assert "api.open_url(target)" in notice
-    assert 'typeof api.open_url === "function"' in notice
-    assert 'window.open(target, "_blank", "noopener")' in notice
-    sidebar = (Path(create_app().root_path) / "templates" / "_sidebar.html").read_text(
-        encoding="utf-8"
-    )
-    assert '{% include "_update_notice.html" %}' in sidebar
-    header = (Path(create_app().root_path) / "templates" / "_header.html").read_text(
-        encoding="utf-8"
-    )
-    assert "_update_notice.html" not in header

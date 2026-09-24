@@ -54,14 +54,15 @@ uv run app
 become ready, and then presents the UI inside a native `SpotM3U` window
 (pywebview) instead of an external browser; closing the window shuts Flask down
 and exits the process. The window is frameless. On Windows and Linux the page
-draws its own title bar (`templates/_titlebar.html`), whose minimize, maximize
-and close buttons call a small pywebview JS API; on macOS the native AppKit
-traffic lights are restored instead (`desktop_macos.py`), leaving the page's bar
-as a transparent drag strip over a full-bleed content view. That same API
-(`WindowControls`) carries the two file operations that belong to the desktop
-rather than to a web page: the Exportify ZIP is picked in the OS file dialog
-(the chosen path stays in the shell and is collected by `POST /upload/picked`),
-and a generated M3U is saved through the OS save panel. The window also gets a
+draws its own title bar (the frontend's `TitleBar` component), whose minimize,
+maximize and close buttons call a small pywebview JS API; on macOS the native
+AppKit traffic lights are restored instead (`desktop_macos.py`), leaving the
+page's bar as a transparent drag strip over a full-bleed content view. That same
+API (`WindowControls`) carries the two file operations that belong to the
+desktop rather than to a web page: the Exportify ZIP is picked in the OS file
+dialog (the chosen path stays in the shell and is collected by
+`POST /api/upload/picked`), and a generated M3U is saved through the OS save
+panel. The window also gets a
 persistent WebView storage directory
 (`%LOCALAPPDATA%\SpotM3U`,
 `~/Library/Application Support/SpotM3U`, or `$XDG_DATA_HOME/spotm3u`;
@@ -76,11 +77,10 @@ disabled and the Windows build is windowed instead of console-based; see
 [packaging.md](packaging.md). Build a local distributable with
 `uv run build`.
 
-The Python application in `src/spotm3u/` is unchanged by the React frontend:
-Flask keeps serving its existing templates and static files, and the built React
-application is served alongside them under `/app` (`spotm3u/frontend.py`) until
-the migration makes it the only frontend. `uv run build` builds it and packs it
-into the distributable; see [packaging](packaging.md).
+Flask serves two things only: the JSON API under `/api` (`spotm3u/api.py`) and
+the built React application at `/` (`spotm3u/frontend.py`). There are no
+server-rendered pages. `uv run build` builds the frontend and packs it into the
+distributable; see [packaging](packaging.md).
 
 ## Frontend
 
@@ -107,7 +107,7 @@ environment values at build time.
 
 `uv run build` runs `npm ci` and `npm run build` before PyInstaller, so the
 distributable always carries the frontend from the checkout being built. A
-production build is served by Flask under `/app/`; see
+production build is served by Flask at `/`; see
 [packaging](packaging.md#the-react-frontend-in-the-bundle) for what lands in the
 bundle and how it is verified.
 
@@ -151,9 +151,7 @@ src/spotm3u/
   exportify/             Exportify ZIP parsing
   online/                search, ranking, downloads, errors, and validation
   m3u/                   playlist writing
-  templates/             Jinja templates
-  static/                CSS
-frontend/                React + Vite frontend (foundation; not yet built by the app)
+frontend/                React + Vite frontend, built and served at /
 tests/                   pytest suite
 packaging/               PyInstaller spec and release helpers
 docs/                    public project documentation

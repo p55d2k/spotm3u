@@ -142,17 +142,13 @@ def _fake_app(tmp_path: Path) -> Path:
     ffmpeg.mkdir(parents=True)
     for name in ("ffmpeg", "ffprobe"):
         (ffmpeg / name).write_bytes(b"bin")
-    resources = app / "Contents" / "Resources" / "spotm3u"
-    (resources / "templates").mkdir(parents=True)
-    (resources / "templates" / "index.html").write_bytes(b"<html>")
-    (resources / "static").mkdir(parents=True)
-    (resources / "static" / "style.css").write_bytes(b"body{}")
-    # The built React frontend the bundled Flask app serves under /app.
-    bundle_frontend = app / "Contents" / "Resources" / "frontend"
+    resources = app / "Contents" / "Resources"
+    # The built React frontend the bundled Flask app serves at the root.
+    bundle_frontend = resources / "frontend"
     (bundle_frontend / "assets").mkdir(parents=True)
     (bundle_frontend / "index.html").write_bytes(b'<div id="root"></div>')
     (bundle_frontend / "assets" / "app.js").write_bytes(b"console.log(1)")
-    (app / "Contents" / "Resources" / "icon.icns").write_bytes(_icns_payload())
+    (resources / "icon.icns").write_bytes(_icns_payload())
     return app
 
 
@@ -191,13 +187,6 @@ def _set_plist_key(app: Path, key: str, value: object) -> None:
             lambda app: shutil.rmtree(app / "Contents" / "Resources" / "ffmpeg"),
             "ffmpeg",
             id="missing-ffmpeg",
-        ),
-        pytest.param(
-            lambda app: (
-                app / "Contents" / "Resources" / "spotm3u" / "templates" / "index.html"
-            ).unlink(),
-            "resource",
-            id="missing-resource",
         ),
         pytest.param(
             lambda app: (app / "Contents" / "Resources" / "frontend" / "index.html").unlink(),

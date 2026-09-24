@@ -8,16 +8,14 @@ import tailwindcss from "@tailwindcss/vite";
 // prefers (see ``web.port`` in config.toml).
 const DEFAULT_BACKEND = "http://127.0.0.1:5001";
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "SPOTM3U_");
   const backend = env.SPOTM3U_DEV_BACKEND || DEFAULT_BACKEND;
 
   return {
-    // Flask serves the production build under ``/app`` (see spotm3u/frontend.py),
+    // Flask serves the production build at ``/`` (see spotm3u/frontend.py),
     // so the emitted asset URLs are absolute and keep working on a deep link.
-    // The dev server keeps serving from ``/``, which is what ``uv run dev`` and
-    // the docs point at.
-    base: command === "build" ? "/app/" : "/",
+    base: "/",
     plugins: [react(), tailwindcss()],
     server: {
       // Fixed, strict port so the address in use never changes silently while

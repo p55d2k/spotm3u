@@ -245,16 +245,6 @@ def test_selection_is_stored_and_read_back(tmp_path) -> None:
     assert client.get(f"/api/jobs/{job_id}").get_json()["selected_playlist_ids"] == ["0", "1"]
 
 
-def test_selection_keeps_a_single_playlist_readable_for_the_jinja_pages(tmp_path) -> None:
-    """Both frontends share one job state, so a selection made here is usable there."""
-    client = _client(tmp_path)
-    job_id = _upload(tmp_path, client)
-
-    client.put(f"/api/jobs/{job_id}/selection", json={"playlist_ids": ["1"]})
-
-    assert client.get(f"/processing/{job_id}/1").status_code == 200
-
-
 def test_selection_rejects_an_unknown_playlist(tmp_path) -> None:
     client = _client(tmp_path)
     job_id = _upload(tmp_path, client)
@@ -692,13 +682,3 @@ def test_a_wrong_method_on_an_api_route_answers_json(tmp_path) -> None:
 
     assert response.status_code == 405
     assert response.get_json()["code"] == "method_not_allowed"
-
-
-def test_the_jinja_pages_keep_their_own_404_page(tmp_path) -> None:
-    """The API's JSON fallbacks must not leak into the pages still in use."""
-    client = _client(tmp_path)
-
-    response = client.get("/does-not-exist")
-
-    assert response.status_code == 404
-    assert response.mimetype == "text/html"

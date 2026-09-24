@@ -1,10 +1,9 @@
 # JSON API
 
 The React frontend talks to SpotM3U exclusively through `/api/...` routes
-(`src/spotm3u/api.py`). They are a thin layer over the same helpers the Jinja
-pages use (`src/spotm3u/web_jobs.py`), so no matching, download, metadata, or
-lyrics logic lives in the HTTP layer, and both frontends read and write the
-same job state while the migration is in progress.
+(`src/spotm3u/api.py`). They are a thin layer over the shared job helpers in
+`src/spotm3u/web_jobs.py`, so no matching, download, metadata, or lyrics logic
+lives in the HTTP layer.
 
 The routes are served by the same Flask application as the pages, so they are
 same-origin in a production build. During development Vite proxies `/api/*` to
@@ -71,8 +70,8 @@ and answer `413 upload_too_large` as JSON instead of the page.
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>` | One playlist with its tracks in export order. |
 | `PUT` | `/api/jobs/<job_id>/selection` | Store the selection: `{"playlist_ids": ["0", "1"]}`. |
 
-Uploading sets the session the job routes are scoped to, exactly like the
-Jinja upload does. A playlist id is the playlist's position in the export
+Uploading sets the session the job routes are scoped to. A playlist id is the
+playlist's position in the export
 (`"0"`, `"1"`, ...), stable for the life of the upload.
 
 ### Convert
@@ -86,8 +85,8 @@ Jinja upload does. A playlist id is the playlist's position in the export
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/result` | The finished outcome of one playlist, with per-track lyrics and `m3u_url`. |
 | `GET` | `/api/jobs/<job_id>/result` | The outcome of every selected playlist, for the batch result screen (`409 job_running` until all of them finish). |
 
-Starting also stores the effective selection, so the status and result routes -
-and the still-served Jinja pages - find the same playlists afterwards. Each
+Starting also stores the effective selection, so the status and result routes
+find the same playlists afterwards. Each
 playlist gets its own M3U (`playlist-<id>.m3u` inside the download folder), so
 converting a batch never overwrites another playlist's file.
 
@@ -110,5 +109,4 @@ hand.
 
 The settings screen does not exist in the current application (it is task 118),
 so no settings endpoints exist either; `/api/meta` covers the read-only
-defaults the shell needs today. Nothing under `/api` renders HTML, and the
-Jinja routes are untouched until the migration removes them.
+defaults the shell needs today. Nothing under `/api` renders HTML.

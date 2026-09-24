@@ -2,9 +2,8 @@
 
 ``frontend/`` is built by Vite (``uv run build``, or ``npm run build`` while
 developing). The result is a static single-page application which Flask serves
-under ``/app`` - see ``docs/development.md`` and ``docs/packaging.md``. The
-Jinja pages keep owning ``/`` until the migration is finished (task 108), which
-is why the React build gets a mount point of its own.
+at ``/`` - see ``docs/development.md`` and ``docs/packaging.md``. Flask only
+ships the ``/api`` routes (``spotm3u.api``) and this single-page application.
 
 The built directory is looked up in this order:
 
@@ -25,7 +24,7 @@ import os
 import shutil
 from pathlib import Path
 
-from flask import Flask, Response, send_from_directory
+from flask import Flask, Response, abort, send_from_directory
 
 from .launcher import DEFAULT_HOST
 from .runtime import bundle_roots
@@ -35,10 +34,10 @@ FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DIST_DIRNAME = "dist"
 INDEX = "index.html"
 
-# Where the built application is served. Moving it to "/" is part of removing
-# the Jinja frontend; ``frontend/vite.config.ts`` builds with the same prefix,
-# which is what makes the hashed asset URLs resolve inside the dynamic routes.
-MOUNT = "/app"
+# Where the built application is served. ``frontend/vite.config.ts`` builds
+# with the same base, which is what makes the hashed asset URLs resolve inside
+# the client-side routes.
+MOUNT = "/"
 
 # Absolute path to a built directory, replacing the lookup above.
 DIST_ENV = "SPOTM3U_FRONTEND_DIST"
@@ -136,21 +135,27 @@ def dev_command(port: int) -> list[str]:
 
 
 def register_frontend(app: Flask) -> None:
-    """Serve the built React application under ``MOUNT``.
+    """Serve the built React application at ``MOUNT``.
 
     The routes only hand over files Vite produced and run no application logic.
     A path without a file suffix is a client-side route, so it answers with the
     shell (``index.html``) and the application renders it; a missing file with a
     suffix is a real 404. Until the frontend is built the routes explain how to
     build it instead of pretending the address does not exist.
+
+    The catch-all route sits under the API namespace too, so an unknown
+    ``/api/...`` path is handed back to the API's own 404 handler (a JSON error)
+    instead of being swallowed by the shell.
     """
 
-    @app.get(f"{MOUNT}/")
+    @app.get(MOUNT)
     def frontend_index() -> Response:
         return _index_response()
 
-    @app.get(f"{MOUNT}/<path:asset>")
+    @app.get(f"{MOUNT}<path:asset>")
     def frontend_asset(asset: str) -> Response:
+        if asset.startswith("api/"):
+            abort(404)
         directory = dist_directory()
         if directory is None:
             return _not_built_response()

@@ -4,33 +4,19 @@ import type { AnchorHTMLAttributes, MouseEvent } from "react";
 /**
  * The application's own hash-free router.
  *
- * In production Flask serves the built application under ``/app`` and deep links
- * arrive with that prefix; in development Vite serves from ``/``. Every internal
- * href therefore goes through ``appUrl``, which resolves the mount prefix once
- * from the current path instead of hard-coding it. Navigation uses the history
- * API so the native back/forward gestures keep working in the WebView, and the
- * current route is exposed through ``useRoute``.
+ * Flask and Vite both serve the application at ``/``. Navigation uses the
+ * history API so native back/forward gestures keep working in the WebView, and
+ * the current route is exposed through ``useRoute``.
  */
-
-/** The mount prefix of the SPA in this environment (``/app`` or ``""``). */
-export function basePath(): string {
-  const path = window.location.pathname;
-  return path === "/app" || path.startsWith("/app/") ? "/app" : "";
-}
 
 /** The absolute address of an internal route in this environment. */
 export function appUrl(route: string): string {
-  return basePath() + (route.startsWith("/") ? route : `/${route}`);
+  return route.startsWith("/") ? route : `/${route}`;
 }
 
-/** The current route, without the mount prefix (e.g. ``/jobs/123/playlists``). */
+/** The current route (e.g. ``/jobs/123/playlists``). */
 export function currentRoute(): string {
-  const path = window.location.pathname;
-  const base = basePath();
-  return (
-    (base && path.startsWith(base) ? path.slice(base.length) || "/" : path || "/") +
-    window.location.search
-  );
+  return (window.location.pathname || "/") + window.location.search;
 }
 
 type Listener = () => void;

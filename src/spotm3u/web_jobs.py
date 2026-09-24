@@ -1,6 +1,6 @@
 """Job, batch, and artwork helpers shared by the SpotM3U web routes.
 
-These helpers are used by the Flask views in :mod:`spotm3u.app`; keeping them
+These helpers are used by the Flask views in :mod:`spotm3u.api`; keeping them
 here leaves the application factory focused on routing and request handling.
 """
 
@@ -11,7 +11,7 @@ import re
 from functools import partial
 from pathlib import Path
 
-from flask import Flask, request, session
+from flask import Flask, session
 
 from .artwork import cached_artwork_path
 from .audio.resolver import LocalAudioResolver
@@ -115,8 +115,7 @@ def update_payload(app: Flask) -> dict[str, object]:
 
     The check is cached server-side by ``[update] check_interval_hours`` and
     degrades to "no update known" on any network problem, so no caller ever
-    blocks or errors on the GitHub API. Both the Jinja notice and the JSON API
-    serve this one payload.
+    blocks or errors on the GitHub API. The JSON API serves this one payload.
     """
     from . import __version__
 
@@ -358,20 +357,6 @@ def _sweep_old_jobs(app: Flask) -> None:
             app.logger.info("Removed %d abandoned upload job(s)", removed)
     except (OSError, ValueError):
         app.logger.exception("Unable to sweep abandoned upload jobs")
-
-
-def _requested_fast_mode(app: Flask) -> bool:
-    """Return the fast-mode choice for a start request.
-
-    The processing pages always submit the field (the checkbox plus a hidden
-    ``0``), so a posted value wins and a caller that sends nothing falls back to
-    the ``[fast] enabled`` configuration default. Every submitted value is
-    considered so the hidden fallback can never mask a checked box.
-    """
-    values = request.form.getlist("fast_mode") if request.method == "POST" else []
-    if not values:
-        return bool(app.config.get("FAST_MODE", False))
-    return any(str(value).strip().casefold() in {"1", "true", "on", "yes"} for value in values)
 
 
 def _migrate_legacy_download_dir(app: Flask, music_library: Path) -> Path:

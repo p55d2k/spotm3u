@@ -8,7 +8,7 @@ from flask import Flask
 
 from spotm3u import frontend
 
-_INDEX = '<!doctype html><div id="root"></div><script src="/app/assets/app.js"></script>'
+_INDEX = '<!doctype html><div id="root"></div><script src="/assets/app.js"></script>'
 
 
 def _built(directory: Path, *, assets: dict[str, str] | None = None) -> Path:
@@ -151,7 +151,7 @@ def test_dev_command_pins_the_host_and_port(monkeypatch) -> None:
 def test_index_is_served_at_the_mount(monkeypatch, tmp_path) -> None:
     client = _app(monkeypatch, _built(tmp_path / "dist")).test_client()
 
-    response = client.get("/app/")
+    response = client.get("/")
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
@@ -162,7 +162,7 @@ def test_hashed_assets_are_served(monkeypatch, tmp_path) -> None:
     dist = _built(tmp_path / "dist", assets={"index-abc123.js": "console.log(1)"})
     client = _app(monkeypatch, dist).test_client()
 
-    response = client.get("/app/assets/index-abc123.js")
+    response = client.get("/assets/index-abc123.js")
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "console.log(1)"
@@ -172,7 +172,7 @@ def test_client_side_routes_answer_with_the_shell(monkeypatch, tmp_path) -> None
     client = _app(monkeypatch, _built(tmp_path / "dist")).test_client()
 
     # A deep link has no file suffix, so it is a route, not a missing asset.
-    response = client.get("/app/playlists/0")
+    response = client.get("/playlists/0")
 
     assert response.status_code == 200
     assert 'id="root"' in response.get_data(as_text=True)
@@ -181,7 +181,7 @@ def test_client_side_routes_answer_with_the_shell(monkeypatch, tmp_path) -> None
 def test_a_missing_asset_is_a_real_404(monkeypatch, tmp_path) -> None:
     client = _app(monkeypatch, _built(tmp_path / "dist")).test_client()
 
-    response = client.get("/app/assets/vanished.js")
+    response = client.get("/assets/vanished.js")
 
     assert response.status_code == 404
     assert "root" not in response.get_data(as_text=True)
@@ -192,7 +192,7 @@ def test_files_outside_the_build_are_not_served(monkeypatch, tmp_path) -> None:
     (tmp_path / "secret.txt").write_text("do not serve", encoding="utf-8")
     client = _app(monkeypatch, dist).test_client()
 
-    response = client.get("/app/../secret.txt")
+    response = client.get("/assets/../secret.txt")
 
     assert response.status_code == 404
     assert "do not serve" not in response.get_data(as_text=True)
@@ -201,7 +201,19 @@ def test_files_outside_the_build_are_not_served(monkeypatch, tmp_path) -> None:
 def test_an_unbuilt_frontend_explains_how_to_build_it(monkeypatch, tmp_path) -> None:
     client = _app(monkeypatch, None).test_client()
 
-    response = client.get("/app/")
+    response = client.get("/")
 
     assert response.status_code == 404
     assert "uv run build" in response.get_data(as_text=True)
+
+
+def test_unknown_api_paths_still_answer_json(monkeypatch, tmp_path) -> None:
+    from spotm3u.app import create_app
+
+    client = create_app({"UPLOAD_ROOT": tmp_path, "MUSIC_LIBRARY": str(tmp_path)}).test_client()
+
+    response = client.get("/api/no-such-endpoint")
+
+    assert response.status_code == 404
+    assert response.is_json
+    assert response.get_json()["code"] == "not_found"

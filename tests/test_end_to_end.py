@@ -1,8 +1,8 @@
 """End-to-end web flow test.
 
-Exercises the complete user journey—upload → select → start → poll → result
-→ M3U download—with both local audio matching and online source resolution
-working together. Network and audio inspection boundaries are mocked.
+Exercises the complete user journey over the JSON API—upload → select → start →
+poll → result → M3U download—with both local audio matching and online source
+resolution working together. Network and audio inspection boundaries are mocked.
 """
 
 from __future__ import annotations
@@ -15,12 +15,6 @@ from spotm3u.app import create_app
 from spotm3u.online.search import SourceCandidate
 
 ZIP_HEADER = "Track URI,Track Name,Album Name,Artist Name(s),Duration (ms)\n"
-
-
-def _job_id(tmp_path) -> str:
-    return next(
-        path for path in tmp_path.iterdir() if path.name.startswith("job-")
-    ).name.removeprefix("job-")
 
 
 def _export_zip(*files: tuple[str, str]) -> bytes:
@@ -100,38 +94,28 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
 
     # 1. Upload
     resp = client.post(
-        "/upload",
+        "/api/upload",
         data={"file": (BytesIO(ZIP_CONTENT), "export.zip")},
         content_type="multipart/form-data",
     )
     assert resp.status_code == 201
-    assert b"Mixed" in resp.data
-    assert b"Short" in resp.data
-    job_id = _job_id(tmp_path)
+    payload = resp.get_json()
+    assert [playlist["name"] for playlist in payload["playlists"]] == ["Mixed", "Short"]
+    job_id = payload["job_id"]
 
     # 2. Select playlist
-    resp = client.post(f"/playlists/{job_id}/select", data={"playlist_id": "0"})
-    assert resp.status_code == 302
-    assert resp.headers["Location"] == f"/processing/{job_id}/0"
-
-    # 3. Processing page
-    resp = client.get(f"/processing/{job_id}/0")
+    resp = client.put(f"/api/jobs/{job_id}/selection", json={"playlist_ids": ["0"]})
     assert resp.status_code == 200
-    assert b"Mixed" in resp.data
-    assert b"3 tracks" in resp.data
 
-    # 4. Start processing
-    resp = client.post(f"/processing/{job_id}/0/start")
+    # 3. Start processing the stored selection
+    resp = client.post(f"/api/jobs/{job_id}/processing")
     assert resp.status_code == 202
-    state = resp.get_json()
-    assert state["playlist"]["total_tracks"] == 3
+    assert resp.get_json()["playlists"][0]["playlist"]["total_tracks"] == 3
 
-    # 5. Poll until complete
-    job = client.application.config["JOB_MANAGER"].get(job_id)
+    # 4. Poll until complete
+    job = client.application.config["JOB_MANAGER"].get(job_id, "0")
     job.wait(timeout=30)
-    resp = client.get(f"/processing/{job_id}/0/status")
-    assert resp.status_code == 200
-    final = resp.get_json()
+    final = client.get(f"/api/jobs/{job_id}/playlists/0/processing").get_json()
     assert final["status"] == "completed"
     assert final["successful"] == 2
     assert final["failed"] == 1
@@ -142,16 +126,13 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
     assert tracks["Second Song"]["resolution"] == "downloaded"
     assert tracks["Missing Song"]["resolution"] == "missing"
 
-    # 6. Result page
-    resp = client.get(f"/processing/{job_id}/0/result")
+    # 5. Result
+    resp = client.get(f"/api/jobs/{job_id}/playlists/0/result")
     assert resp.status_code == 200
-    assert b"Successfully resolved" in resp.data
-    assert b"Local matches" in resp.data
-    assert b"Missing" in resp.data
-    assert b"Total tracks: 3" in resp.data
+    assert resp.get_json()["status"] == "completed"
 
-    # 7. Download M3U
-    resp = client.get(f"/processing/{job_id}/0/playlist.m3u")
+    # 6. Download M3U
+    resp = client.get(f"/api/jobs/{job_id}/playlists/0/m3u")
     assert resp.status_code == 200
     assert b"#EXTM3U" in resp.data
     assert "attachment" in resp.headers["Content-Disposition"]
@@ -161,7 +142,7 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
     # Missing track must NOT appear in the M3U
     assert "Missing Song" not in body
 
-    # 8. Verify the downloaded file exists on disk
+    # 7. Verify the downloaded file exists on disk
     assert (download_dir / "Second Song - Online Artist.mp3").is_file()
     assert (music / "Local Artist - First Song.mp3").is_file()
 
@@ -179,29 +160,27 @@ def test_e2e_second_playlist_independent(tmp_path, monkeypatch):
     ).test_client()
 
     resp = client.post(
-        "/upload",
+        "/api/upload",
         data={"file": (BytesIO(ZIP_CONTENT), "export.zip")},
         content_type="multipart/form-data",
     )
     assert resp.status_code == 201
-    job_id = _job_id(tmp_path)
+    job_id = resp.get_json()["job_id"]
 
-    resp = client.post(f"/playlists/{job_id}/select", data={"playlist_id": "1"})
-    assert resp.status_code == 302
+    client.put(f"/api/jobs/{job_id}/selection", json={"playlist_ids": ["1"]})
+    started = client.post(f"/api/jobs/{job_id}/processing")
+    assert started.status_code == 202
 
-    resp = client.post(f"/processing/{job_id}/1/start")
-    assert resp.status_code == 202
-
-    job = client.application.config["JOB_MANAGER"].get(job_id)
+    job = client.application.config["JOB_MANAGER"].get(job_id, "1")
     job.wait(timeout=30)
 
-    final = client.get(f"/processing/{job_id}/1/status").get_json()
+    final = client.get(f"/api/jobs/{job_id}/playlists/1/processing").get_json()
     assert final["status"] == "completed"
     assert final["successful"] == 1
     assert final["failed"] == 0
     assert final["tracks"][0]["resolution"] == "downloaded"
 
-    resp = client.get(f"/processing/{job_id}/1/playlist.m3u")
+    resp = client.get(f"/api/jobs/{job_id}/playlists/1/m3u")
     assert resp.status_code == 200
     assert b"#EXTM3U" in resp.data
     assert "Alone" in resp.data.decode()
@@ -234,28 +213,28 @@ def test_e2e_all_tracks_local_no_online_search(tmp_path, monkeypatch):
     )
 
     resp = client.post(
-        "/upload",
+        "/api/upload",
         data={"file": (BytesIO(zip_data), "export.zip")},
         content_type="multipart/form-data",
     )
     assert resp.status_code == 201
-    job_id = _job_id(tmp_path)
+    job_id = resp.get_json()["job_id"]
 
-    client.post(f"/playlists/{job_id}/select", data={"playlist_id": "0"})
-    client.post(f"/processing/{job_id}/0/start")
+    client.put(f"/api/jobs/{job_id}/selection", json={"playlist_ids": ["0"]})
+    started = client.post(f"/api/jobs/{job_id}/processing")
+    assert started.status_code == 202
 
-    job = client.application.config["JOB_MANAGER"].get(job_id)
+    job = client.application.config["JOB_MANAGER"].get(job_id, "0")
     job.wait(timeout=10)
 
-    final = client.get(f"/processing/{job_id}/0/status").get_json()
+    final = client.get(f"/api/jobs/{job_id}/playlists/0/processing").get_json()
     assert final["status"] == "completed"
     assert final["successful"] == 2
     assert final["failed"] == 0
     assert all(t["resolution"] == "local" for t in final["tracks"])
 
-    resp = client.get(f"/processing/{job_id}/0/result")
-    assert resp.status_code == 200
-    assert b"Local matches" in resp.data
-    assert b"<dd>2</dd>" in resp.data
+    result = client.get(f"/api/jobs/{job_id}/playlists/0/result")
+    assert result.status_code == 200
+    assert result.get_json()["counts"]["successful"] == 2
 
     assert not search_called

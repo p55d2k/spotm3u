@@ -9,8 +9,8 @@ page to draw its own controls (which is what Windows and Linux do here).
 On macOS SpotM3U instead puts the native controls back and lets AppKit own
 close, minimize, fullscreen/zoom, hover states, accessibility and the native
 fullscreen traffic-light reveal behaviour. The page only contributes a
-transparent drag strip (see ``templates/_titlebar.html``), so nothing on the
-page needs to fake a macOS traffic light.
+transparent drag strip (the frontend's ``TitleBar``), so nothing on the page
+needs to fake a macOS traffic light.
 
 The one wrinkle is timing: pywebview only builds the native NSWindow once the
 GUI loop starts, so ``window.native`` is ``None`` before that. The chrome is

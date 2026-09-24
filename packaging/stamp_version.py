@@ -1,6 +1,6 @@
 """Stamp the release version into the package's ``__version__`` constant.
 
-The in-app update check (``GET /update/check``) compares the running
+The in-app update check (``GET /api/update``) compares the running
 ``spotm3u.__version__`` against the latest published GitHub release tag, and a
 PyInstaller bundle embeds whatever that constant held at build time. The release
 workflow therefore rewrites the constant from the pushed tag before building, so

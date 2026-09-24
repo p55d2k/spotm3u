@@ -6,10 +6,10 @@ of an external browser. Flask keeps serving the UI and handling application
 logic; this module only supplies the window around it, waits for the server
 before loading the page, and shuts the server down when the window closes.
 
-The window is frameless. Windows and Linux draw their own title bar (see
-``templates/_titlebar.html`` and the title bar rules in ``static/style.css``);
-macOS instead re-enables the native traffic lights on the frameless NSWindow
-(see ``desktop_macos.py``) and keeps only a transparent drag strip in the page.
+The window is frameless. Windows and Linux draw their own title bar (the
+frontend's ``TitleBar`` component); macOS instead re-enables the native traffic
+lights on the frameless NSWindow (see ``desktop_macos.py``) and keeps only a
+transparent drag strip in the page.
 :class:`WindowControls` is exposed to the page as ``pywebview.api`` so the HTML
 custom title-bar buttons can drive the native window on Windows/Linux, the ZIP
 to import can be picked in the OS file dialog, and the M3U download can be

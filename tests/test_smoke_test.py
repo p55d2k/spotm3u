@@ -174,7 +174,7 @@ def _free_port() -> int:
 
 
 class _UpdateCheckHandler(http.server.BaseHTTPRequestHandler):
-    """Serves the ``/update/check`` payload of an app built from version 1.2.3."""
+    """Serves the ``/api/update`` payload of an app built from version 1.2.3."""
 
     def do_GET(self) -> None:  # noqa: N802 - name required by http.server
         body = json.dumps(

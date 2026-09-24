@@ -161,14 +161,14 @@ rounded corners in the artwork.
 when the directory is missing, so a release cannot silently ship an application
 whose interface answers 404.
 
-Flask serves that build under `/app/` - the Jinja pages keep `/` until the
-migration removes them - and the smoke test fetches the entry point plus every
-script it references, which is what catches assets that were not collected. The
-macOS bundle check requires `frontend/index.html` in the bundle as well.
+Flask serves that build at `/`, and the smoke test fetches the entry point plus
+every script it references, which is what catches assets that were not
+collected. The macOS bundle check requires `frontend/index.html` in the bundle
+as well.
 
 ## Collected modules
 
-The spec collects package templates/static assets, yt-dlp dynamic modules,
+The spec collects yt-dlp dynamic modules,
 bgutil plugin modules, zhconv data, the syncedlyrics lyrics providers (pulled in
 through `spotm3u.lyrics`), and the pywebview desktop shell and its platform
 backends. `packaging/run_app.py` is the
@@ -233,9 +233,9 @@ The release workflow then verifies each archive:
   `pkgutil --expand-full` and passed through the same
   check before upload. Signature and Gatekeeper status are intentionally
   not checked.
-- `packaging/smoke_test.py` launches the packaged executable, renders the home
-  template, serves a static asset, serves the built React application and the
-  script bundles it references, and confirms the bundled FFmpeg. It accepts both
+- `packaging/smoke_test.py` launches the packaged executable, serves the home
+  page (React entry point), loads the script bundles it references, exercises
+  the `/api` surface, and confirms the bundled FFmpeg. It accepts both
   the one-folder layout and the macOS `.app` bundle. Readiness is taken
   from the HTTP response on the configured port rather than from the startup
   log, so the windowed Windows build is verified the same way as the rest, and

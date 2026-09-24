@@ -1,21 +1,19 @@
 """JSON API consumed by the React frontend (``docs/api.md``).
 
 Every route here does the same three things and nothing else: parse the
-request, call the shared helpers in :mod:`spotm3u.web_jobs` (the same ones the
-Jinja routes call), and shape a response. No download, metadata, lyrics, or
-matching logic lives here - it all belongs to the existing modules.
+request, call the shared helpers in :mod:`spotm3u.web_jobs`, and shape a
+response. No download, metadata, lyrics, or matching logic lives here - it all
+belongs to the existing modules.
 
-The Jinja pages keep using their own routes until the React migration is
-finished (task 108); both frontends read and write the same job state, so a
-selection made in one is visible to the other.
+This is the application's only frontend-facing surface besides the built React
+application; there are no server-rendered pages.
 
 Response format
 ---------------
 
 * A successful call answers with the resource itself, never a wrapper. The
-  payloads are the ones the Jinja pages already receive from their JSON
-  endpoints (``ProcessingJob.snapshot()`` and the batch summary built by
-  :func:`spotm3u.web_jobs._batch_status`).
+  payloads are the ones the frontend expects (``ProcessingJob.snapshot()`` and
+  the batch summary built by :func:`spotm3u.web_jobs._batch_status`).
 * A failed call answers with ``{"error": "<message>", "code": "<code>"}`` and a
   meaningful status. ``message`` is user-facing text the frontend can show
   as-is; ``code`` is stable and meant to be branched on. Codes are the
@@ -145,7 +143,7 @@ def _save_selection(job_directory: Path, playlist_ids: list[str]) -> None:
 
     ``selected_playlist_ids`` is the batch selection and ``selected_playlist_id``
     the single one; writing both keeps :func:`spotm3u.web_jobs._selection_matches`
-    and the remaining Jinja routes working on the same job state.
+    and every other helper working on the same job state.
     """
     state: dict[str, object] = {"selected_playlist_ids": list(playlist_ids)}
     if len(playlist_ids) == 1:
@@ -157,8 +155,7 @@ def _fast_mode(body: dict) -> bool:
     """The fast-mode choice for a start request.
 
     A JSON body carries ``fast_mode`` explicitly. When it does not, the
-    ``[fast] enabled`` configuration default applies, exactly as it does for a
-    Jinja page whose checkbox the user never touched.
+    ``[fast] enabled`` configuration default applies.
     """
     if "fast_mode" not in body:
         return bool(current_app.config.get("FAST_MODE", False))
@@ -411,7 +408,7 @@ def start_processing(job_id: str):
     """Start converting the selected playlists (or the ones named in the body).
 
     The effective selection is stored on the way in, so the status and result
-    routes - and the Jinja pages - find the same playlists afterwards.
+    routes find the same playlists afterwards.
     """
     job_directory = _job_or_error(job_id)
     if job_directory is None:
@@ -492,7 +489,7 @@ def processing_status(job_id: str):
 
 @api.get("/jobs/<job_id>/playlists/<playlist_id>/processing")
 def playlist_processing_status(job_id: str, playlist_id: str):
-    """Live progress for one playlist: the same state the Jinja page polls."""
+    """Live progress for one playlist: one ``ProcessingJob.snapshot()``."""
     job_directory = _job_or_error(job_id)
     if job_directory is None:
         return _error(
@@ -772,7 +769,7 @@ def add_batch_to_media_player(job_id: str):
 
 @api.errorhandler(RequestEntityTooLarge)
 def upload_too_large(error):
-    """Answer an oversized request as JSON instead of the Jinja error page."""
+    """Answer an oversized request as JSON."""
     return _error("That file is too large to upload.", ERROR_UPLOAD_TOO_LARGE, 413)
 
 
@@ -780,7 +777,8 @@ def register_api(app: Flask) -> None:
     """Attach the JSON API and answer unknown API paths with JSON too.
 
     The fallbacks only take over under ``/api``; every other path keeps the
-    default handling, so the Jinja frontend behaves exactly as before.
+    default handling, so a WebView navigation that does not map to a route or a
+    file still answers without a JSON body.
     """
     app.register_blueprint(api)
 

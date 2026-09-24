@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 /*
- * The design tokens are the ones the Flask stylesheet already uses
- * (`src/spotm3u/static/style.css`), kept under `--spot-*` names so Tailwind's
- * own `--color-*`, `--text-*` and `--radius-*` variables can be mapped onto
- * them below. A token is overridden once per theme and every utility follows,
- * which is why almost no component needs a `dark:` variant.
+ * The design tokens come from the Flask era of the stylesheet and are kept
+ * under `--spot-*` names so Tailwind's own `--color-*`, `--text-*` and
+ * `--radius-*` variables can be mapped onto them below. A token is overridden
+ * once per theme and every utility follows, which is why almost no component
+ * needs a `dark:` variant.
  */
 :root {
   color-scheme: light;
