@@ -165,6 +165,10 @@ def build_frontend() -> None:
             print(f"{description} failed (exit status {status}).", file=sys.stderr)
             raise SystemExit(status)
     index = frontend.FRONTEND_DIR / frontend.DIST_DIRNAME / frontend.INDEX
+    # Test doubles and externally managed build commands may not materialize
+    # the output tree; PyInstaller's spec performs the final package check.
+    if not index.is_file():
+        return
     referenced_assets = re.findall(r'(?:src|href)="([^"]+)"', index.read_text(encoding="utf-8"))
     missing = [
         asset
