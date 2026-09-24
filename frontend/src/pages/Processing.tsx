@@ -11,6 +11,7 @@ import { useToast } from "../components/Toast";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { EtaEstimator, progressFraction, remainingLabel } from "../lib/eta";
 import { statusLabel } from "../lib/status";
+import { FastModeOption } from "../components/FastModeOption";
 
 type Phase = "loading" | "idle" | "active";
 
@@ -132,19 +133,11 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
 
       {phase === "idle" && (
         <div className="mb-6 flex flex-col gap-4">
-          <label className="flex cursor-pointer gap-3 border-l-2 border-accent bg-surface-subtle px-4 py-3 hover:bg-state-selected">
-            <input
-              type="checkbox"
-              checked={fastMode}
-              onChange={(event) => setFastMode(event.target.checked)}
-              className="mt-1"
-            />
-            <span className="text-md text-ink-muted">
-              <strong className="text-ink">Fast mode</strong> — find audio and write the playlist
-              without source checks, audio checks or metadata (tags, artwork, lyrics). Downloads
-              finish much faster, but matches can be less accurate and the MP3s stay plain.
-            </span>
-          </label>
+          <FastModeOption
+            checked={fastMode}
+            onChange={setFastMode}
+            outputLabel="the playlist"
+          />
           <div>
             <Button busy={busy} onClick={() => void startConverting()}>
               Start converting playlist
