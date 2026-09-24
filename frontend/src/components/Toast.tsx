@@ -103,7 +103,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <div
           role="status"
           aria-live="polite"
-          className={`pointer-events-auto fixed bottom-6 left-1/2 z-[300] flex min-w-64 max-w-[min(30rem,calc(100vw-2rem))] items-center gap-3 rounded-lg border bg-surface p-3 pr-4 shadow-popover ${TOAST_ANIMATION} ${tone.border}`}
+          className={`pointer-events-auto fixed bottom-6 left-1/2 z-[300] flex min-w-64 max-w-[min(44rem,calc(100vw-2rem))] items-center gap-3 rounded-lg border bg-surface p-3 pr-4 shadow-popover ${TOAST_ANIMATION} ${tone.border}`}
         >
           <span
             className={`flex size-7 shrink-0 items-center justify-center rounded-full ${tone.tile}`}

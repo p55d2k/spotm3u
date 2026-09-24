@@ -70,13 +70,17 @@ export function UpdateNotice() {
     }
     // The installer is never launched for the user: the toast spells out that
     // they should quit SpotM3U and open the file, with two useful next steps.
-    feedback.success(result.name ?? "", "Downloaded to Downloads. Quit SpotM3U, then open it to install.", {
-      actions: [
-        { label: "Release notes", onClick: () => openPage(info.release_url ?? RELEASES_URL) },
-        { label: "Open folder", onClick: () => api.open_at(result.path ?? "") },
-      ],
-      timeout: 7000,
-    });
+    feedback.success(
+      `SpotM3U ${info.latest_version} downloaded`,
+      "Quit SpotM3U, then open the installer in Downloads.",
+      {
+        actions: [
+          { label: "Release notes", onClick: () => openPage(info.release_url ?? RELEASES_URL) },
+          { label: "Open folder", onClick: () => api.open_at(result.path ?? "") },
+        ],
+        timeout: 7000,
+      },
+    );
   };
 
   return (

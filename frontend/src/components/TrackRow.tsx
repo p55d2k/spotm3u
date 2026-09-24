@@ -2,7 +2,6 @@ import { Music } from "lucide-react";
 import type { SnapshotTrack } from "../lib/api";
 import { artworkUrl } from "../lib/api";
 import { statusLabel, TrackStatusIcon } from "../lib/status";
-import { useTooltip } from "./Tooltip";
 
 /**
  * One track row of the live progress lists and the result pages, migrated
@@ -26,13 +25,17 @@ export function TrackRow({
   /** Replace the generic reason with the "file missing" wording. */
   fileMissingReason?: boolean;
 }) {
-  const tooltip = useTooltip();
   const artists = track.artists.length ? track.artists.join(", ") : "";
   const reason = fileMissingReason && track.file_missing
     ? "File missing from disk — retry to download it again"
     : (track.reason ?? "");
   const resolutionTag = track.resolution ? statusLabel(track.resolution) : null;
-  const reasonTags = reason ? reason.split(";").map((item) => item.trim()).filter(Boolean) : [];
+  const reasonTags = reason
+    ? reason
+        .split(";")
+        .map((item) => item.trim())
+        .filter((item) => item && item.toLowerCase() !== resolutionTag?.toLowerCase())
+    : [];
 
   return (
     <li className="flex items-center gap-3 border-b border-line p-2 last:border-b-0">
@@ -64,7 +67,6 @@ export function TrackRow({
           <div className="flex min-w-0 items-center gap-2">
             <strong
               className="block min-w-0 truncate text-sm font-medium"
-              {...(track.title ? tooltip.bind(track.title) : {})}
             >
               {track.title}
             </strong>
@@ -72,7 +74,6 @@ export function TrackRow({
           {artists && (
             <div
               className="truncate text-sm text-ink-muted"
-              {...tooltip.bind(artists)}
             >
               {artists}
             </div>
@@ -84,25 +85,25 @@ export function TrackRow({
               aria-label="Track tags"
             >
               {resolutionTag && (
-                <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${resolutionTagClass(track.resolution)}`}>
+                <span className={`rounded-sm border px-1.5 py-px text-[0.6875rem] leading-4 font-medium ${resolutionTagClass(track.resolution)}`}>
                   {resolutionTag}
                 </span>
               )}
               {reasonTags.map((tag) => (
                 <span
                   key={tag}
-                  className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${reasonTagClass(tag)}`}
+                  className={`rounded-sm border px-1.5 py-px text-[0.6875rem] leading-4 font-medium ${reasonTagClass(tag)}`}
                 >
                   {tag}
                 </span>
               ))}
               {lyricsBadge && track.lyrics === "synced" && (
-                <span className="rounded-sm border border-success-border bg-success-subtle px-2 py-0.5 text-xs font-medium text-success-ink">
+                <span className="rounded-sm border border-success-border bg-success-subtle px-1.5 py-px text-[0.6875rem] leading-4 font-medium text-success-ink">
                   Synced lyrics
                 </span>
               )}
               {lyricsBadge && track.lyrics === "plain" && (
-                <span className="rounded-sm border border-warning-border bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning-ink">
+                <span className="rounded-sm border border-warning-border bg-warning-subtle px-1.5 py-px text-[0.6875rem] leading-4 font-medium text-warning-ink">
                   Plain lyrics
                 </span>
               )}
