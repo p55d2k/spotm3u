@@ -14,6 +14,7 @@ from typing import Literal
 from .artwork import artwork_artist, prune_missing_artwork
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
+from .metadata_jobs import MetadataJob
 from .models import Track
 from .resolution import (
     PreparedTrack,
@@ -140,6 +141,7 @@ class ProcessingJob:
         resolver_factory: ResolverFactory,
         max_workers: int = 1,
         max_download_workers: int | None = None,
+        max_metadata_workers: int = 3,
         timeout: float | None = None,
         m3u_extended: bool = True,
         m3u_relative: bool = False,
@@ -154,6 +156,7 @@ class ProcessingJob:
         self.resolver_factory = resolver_factory
         self.max_workers = max(1, int(max_workers))
         self.max_download_workers = max(1, int(max_download_workers or self.max_workers))
+        self.max_metadata_workers = max(1, min(int(max_metadata_workers), 8))
         self.timeout = timeout
         self.m3u_extended = m3u_extended
         self.m3u_relative = m3u_relative
@@ -403,14 +406,42 @@ class ProcessingJob:
         self._check_deadline()
         tracks = self.tracks
         selected = tuple(range(len(tracks))) if indices is None else indices
+        metadata_pool = ThreadPoolExecutor(
+            max_workers=self.max_metadata_workers,
+            thread_name_prefix=f"spotm3u-metadata-{self.job_id}",
+        )
+        metadata_futures = []
+
+        def submit_metadata(index: int, result: TrackResolution) -> None:
+            if not result.successful or result.local_path is None:
+                self._finalize_track(index, result)
+                return
+            metadata_futures.append(
+                (
+                    index,
+                    result,
+                    metadata_pool.submit(
+                        MetadataJob(self.tracks[index], self.output_dir, result.local_path).run
+                    ),
+                )
+            )
+
         if self.max_workers <= 1 or len(selected) <= 1:
             for index in selected:
                 with self._lock:
                     self._current_index = index
                 self._check_deadline()
                 result = resolver.resolve(tracks[index], stage_callback=self._stage_reporter(index))
-                self._finalize_track(index, result)
+                submit_metadata(index, result)
                 self._mark_searched(index)
+            for index, result, future in metadata_futures:
+                metadata_result = future.result()
+                if metadata_result.errors:
+                    TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
+                        "metadata enrichment errors=%s", "; ".join(metadata_result.errors)
+                    )
+                self._finalize_track(index, result)
+            metadata_pool.shutdown()
             return
 
         def phase_one(index):
@@ -440,7 +471,7 @@ class ProcessingJob:
         for index in selected:
             plan = prepared[index]
             if not isinstance(plan, PreparedTrack):
-                self._finalize_track(index, plan)
+                submit_metadata(index, plan)
 
         if download_plans:
             self._check_deadline()
@@ -461,7 +492,15 @@ class ProcessingJob:
                 for future in as_completed(future_to_index):
                     self._check_deadline()
                     index = future_to_index[future]
-                    self._finalize_track(index, future.result())
+                    submit_metadata(index, future.result())
+        for index, result, future in metadata_futures:
+            metadata_result = future.result()
+            if metadata_result.errors:
+                TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
+                    "metadata enrichment errors=%s", "; ".join(metadata_result.errors)
+                )
+            self._finalize_track(index, result)
+        metadata_pool.shutdown()
 
     def _check_deadline(self) -> None:
         """Raise when the whole job has exceeded its ``timeout`` budget."""

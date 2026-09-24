@@ -76,6 +76,7 @@ class Config:
     # [download]
     audio_quality: str = "192"
     max_download_workers: int = 2
+    max_metadata_workers: int = 3
     download_timeout: int = 600
     retries: int = 5
     fragment_retries: int = 5
@@ -120,6 +121,7 @@ class Config:
             "LYRICS_ENABLED": self.lyrics_enabled,
             "DOWNLOAD_QUALITY": self.audio_quality,
             "DOWNLOAD_MAX_WORKERS": self.max_download_workers,
+            "METADATA_MAX_WORKERS": self.max_metadata_workers,
             "DOWNLOAD_TIMEOUT": self.download_timeout,
             "DOWNLOAD_RETRIES": self.retries,
             "DOWNLOAD_FRAGMENT_RETRIES": self.fragment_retries,
@@ -175,6 +177,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "lyrics.enabled": "lyrics_enabled",
     "download.audio_quality": "audio_quality",
     "download.workers": "max_download_workers",
+    "metadata.workers": "max_metadata_workers",
     "download.timeout": "download_timeout",
     "download.retries": "retries",
     "download.fragment_retries": "fragment_retries",

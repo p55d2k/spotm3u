@@ -58,6 +58,13 @@ existing `MetadataResult`, preserving provider behavior and cache semantics.
 This is a queueable boundary for Task 97 without starting additional workers
 or changing request rates in this task.
 
+Task 97 now uses a bounded metadata pool. Normal web jobs defer enrichment
+from the resolver, submit completed audio files to up to
+`metadata.workers` workers (default `3`, capped at `8`), and finalize each
+track only after its metadata job returns. Download workers continue submitting
+audio independently while metadata jobs run; metadata failures are logged and
+do not change a successful audio resolution. Fast mode remains metadata-free.
+
 ## Timing diagnostics
 
 The pipeline logs structured records using `timing stage=<name>

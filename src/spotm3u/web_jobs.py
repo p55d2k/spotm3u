@@ -417,6 +417,7 @@ def _build_processing_job(
     search_socket_timeout = int(app.config.get("SEARCH_SOCKET_TIMEOUT", 30))
     quality = str(app.config.get("DOWNLOAD_QUALITY", "192"))
     max_download_workers = int(app.config.get("DOWNLOAD_MAX_WORKERS", 2))
+    max_metadata_workers = int(app.config.get("METADATA_MAX_WORKERS", 3))
     download_timeout = float(app.config.get("DOWNLOAD_TIMEOUT", 600))
     retries = int(app.config.get("DOWNLOAD_RETRIES", 5))
     fragment_retries = int(app.config.get("DOWNLOAD_FRAGMENT_RETRIES", 5))
@@ -462,6 +463,7 @@ def _build_processing_job(
             searcher=searcher,
             downloader=downloader,
             cache=DownloadCache(output_dir),
+            defer_metadata=True,
         )
 
     return ProcessingJob(
@@ -473,6 +475,7 @@ def _build_processing_job(
         resolver_factory=resolver_factory,
         max_workers=int(app.config.get("RESOLVE_WORKERS", 4)),
         max_download_workers=max_download_workers,
+        max_metadata_workers=max_metadata_workers,
         m3u_extended=bool(app.config.get("M3U_EXTENDED", True)),
         m3u_relative=bool(app.config.get("M3U_RELATIVE", False)),
         m3u_filename=m3u_filename,

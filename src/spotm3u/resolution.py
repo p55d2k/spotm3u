@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from . import metadata as _metadata
 from .audio.resolver import LocalAudioResolver
 from .log import TrackLogger
-from .metadata import enrich_metadata  # noqa: F401 - compatibility seam for integrations/tests
 from .metadata_jobs import MetadataJob
 from .models import ResolvedTrack, Track
 from .online.audio_validation import AudioValidation, validate_downloaded_audio
@@ -22,6 +22,12 @@ from .online.search import OnlineSourceSearcher, SourceCandidate
 from .online.validation import SourceValidation, validate_source_candidate
 
 logger = logging.getLogger(__name__)
+
+
+def enrich_metadata(*args, **kwargs):
+    """Compatibility hook for integrations that patch the old seam."""
+    return _metadata.enrich_metadata(*args, **kwargs)
+
 
 ResolutionStatus = Literal[
     "local", "downloaded", "missing", "ambiguous", "rejected", "failed", "uncertain"
@@ -152,12 +158,14 @@ class TrackResolver:
         downloader: DownloadFunction = download_track,
         cache: DownloadCache | None = None,
         log: TrackLogger | None = None,
+        defer_metadata: bool = False,
     ) -> None:
         self.local_resolver = local_resolver
         self.output_dir = Path(output_dir)
         self.searcher = searcher or OnlineSourceSearcher()
         self.downloader = downloader
         self.cache = cache
+        self.defer_metadata = defer_metadata
         self._log = log or TrackLogger(logger)
 
     def set_log_context(self, log: TrackLogger) -> None:
@@ -201,14 +209,8 @@ class TrackResolver:
                 status="local",
             )
             log.info("local match found path=%s", local.resolved.local_path)
-            report("enriching-metadata")
-            metadata_result = MetadataJob(track, self.output_dir, local.resolved.local_path).run()
-            if metadata_result.errors:
-                log.info(
-                    "metadata enrichment status=local path=%s errors=%s",
-                    local.resolved.local_path,
-                    "; ".join(metadata_result.errors),
-                )
+            if not self.defer_metadata:
+                MetadataJob(track, self.output_dir, local.resolved.local_path).run()
             return TrackResolution(
                 track, "local", resolved=resolved, candidates=(), reasons=("local match",)
             )
@@ -345,15 +347,6 @@ class TrackResolver:
             if self.cache is not None and not reused_from_cache:
                 self.cache.store(track, ranking.candidate.url, downloaded)
 
-            report("enriching-metadata")
-            metadata_result = MetadataJob(track, self.output_dir, downloaded).run()
-            if metadata_result.errors:
-                log.info(
-                    "metadata enrichment status=downloaded path=%s errors=%s",
-                    downloaded,
-                    "; ".join(metadata_result.errors),
-                )
-
             resolved = ResolvedTrack(
                 track,
                 downloaded,
@@ -361,6 +354,8 @@ class TrackResolver:
                 source_url=ranking.candidate.url,
                 status="downloaded",
             )
+            if not self.defer_metadata:
+                MetadataJob(track, self.output_dir, downloaded).run()
             reasons = ("reused cached download",) if reused_from_cache else ()
             log.info(
                 "resolution status=downloaded url=%s path=%s", ranking.candidate.url, downloaded
