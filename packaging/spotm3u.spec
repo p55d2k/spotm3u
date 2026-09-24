@@ -35,6 +35,10 @@ or, equivalently, the shortcut provided in ``pyproject.toml``:
 ``SPOTM3U_FFMPEG_DIR`` is optional; when set, the directory's contents are
 copied into ``dist/SpotM3U/ffmpeg/`` so the packaged app provides its own
 FFmpeg. When unset the build succeeds but FFmpeg must come from the system.
+
+The React frontend build (``frontend/dist``) must exist; ``uv run build``
+produces it first. ``SPOTM3U_SKIP_FRONTEND=1`` packages without it, which is
+only useful when iterating on this spec.
 """
 
 import os
@@ -49,6 +53,11 @@ SRC = ROOT / "src"
 ICON_PNG = ROOT / "assets" / "icon.png"
 ICON_ICO = ROOT / "assets" / "generated" / "icon.ico"
 ICON_ICNS = ROOT / "assets" / "generated" / "icon.icns"
+# The production build of the React frontend, produced by ``uv run build``
+# before PyInstaller runs (see spotm3u.frontend). It is collected under
+# ``frontend/`` in the bundle, which is where the frozen app looks for it.
+FRONTEND_DIST = ROOT / "frontend" / "dist"
+SKIP_FRONTEND_ENV = "SPOTM3U_SKIP_FRONTEND"
 
 
 def _require_icon(path: Path, purpose: str) -> Path:
@@ -73,6 +82,18 @@ hiddenimports = []
 # and macOS the shell icon comes from the embedded .ico/.icns instead.
 if ICON_PNG.is_file():
     datas.append((str(ICON_PNG), "."))
+
+# The built React frontend, so the packaged application ships the same UI the
+# bundle was built from. A missing build fails the build here rather than
+# quietly producing an application whose interface answers 404, unless the
+# caller explicitly asked to package without rebuilding it.
+if (FRONTEND_DIST / "index.html").is_file():
+    datas.append((str(FRONTEND_DIST), "frontend"))
+elif os.environ.get(SKIP_FRONTEND_ENV) != "1":
+    raise SystemExit(
+        f"missing frontend build at {FRONTEND_DIST}; run `uv run build`, or set "
+        f"{SKIP_FRONTEND_ENV}=1 to package an existing build deliberately"
+    )
 
 # spotm3u package data: templates and static assets live inside the package.
 datas += collect_data_files("spotm3u")

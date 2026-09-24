@@ -85,6 +85,16 @@ packaging tool directly:
 uv run build
 ```
 
+`uv run build` builds the React frontend first (`npm ci` against the committed
+lockfile, then `npm run build`), regenerates the platform icons, and only then
+runs PyInstaller, so the distributable always carries the UI of the checkout it
+was built from. Node.js with npm is therefore a build-time prerequisite (see the
+[development prerequisites](development.md#prerequisites)); the packaged
+application itself needs neither Node nor a Python install. Set
+`SPOTM3U_SKIP_FRONTEND=1` to package the existing `frontend/dist` without
+rebuilding it - useful while iterating on `packaging/spotm3u.spec`, never part of
+a release.
+
 `uv run build` installs the locked `build` dependency group on first use (a
 global PyInstaller install is never required) and produces a fresh application
 for the current platform only; cross-compilation is not supported. Build
@@ -142,6 +152,21 @@ bundle's `ffmpeg/` directory. The resulting one-folder application is
 `assets/icon.png` is deliberately a square, full-bleed master: the macOS
 platform presentation is provided by the bundle metadata above, not by baked-in
 rounded corners in the artwork.
+
+## The React frontend in the bundle
+
+`frontend/dist` is collected into the bundle as `frontend/`, which is where
+`spotm3u.frontend` looks for it when it runs frozen (after
+`SPOTM3U_FRONTEND_DIST` and before a source checkout). The spec fails the build
+when the directory is missing, so a release cannot silently ship an application
+whose interface answers 404.
+
+Flask serves that build under `/app/` - the Jinja pages keep `/` until the
+migration removes them - and the smoke test fetches the entry point plus every
+script it references, which is what catches assets that were not collected. The
+macOS bundle check requires `frontend/index.html` in the bundle as well.
+
+## Collected modules
 
 The spec collects package templates/static assets, yt-dlp dynamic modules,
 bgutil plugin modules, zhconv data, the syncedlyrics lyrics providers (pulled in
@@ -203,14 +228,15 @@ users would get, but it is not attached to the published release.
 The release workflow then verifies each archive:
 
 - `packaging/verify_macos_bundle.py` checks the macOS ZIP for a valid
-  `SpotM3U.app` (`Contents/MacOS/SpotM3U`, `Info.plist`, bundled FFmpeg, and
-  application resources). The macOS PKG is expanded with
+  `SpotM3U.app` (`Contents/MacOS/SpotM3U`, `Info.plist`, bundled FFmpeg,
+  application resources, and the built React application). The macOS PKG is expanded with
   `pkgutil --expand-full` and passed through the same
   check before upload. Signature and Gatekeeper status are intentionally
   not checked.
 - `packaging/smoke_test.py` launches the packaged executable, renders the home
-  template, serves a static asset, and confirms the bundled FFmpeg. It accepts
-  both the one-folder layout and the macOS `.app` bundle. Readiness is taken
+  template, serves a static asset, serves the built React application and the
+  script bundles it references, and confirms the bundled FFmpeg. It accepts both
+  the one-folder layout and the macOS `.app` bundle. Readiness is taken
   from the HTTP response on the configured port rather than from the startup
   log, so the windowed Windows build is verified the same way as the rest, and
   `SPOTM3U_NO_WEBVIEW=1` keeps the native window from opening during the check.

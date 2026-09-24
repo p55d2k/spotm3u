@@ -1,9 +1,10 @@
 """End-to-end smoke test for a packaged SpotM3U bundle or release archive.
 
 Starts the bundled executable directly -- no system Python, uv, or FFmpeg is
-used -- then exercises the web server, a rendered template, static assets, and
-the bundled FFmpeg binaries. Understands both the onedir layout (executable and
-``_internal`` beside each other) and the macOS ``SpotM3U.app`` bundle layout.
+used -- then exercises the web server, a rendered template, static assets, the
+built React application, and the bundled FFmpeg binaries. Understands both the
+onedir layout (executable and ``_internal`` beside each other) and the macOS
+``SpotM3U.app`` bundle layout.
 Exits non-zero on any failure so CI treats the run as a failed build.
 
 The application opens its UI in a native WebView on start; that is disabled
@@ -32,6 +33,12 @@ import zipfile
 from pathlib import Path
 
 HOME_MARKER = "Open Exportify"
+# The mount point Flask serves the built React application from
+# (``spotm3u.frontend.MOUNT``); kept literal so this helper stays standalone.
+_REACT_MOUNT = "/app"
+# The root element ``frontend/index.html`` renders the React tree into.
+_REACT_MARKER = 'id="root"'
+_SCRIPT_SRC = re.compile(r"<script[^>]+src=\"([^\"]+)\"")
 _LISTENING = re.compile(r"listening on http://127\.0\.0\.1:(\d+)")
 _SMOKE_PORT = 5290
 _POLL_INTERVAL = 0.25
@@ -150,6 +157,25 @@ def wait_for_home(
     raise SystemExit(f"packaged app did not serve within {timeout}s:\n{_read_log(log_path)}")
 
 
+def check_react_ui(port: int) -> None:
+    """Assert the bundle serves the built React application and its assets.
+
+    A packaged application whose interface is missing, or whose hashed assets
+    were not collected, would only show a blank window, so the shell and every
+    script it references are fetched here.
+    """
+    status, page = _get(f"http://127.0.0.1:{port}{_REACT_MOUNT}/")
+    assert status == 200, f"React entry point returned {status}"
+    assert _REACT_MARKER in page, "packaged React shell is missing its root element"
+
+    scripts = [src for src in _SCRIPT_SRC.findall(page) if src.endswith(".js")]
+    assert scripts, "packaged React shell references no script bundle"
+    for src in scripts:
+        asset_status, body = _get(f"http://127.0.0.1:{port}{src}")
+        assert asset_status == 200, f"React asset {src} returned {asset_status}"
+        assert body.strip(), f"React asset {src} is empty"
+
+
 def check_reported_version(port: int, expected: str) -> None:
     """Assert the packaged app reports the release it was built from.
 
@@ -191,6 +217,8 @@ def smoke_test(bundle: Path, expected_version: str | None = None) -> None:
         status, css = _get(f"http://127.0.0.1:{port}/static/style.css")
         assert status == 200, f"static returned {status}"
         assert css.strip(), "static stylesheet is empty"
+
+        check_react_ui(port)
 
         if expected_version:
             check_reported_version(port, expected_version)

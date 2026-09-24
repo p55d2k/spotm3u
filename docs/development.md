@@ -6,8 +6,9 @@
 - [`uv`](https://docs.astral.sh/uv/)
 - FFmpeg on `PATH` for tests or development flows that perform online audio
   conversion
-- Node.js `^20.19.0` or `>=22.12.0` with npm, needed by `uv run dev` and the
-  React frontend under `frontend/`
+- Node.js `^20.19.0` or `>=22.12.0` with npm, needed by `uv run dev` and
+  `uv run build` (both build or serve the React frontend under `frontend/`);
+  the packaged application never needs it
 
 Install the locked development environment from the repository root:
 
@@ -76,9 +77,10 @@ disabled and the Windows build is windowed instead of console-based; see
 `uv run build`.
 
 The Python application in `src/spotm3u/` is unchanged by the React frontend:
-Flask keeps serving its existing templates and static files, and the frontend is
-not yet part of the application build. It is a new foundation that later tasks
-migrate to.
+Flask keeps serving its existing templates and static files, and the built React
+application is served alongside them under `/app` (`spotm3u/frontend.py`) until
+the migration makes it the only frontend. `uv run build` builds it and packs it
+into the distributable; see [packaging](packaging.md).
 
 ## Frontend
 
@@ -102,6 +104,12 @@ frontend only knows the `/api` namespace and the Vite development proxy
 forwards it to Flask unchanged. That namespace is same-origin in production
 too, so a production build needs no proxy, no backend address, and no
 environment values at build time.
+
+`uv run build` runs `npm ci` and `npm run build` before PyInstaller, so the
+distributable always carries the frontend from the checkout being built. A
+production build is served by Flask under `/app/`; see
+[packaging](packaging.md#the-react-frontend-in-the-bundle) for what lands in the
+bundle and how it is verified.
 
 ## Checks
 
@@ -127,6 +135,7 @@ pre-commit configuration also runs the full test suite.
 src/spotm3u/
   app.py                 Flask page routes and application setup
   api.py                 `/api` JSON routes used by the React frontend
+  frontend.py            locates, builds, and serves the built React application
   web_jobs.py            job, batch, and artwork helpers shared by the routes
   artwork.py             artwork lookup order, embedding, and cleanup
   artwork_sources.py     MusicBrainz/iTunes/Deezer lookups and candidate matching

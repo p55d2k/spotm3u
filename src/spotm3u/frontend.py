@@ -1,0 +1,173 @@
+"""The React frontend's build output: where it lives, how it is built, and how Flask serves it.
+
+``frontend/`` is built by Vite (``uv run build``, or ``npm run build`` while
+developing). The result is a static single-page application which Flask serves
+under ``/app`` - see ``docs/development.md`` and ``docs/packaging.md``. The
+Jinja pages keep owning ``/`` until the migration is finished (task 108), which
+is why the React build gets a mount point of its own.
+
+The built directory is looked up in this order:
+
+1. ``SPOTM3U_FRONTEND_DIST``, an explicit override (the tests and a one-off
+   check of a build in another location use it);
+2. inside the packaged application, where ``packaging/spotm3u.spec`` collects it
+   as ``frontend/``;
+3. ``frontend/dist`` in a source checkout, so a production build can be checked
+   against the running Flask app without packaging anything.
+
+Nothing here renders or transforms: the files Vite produced are handed to the
+browser as they are.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+from pathlib import Path
+
+from flask import Flask, Response, send_from_directory
+
+from .launcher import DEFAULT_HOST
+from .runtime import bundle_roots
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+DIST_DIRNAME = "dist"
+INDEX = "index.html"
+
+# Where the built application is served. Moving it to "/" is part of removing
+# the Jinja frontend; ``frontend/vite.config.ts`` builds with the same prefix,
+# which is what makes the hashed asset URLs resolve inside the dynamic routes.
+MOUNT = "/app"
+
+# Absolute path to a built directory, replacing the lookup above.
+DIST_ENV = "SPOTM3U_FRONTEND_DIST"
+
+_NOT_BUILT = (
+    "The React frontend has not been built. Run 'uv run build' (or 'npm run build' in "
+    "frontend/) and reload."
+)
+
+
+class FrontendError(RuntimeError):
+    """The frontend cannot be built, found, or started."""
+
+
+def _is_built(directory: Path) -> bool:
+    """True when ``directory`` really holds a Vite build."""
+    return (directory / INDEX).is_file()
+
+
+def dist_directory() -> Path | None:
+    """The directory holding the built frontend, or ``None`` when it has not been built."""
+    override = os.environ.get(DIST_ENV)
+    if override:
+        candidate = Path(override).expanduser()
+        return candidate if _is_built(candidate) else None
+    candidates = [root / "frontend" for root in bundle_roots()]
+    candidates.append(FRONTEND_DIR / DIST_DIRNAME)
+    for candidate in candidates:
+        if _is_built(candidate):
+            return candidate
+    return None
+
+
+def dependencies_installed() -> bool:
+    """True when ``npm install`` has already populated ``node_modules``."""
+    return (FRONTEND_DIR / "node_modules").is_dir()
+
+
+def require_dependencies() -> None:
+    """Fail with an actionable message when the frontend dependencies are missing."""
+    if not dependencies_installed():
+        raise FrontendError(
+            f"The frontend dependencies are missing. Run 'npm install' in {FRONTEND_DIR}."
+        )
+
+
+def npm_command() -> list[str]:
+    """The command prefix that runs npm on this platform.
+
+    ``npm`` is a shell script on POSIX and ``npm.cmd`` on Windows, which the
+    command interpreter is needed to run.
+    """
+    npm = shutil.which("npm")
+    if npm is None:
+        raise FrontendError("npm was not found on PATH. Install Node.js (see docs/development.md).")
+    return [npm] if os.name != "nt" else [os.environ.get("ComSpec", "cmd.exe"), "/c", npm]
+
+
+def install_command() -> list[str]:
+    """Install the frontend dependencies at the versions the lockfile pins.
+
+    ``npm ci`` installs exactly ``package-lock.json`` and fails if the two have
+    drifted apart, which is what keeps a packaged build reproducible. Without a
+    lockfile there is nothing to be exact about, so a plain ``npm install`` is
+    used instead.
+    """
+    npm = npm_command()
+    lockfile = FRONTEND_DIR / "package-lock.json"
+    return [*npm, "ci" if lockfile.is_file() else "install"]
+
+
+def build_command() -> list[str]:
+    """Produce the production frontend build (Vite, type-checked first)."""
+    return [*npm_command(), "run", "build"]
+
+
+def dev_command(port: int) -> list[str]:
+    """Run Vite's development server on ``port``.
+
+    The host and port are passed explicitly because the caller owns port
+    selection: ``strictPort`` makes a collision a visible failure there rather
+    than a silent move to an address nobody was told about.
+    """
+    return [
+        *npm_command(),
+        "run",
+        "dev",
+        "--",
+        "--host",
+        DEFAULT_HOST,
+        "--port",
+        str(port),
+        "--strictPort",
+    ]
+
+
+def register_frontend(app: Flask) -> None:
+    """Serve the built React application under ``MOUNT``.
+
+    The routes only hand over files Vite produced and run no application logic.
+    A path without a file suffix is a client-side route, so it answers with the
+    shell (``index.html``) and the application renders it; a missing file with a
+    suffix is a real 404. Until the frontend is built the routes explain how to
+    build it instead of pretending the address does not exist.
+    """
+
+    @app.get(f"{MOUNT}/")
+    def frontend_index() -> Response:
+        return _index_response()
+
+    @app.get(f"{MOUNT}/<path:asset>")
+    def frontend_asset(asset: str) -> Response:
+        directory = dist_directory()
+        if directory is None:
+            return _not_built_response()
+        target = (directory / asset).resolve()
+        if target.is_file() and (target == directory or directory in target.parents):
+            return send_from_directory(directory, asset)
+        if not Path(asset).suffix:
+            return _index_response()
+        return Response("Not found", status=404, mimetype="text/plain")
+
+
+def _index_response() -> Response:
+    directory = dist_directory()
+    if directory is None:
+        return _not_built_response()
+    return send_from_directory(directory, INDEX)
+
+
+def _not_built_response() -> Response:
+    return Response(_NOT_BUILT, status=404, mimetype="text/plain")

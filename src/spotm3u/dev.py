@@ -24,14 +24,13 @@ of the documented workflow.
 from __future__ import annotations
 
 import os
-import shutil
 import signal
 import subprocess
 import sys
 import threading
-from pathlib import Path
 from typing import IO, NamedTuple
 
+from . import frontend
 from .app import create_app
 from .config import load_user_config
 from .launcher import DEFAULT_HOST, DEFAULT_PORT, select_port
@@ -52,7 +51,7 @@ BACKEND_PORT_ENV = "SPOTM3U_DEV_PORT"
 
 BACKEND_FLAG = "--backend"
 
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+FRONTEND_DIR = frontend.FRONTEND_DIR
 
 # How long a child gets to shut down before it is killed outright.
 SHUTDOWN_GRACE = 5.0
@@ -89,33 +88,9 @@ def _backend_command() -> list[str]:
 
 
 def _frontend_command(port: int) -> list[str]:
-    """The command that runs Vite on ``port``, with npm's own checks intact.
-
-    The port and host are passed explicitly because the supervisor owns port
-    selection: ``strictPort`` makes a port collision a visible failure here
-    rather than a silent move to an address nobody was told about.
-    """
-    if not (FRONTEND_DIR / "node_modules").is_dir():
-        raise DevError(
-            f"The frontend dependencies are missing. Run 'npm install' in {FRONTEND_DIR}."
-        )
-    npm = shutil.which("npm")
-    if npm is None:
-        raise DevError("npm was not found on PATH. Install Node.js, then run 'npm install'.")
-    # ``npm`` is a shell script on POSIX and ``npm.cmd`` on Windows, which the
-    # command interpreter is needed to run.
-    launcher = [npm] if os.name != "nt" else [os.environ.get("ComSpec", "cmd.exe"), "/c", npm]
-    return [
-        *launcher,
-        "run",
-        "dev",
-        "--",
-        "--host",
-        DEFAULT_HOST,
-        "--port",
-        str(port),
-        "--strictPort",
-    ]
+    """The command that runs Vite on ``port``, with npm's own checks intact."""
+    frontend.require_dependencies()
+    return frontend.dev_command(port)
 
 
 def _backend_environment(port: int) -> dict[str, str]:
@@ -293,7 +268,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     try:
         exit_code = _supervise()
-    except DevError as error:
+    except (DevError, frontend.FrontendError) as error:
         print(f"error: {error}", file=sys.stderr)
         exit_code = 1
     except KeyboardInterrupt:  # pragma: no cover - handler races the interrupt

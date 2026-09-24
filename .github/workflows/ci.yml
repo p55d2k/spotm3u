@@ -70,3 +70,27 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # ``npm ci`` installs exactly the committed lockfile, so a broken or
+      # drifted lockfile fails here instead of during a release build.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Type-checks first (see frontend/package.json), then bundles.
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build

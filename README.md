@@ -161,8 +161,8 @@ with full developer tools.
 
 Use `uv run app` to try the production desktop workflow from source: it starts
 the same Flask app on a free loopback port and shows it inside a native
-`SpotM3U` window instead of a browser. `uv run build` produces the
-distributable application; see
+`SpotM3U` window instead of a browser. `uv run build` builds the React frontend and the
+distributable application (Node is needed for that command only); see
 [Development](docs/development.md) and [Packaging](docs/packaging.md).
 No Spotify account credentials or API key are needed by SpotM3U.
 

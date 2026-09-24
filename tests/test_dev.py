@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from spotm3u import dev
+from spotm3u import dev, frontend
 from spotm3u.launcher import DEFAULT_HOST
 
 
@@ -84,9 +84,11 @@ def test_backend_command_runs_this_interpreter_alone(monkeypatch) -> None:
 
 
 def test_frontend_command_runs_vite_on_the_selected_port(monkeypatch, tmp_path) -> None:
+    # The commands themselves live in spotm3u.frontend (see test_frontend.py);
+    # the supervisor has to require installed dependencies first.
     (tmp_path / "node_modules").mkdir()
-    monkeypatch.setattr(dev, "FRONTEND_DIR", tmp_path)
-    monkeypatch.setattr(dev.shutil, "which", lambda name: "/usr/bin/npm")
+    monkeypatch.setattr(frontend, "FRONTEND_DIR", tmp_path)
+    monkeypatch.setattr(frontend.shutil, "which", lambda name: "/usr/bin/npm")
 
     command = dev._frontend_command(5199)
 
@@ -103,19 +105,10 @@ def test_frontend_command_runs_vite_on_the_selected_port(monkeypatch, tmp_path) 
     ]
 
 
-def test_frontend_command_requires_npm(monkeypatch, tmp_path) -> None:
-    (tmp_path / "node_modules").mkdir()
-    monkeypatch.setattr(dev, "FRONTEND_DIR", tmp_path)
-    monkeypatch.setattr(dev.shutil, "which", lambda name: None)
-
-    with pytest.raises(dev.DevError, match="npm was not found"):
-        dev._frontend_command(5199)
-
-
 def test_frontend_command_requires_installed_dependencies(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(dev, "FRONTEND_DIR", tmp_path)
+    monkeypatch.setattr(frontend, "FRONTEND_DIR", tmp_path)
 
-    with pytest.raises(dev.DevError, match="npm install"):
+    with pytest.raises(frontend.FrontendError, match="npm install"):
         dev._frontend_command(5199)
 
 
@@ -247,7 +240,7 @@ def test_a_missing_frontend_stops_before_anything_starts(monkeypatch, capsys) ->
         return dev._Child(name, _FakeProcess())
 
     def missing(port: int) -> list[str]:
-        raise dev.DevError("The frontend dependencies are missing. Run 'npm install'.")
+        raise frontend.FrontendError("The frontend dependencies are missing. Run 'npm install'.")
 
     monkeypatch.setattr(dev, "_spawn", spawn)
     monkeypatch.setattr(dev, "_frontend_command", missing)

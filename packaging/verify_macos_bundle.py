@@ -40,6 +40,9 @@ _CONTENT_TREES = ("Frameworks", "Resources", "MacOS")
 _REQUIRED_RESOURCES = (
     "spotm3u/templates/index.html",
     "spotm3u/static/style.css",
+    # The built React application Flask serves under ``/app``; a bundle without
+    # it would show an empty window once the migration makes React the only UI.
+    "frontend/index.html",
 )
 # The .icns derived from assets/icon.png; PyInstaller copies it into
 # Contents/Resources and references it from Info.plist.

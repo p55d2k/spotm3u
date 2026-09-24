@@ -24,6 +24,7 @@ from .artwork_sources import (
 )
 from .config import load_user_config
 from .exportify import ExportifyParseError, parse_exportify
+from .frontend import register_frontend
 from .jobs import JobManager, JobStartError
 from .log import PACKAGE_LOGGER, configure_logging
 from .lyrics import set_lyrics_enabled
@@ -692,5 +693,9 @@ def create_app(config: dict | None = None) -> Flask:
     # It shares this application's job state and helpers, so both frontends can
     # coexist while the migration is in progress.
     register_api(app)
+
+    # The built React application, served under ``/app`` (see
+    # spotm3u.frontend). It stays off ``/`` until the Jinja pages are removed.
+    register_frontend(app)
 
     return app

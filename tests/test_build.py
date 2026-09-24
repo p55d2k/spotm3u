@@ -59,13 +59,39 @@ def test_report_success_mentions_macos_app_bundle(tmp_path, capsys) -> None:
     assert "dist/SpotM3U.app" in capsys.readouterr().out
 
 
-def _install_fake_build(monkeypatch, tmp_path: Path, result: int) -> dict[str, object]:
-    """Stub subprocess/call so ``build.main`` never shells out for real."""
+# Sentinels standing in for the frontend commands, so these tests are about
+# which steps run in which order (test_frontend.py covers the commands).
+_NPM_INSTALL = ["npm", "ci"]
+_NPM_BUILD = ["npm", "run", "build"]
+
+
+def _install_fake_build(
+    monkeypatch,
+    tmp_path: Path,
+    result: int,
+    *,
+    install_result: int = 0,
+    frontend_result: int = 0,
+    stub_frontend: bool = True,
+) -> dict[str, object]:
+    """Stub the icon generator, the frontend build, and PyInstaller.
+
+    ``result`` is what PyInstaller returns, ``install_result`` and
+    ``frontend_result`` what the two frontend steps return, so a failure in any
+    one of them can be asserted on its own.
+    """
     calls: dict[str, object] = {}
     calls["commands"] = []
+    calls["frontend_cwds"] = []
 
     def fake_call(command, *, cwd=None, env=None) -> int:
         calls["commands"].append(command)
+        if command is _NPM_INSTALL:
+            calls["frontend_cwds"].append(cwd)
+            return install_result
+        if command is _NPM_BUILD:
+            calls["frontend_cwds"].append(cwd)
+            return frontend_result
         calls["command"] = command
         calls["cwd"] = cwd
         calls["ffmpeg"] = env.get("SPOTM3U_FFMPEG_DIR") if env else None
@@ -74,6 +100,9 @@ def _install_fake_build(monkeypatch, tmp_path: Path, result: int) -> dict[str, o
         return result
 
     monkeypatch.setattr(build.subprocess, "call", fake_call)
+    if stub_frontend:
+        monkeypatch.setattr(build.frontend, "install_command", lambda: _NPM_INSTALL)
+        monkeypatch.setattr(build.frontend, "build_command", lambda: _NPM_BUILD)
     monkeypatch.setattr(build, "_FFMPEG_STAGE", tmp_path / "ffmpeg-stage")
     monkeypatch.setattr(build, "_ICON_GENERATOR", tmp_path / "packaging" / "generate_icons.py")
     monkeypatch.setattr(build, "_ICON_PNG", tmp_path / "assets" / "icon.png")
@@ -104,15 +133,81 @@ def test_main_skips_the_ffmpeg_env_without_a_stage_dir(monkeypatch, tmp_path, ca
     assert "Build complete." in capsys.readouterr().out
 
 
-def test_main_generates_icons_before_pyinstaller(monkeypatch, tmp_path, capsys) -> None:
+def test_main_builds_the_frontend_between_icons_and_pyinstaller(
+    monkeypatch, tmp_path, capsys
+) -> None:
     calls = _install_fake_build(monkeypatch, tmp_path, result=0)
 
     build.main()
 
     commands = calls["commands"]
-    assert len(commands) == 2
+    assert len(commands) == 4
     assert Path(commands[0][1]).name == "generate_icons.py"
-    assert Path(commands[1][-1]).name == "spotm3u.spec"
+    assert commands[1] is _NPM_INSTALL
+    assert commands[2] is _NPM_BUILD
+    # PyInstaller runs last so it packages the fresh frontend build.
+    assert Path(commands[3][-1]).name == "spotm3u.spec"
+    assert "Build complete." in capsys.readouterr().out
+
+
+def test_main_runs_the_frontend_steps_in_the_frontend_directory(monkeypatch, tmp_path) -> None:
+    calls = _install_fake_build(monkeypatch, tmp_path, result=0)
+
+    build.main()
+
+    assert calls["frontend_cwds"] == [
+        str(build.frontend.FRONTEND_DIR),
+        str(build.frontend.FRONTEND_DIR),
+    ]
+    assert Path(calls["frontend_cwds"][0]).name == "frontend"
+
+
+def test_main_can_package_an_existing_frontend_build(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setenv(build.SKIP_FRONTEND_ENV, "1")
+    calls = _install_fake_build(monkeypatch, tmp_path, result=0)
+
+    build.main()
+
+    assert _NPM_INSTALL not in calls["commands"]
+    assert _NPM_BUILD not in calls["commands"]
+    assert Path(calls["commands"][-1][-1]).name == "spotm3u.spec"
+    assert "Keeping the existing frontend build" in capsys.readouterr().out
+
+
+def test_main_fails_with_a_hint_when_npm_is_missing(monkeypatch, tmp_path, capsys) -> None:
+    calls = _install_fake_build(monkeypatch, tmp_path, result=0, stub_frontend=False)
+    monkeypatch.setattr(build.frontend.shutil, "which", lambda name: None)
+
+    with pytest.raises(SystemExit) as exit_info:
+        build.main()
+
+    assert exit_info.value.code == 1
+    assert "npm was not found" in capsys.readouterr().err
+    # Icons were regenerated, and nothing was packaged from a half-built tree.
+    assert len(calls["commands"]) == 1
+    assert Path(calls["commands"][0][1]).name == "generate_icons.py"
+
+
+def test_main_fails_loudly_when_the_dependency_install_fails(monkeypatch, tmp_path, capsys) -> None:
+    calls = _install_fake_build(monkeypatch, tmp_path, result=0, install_result=7)
+
+    with pytest.raises(SystemExit) as exit_info:
+        build.main()
+
+    assert exit_info.value.code == 7
+    assert "Frontend dependency install failed" in capsys.readouterr().err
+    # PyInstaller never ran, so no half-built bundle is reported as complete.
+    assert Path(calls["commands"][-1][-1]).name != "spotm3u.spec"
+
+
+def test_main_fails_loudly_when_the_frontend_build_fails(monkeypatch, tmp_path, capsys) -> None:
+    _install_fake_build(monkeypatch, tmp_path, result=0, frontend_result=9)
+
+    with pytest.raises(SystemExit) as exit_info:
+        build.main()
+
+    assert exit_info.value.code == 9
+    assert "Frontend build failed" in capsys.readouterr().err
 
 
 def test_main_fails_when_the_icon_source_is_missing(monkeypatch, tmp_path, capsys) -> None:
