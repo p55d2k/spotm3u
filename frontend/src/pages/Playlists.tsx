@@ -142,8 +142,10 @@ export default function Playlists({ jobId }: { jobId: string }) {
               return (
                 <label
                   key={playlist.id}
-                  className={`relative flex cursor-pointer flex-col gap-1 rounded-md border bg-surface p-4 pt-3 transition-[border-color,background-color] duration-[0.12s] hover:border-line-strong ${
-                    checked ? "border-accent bg-state-selected" : "border-line"
+                  className={`relative flex cursor-pointer flex-col gap-1 rounded-md border bg-surface p-4 pt-3 transition-[border-color,background-color] duration-[0.12s] ${
+                    checked
+                      ? "border-accent bg-state-selected hover:border-accent"
+                      : "border-line hover:border-line-strong"
                   }`}
                 >
                   <input

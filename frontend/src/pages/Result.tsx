@@ -275,7 +275,7 @@ export default function Result({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-line bg-surface p-3">
+    <div className="border-b border-line pb-2">
       <dt className="text-xs font-medium tracking-[0.04em] text-ink-muted uppercase">{label}</dt>
       <dd className="mt-1 m-0 text-lg font-semibold">{value}</dd>
     </div>

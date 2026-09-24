@@ -169,7 +169,7 @@ export default function Import() {
         intro="Import an Exportify ZIP to start matching your local music. SpotM3U reads only the ZIP you choose and never asks for your Spotify account."
       />
       <div className="grid gap-6 md:grid-cols-2">
-        <form onSubmit={handleSubmit} className="flex flex-col rounded-lg border border-line bg-surface p-5">
+        <form onSubmit={handleSubmit} className="flex flex-col">
           <h2 className="m-0 mb-4 text-base" id="upload-heading">
             Import your export
           </h2>
@@ -211,13 +211,17 @@ export default function Import() {
           </div>
         </form>
 
-        <section className="rounded-lg border border-line bg-surface p-5" aria-labelledby="instructions-heading">
+        <section className="border-l border-line pl-5" aria-labelledby="instructions-heading">
           <h2 className="m-0 mb-4 text-base" id="instructions-heading">
             Export your playlists
           </h2>
           <ol className="m-0 flex list-none flex-col gap-4 p-0">
-            <li className="flex flex-col items-start gap-3">
-              <strong>Open Exportify</strong>
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 flex size-6 flex-none items-center justify-center rounded-full bg-accent text-sm font-semibold text-on-accent" aria-hidden="true">
+                1
+              </span>
+              <div className="flex flex-col items-start gap-3">
+                <strong className="pt-0.5">Open Exportify</strong>
               <a
                 className={`${buttonClasses("secondary", "small")} w-fit`}
                 href="https://exportify.net/"
@@ -226,9 +230,20 @@ export default function Import() {
               >
                 Open Exportify<span className="sr-only"> (opens in your browser)</span>
               </a>
+              </div>
             </li>
-            <li><strong>Complete Spotify authentication, then press “Export All”</strong></li>
-            <li><strong>Download the playlist export ZIP</strong>, then <strong>Import that ZIP here</strong></li>
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 flex size-6 flex-none items-center justify-center rounded-full bg-accent text-sm font-semibold text-on-accent" aria-hidden="true">
+                2
+              </span>
+              <strong className="pt-0.5">Complete Spotify authentication, then press “Export All”</strong>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 flex size-6 flex-none items-center justify-center rounded-full bg-accent text-sm font-semibold text-on-accent" aria-hidden="true">
+                3
+              </span>
+              <span className="pt-0.5"><strong>Download the playlist export ZIP</strong>, then <strong>import that ZIP here</strong></span>
+            </li>
           </ol>
         </section>
       </div>

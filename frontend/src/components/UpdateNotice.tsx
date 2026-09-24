@@ -88,7 +88,9 @@ export function UpdateNotice() {
       title={description}
       className="inline-flex w-full items-center justify-start gap-3 rounded-md px-3 py-2 text-md font-medium text-ink-muted transition-colors hover:bg-state-hover hover:text-ink active:bg-state-active disabled:cursor-wait disabled:opacity-45"
     >
-      <Download aria-hidden="true" className="size-4 shrink-0" />
+      <span className="inline-flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+        <Download className="size-4" />
+      </span>
       <span className="text-left">Update to {info.latest_version}</span>
     </button>
   );

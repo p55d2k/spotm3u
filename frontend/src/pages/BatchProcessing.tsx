@@ -122,7 +122,7 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
 
       {phase === "idle" && (
         <div className="mb-6 flex flex-col gap-4">
-          <label className="flex cursor-pointer gap-3 rounded-md border border-line bg-surface p-5 hover:border-line-strong">
+          <label className="flex cursor-pointer gap-3 border-l-2 border-accent bg-surface-subtle px-4 py-3 hover:bg-state-selected">
             <input
               type="checkbox"
               checked={fastMode}
