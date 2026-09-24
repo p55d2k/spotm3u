@@ -168,6 +168,24 @@ def test_hashed_assets_are_served(monkeypatch, tmp_path) -> None:
     assert response.get_data(as_text=True) == "console.log(1)"
 
 
+def test_hashed_assets_are_served_through_a_symlinked_bundle_directory(
+    monkeypatch, tmp_path
+) -> None:
+    real_dist = _built(tmp_path / "resources" / "frontend")
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "frontend").symlink_to(real_dist, target_is_directory=True)
+    client = _app(monkeypatch, None).test_client()
+    monkeypatch.delenv(frontend.DIST_ENV, raising=False)
+    monkeypatch.setattr(frontend, "bundle_roots", lambda: (bundle,))
+    monkeypatch.setattr(frontend, "FRONTEND_DIR", tmp_path / "checkout")
+
+    response = client.get("/assets/app.js")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "console.log(1)"
+
+
 def test_client_side_routes_answer_with_the_shell(monkeypatch, tmp_path) -> None:
     client = _app(monkeypatch, _built(tmp_path / "dist")).test_client()
 

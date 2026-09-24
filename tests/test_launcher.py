@@ -289,6 +289,14 @@ def test_bundle_root_falls_back_to_executable_directory(monkeypatch) -> None:
     assert launcher.bundle_roots()[-1] == Path(sys.executable).resolve().parent
 
 
+def test_bundle_roots_include_macos_app_resources(monkeypatch, tmp_path) -> None:
+    executable = tmp_path / "SpotM3U.app" / "Contents" / "MacOS" / "SpotM3U"
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.delenv("_MEIPASS", raising=False)
+
+    assert executable.parent.parent / "Resources" in launcher.bundle_roots()
+
+
 def test_bundle_config_points_at_bundled_config_toml(monkeypatch, tmp_path) -> None:
     bundled_config = tmp_path / "config.toml"
     bundled_config.write_text("", encoding="utf-8")

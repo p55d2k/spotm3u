@@ -52,5 +52,8 @@ def bundle_roots() -> tuple[Path, ...]:
     if meipass:
         candidates.append(Path(meipass))
     root = Path(sys.executable).resolve().parent
-    candidates.extend((root / "_internal", root))
+    candidates.append(root / "_internal")
+    if root.name == "MacOS" and root.parent.name == "Contents":
+        candidates.append(root.parent / "Resources")
+    candidates.append(root)
     return tuple(dict.fromkeys(candidates))

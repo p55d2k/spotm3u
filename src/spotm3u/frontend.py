@@ -159,8 +159,11 @@ def register_frontend(app: Flask) -> None:
         directory = dist_directory()
         if directory is None:
             return _not_built_response()
+        resolved_directory = directory.resolve()
         target = (directory / asset).resolve()
-        if target.is_file() and (target == directory or directory in target.parents):
+        if target.is_file() and (
+            target == resolved_directory or resolved_directory in target.parents
+        ):
             return send_from_directory(directory, asset)
         if not Path(asset).suffix:
             return _index_response()
