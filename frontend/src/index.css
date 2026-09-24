@@ -1,30 +1,280 @@
 @import "tailwindcss";
 
 /*
- * The desktop-oriented surface colors that later tasks build the migrated
- * interface on. They are intentionally plain, low-contrast neutrals rather
- * than a themed palette.
+ * The design tokens are the ones the Flask stylesheet already uses
+ * (`src/spotm3u/static/style.css`), kept under `--spot-*` names so Tailwind's
+ * own `--color-*`, `--text-*` and `--radius-*` variables can be mapped onto
+ * them below. A token is overridden once per theme and every utility follows,
+ * which is why almost no component needs a `dark:` variant.
  */
-@theme {
-  --color-surface: #f6f6f7;
-  --color-surface-raised: #ffffff;
-  --color-edge: #d9d9de;
-  --color-ink: #1c1c1f;
-  --color-ink-muted: #6b6b74;
-}
+:root {
+  color-scheme: light;
 
-html,
-body,
-#root {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  background-color: var(--color-surface);
-  color: var(--color-ink);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+  /* Typography */
+  --spot-font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  -webkit-font-smoothing: antialiased;
+
+  /* Layout */
+  --spot-sidebar-w: 15rem;
+  --spot-titlebar-h: 2.5rem;
+  /* Clearance the native macOS traffic lights need above the sidebar brand. */
+  --spot-traffic-gap: 2.5rem;
+  --spot-content-max: 78rem;
+
+  /* Light theme */
+  --spot-bg: #f5f6f8;
+  --spot-surface: #ffffff;
+  --spot-surface-subtle: #fafbfc;
+  --spot-sidebar: #f6f7f9;
+  --spot-line: #e2e5ea;
+  --spot-line-strong: #cdd2da;
+  --spot-ink: #1b2029;
+  --spot-ink-muted: #5b6471;
+  --spot-ink-faint: #8a92a1;
+  --spot-accent: #2364e6;
+  --spot-accent-hover: #1b53c7;
+  --spot-accent-active: #1745a5;
+  --spot-accent-subtle: #e8f0fd;
+  --spot-accent-ink: #1d56bd;
+  --spot-on-accent: #ffffff;
+  --spot-success: #18794e;
+  --spot-success-subtle: #e7f4ec;
+  --spot-success-ink: #145a3c;
+  --spot-warning: #9a6206;
+  --spot-warning-subtle: #fbf3e0;
+  --spot-warning-ink: #7d4f05;
+  --spot-danger: #c0382b;
+  --spot-danger-hover: #a82f23;
+  --spot-danger-active: #8f281e;
+  --spot-danger-subtle: #fbe9e7;
+  --spot-danger-ink: #9c2b20;
+  /* Translucent edges for tinted surfaces, one alpha per role. */
+  --spot-accent-border: rgb(35 100 230 / 0.22);
+  --spot-success-border: rgb(24 121 78 / 0.22);
+  --spot-warning-border: rgb(154 98 6 / 0.22);
+  --spot-danger-border: rgb(192 56 43 / 0.22);
+  --spot-muted-button: #f2f4f7;
+  --spot-state-hover: rgb(27 32 41 / 0.06);
+  --spot-state-active: rgb(27 32 41 / 0.09);
+  --spot-state-selected: #e8f0fd;
+  --spot-track: #e8ecf2;
+  --spot-scrollbar-thumb: #c9cfd8;
+  /* Only an overlay casts a shadow; an ordinary surface separates with a
+     border and a surface tone, as it does in a desktop application. */
+  --spot-shadow-popover: 0 8px 24px rgb(16 24 40 / 0.14);
+  --spot-scrim: rgb(16 24 40 / 0.45);
+  --spot-focus-ring: 0 0 0 3px rgb(35 100 230 / 0.32);
+  --spot-focus-ring-error: 0 0 0 3px rgb(192 56 43 / 0.28);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --spot-bg: #12151b;
+  --spot-surface: #191d25;
+  --spot-surface-subtle: #1d222b;
+  --spot-sidebar: #14171d;
+  --spot-line: #272d38;
+  --spot-line-strong: #35404f;
+  --spot-ink: #e7eaf0;
+  --spot-ink-muted: #9aa3b1;
+  --spot-ink-faint: #6d7686;
+  --spot-accent: #4d8dff;
+  --spot-accent-hover: #6aa1ff;
+  --spot-accent-active: #3a7bf0;
+  --spot-accent-subtle: #213351;
+  --spot-accent-ink: #a9c8ff;
+  --spot-on-accent: #0b1220;
+  --spot-success: #46b07c;
+  --spot-success-subtle: #17302a;
+  --spot-success-ink: #7fd6ab;
+  --spot-warning: #d9a33c;
+  --spot-warning-subtle: #352b14;
+  --spot-warning-ink: #ebc069;
+  --spot-danger: #ea6a5c;
+  --spot-danger-hover: #f08377;
+  --spot-danger-active: #d8574a;
+  --spot-danger-subtle: #3b211f;
+  --spot-danger-ink: #f2998f;
+  --spot-accent-border: rgb(77 141 255 / 0.4);
+  --spot-success-border: rgb(70 176 124 / 0.36);
+  --spot-warning-border: rgb(217 163 60 / 0.36);
+  --spot-danger-border: rgb(234 106 92 / 0.4);
+  --spot-muted-button: #232936;
+  --spot-state-hover: rgb(231 234 240 / 0.07);
+  --spot-state-active: rgb(231 234 240 / 0.12);
+  --spot-state-selected: #223550;
+  --spot-track: #2a313d;
+  --spot-scrollbar-thumb: #3a4250;
+  --spot-shadow-popover: 0 10px 28px rgb(0 0 0 / 0.5);
+  --spot-scrim: rgb(0 0 0 / 0.55);
+  --spot-focus-ring: 0 0 0 3px rgb(77 141 255 / 0.4);
+  --spot-focus-ring-error: 0 0 0 3px rgb(234 106 92 / 0.35);
+}
+
+/*
+ * Theme-aware variants for anything a token cannot express. `<html>` carries
+ * `data-theme`, which is also what the Flask pages read.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  /* Sizes follow the design scale: --text-md is the small UI size the shell
+     uses for controls, and the title size is only for page titles. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-title: 1.625rem;
+
+  /* The design's radius scale tops out at 8px; `rounded-full` is for something
+     genuinely round (a status dot, a spinner), never a pill-shaped label. */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 999px;
+
+  --font-ui: var(--spot-font-ui);
+
+  --color-bg: var(--spot-bg);
+  --color-surface: var(--spot-surface);
+  --color-surface-subtle: var(--spot-surface-subtle);
+  --color-sidebar: var(--spot-sidebar);
+  --color-line: var(--spot-line);
+  --color-line-strong: var(--spot-line-strong);
+  --color-ink: var(--spot-ink);
+  --color-ink-muted: var(--spot-ink-muted);
+  --color-ink-faint: var(--spot-ink-faint);
+  --color-accent: var(--spot-accent);
+  --color-accent-hover: var(--spot-accent-hover);
+  --color-accent-active: var(--spot-accent-active);
+  --color-accent-subtle: var(--spot-accent-subtle);
+  --color-accent-ink: var(--spot-accent-ink);
+  --color-accent-border: var(--spot-accent-border);
+  --color-on-accent: var(--spot-on-accent);
+  --color-success: var(--spot-success);
+  --color-success-subtle: var(--spot-success-subtle);
+  --color-success-ink: var(--spot-success-ink);
+  --color-success-border: var(--spot-success-border);
+  --color-warning: var(--spot-warning);
+  --color-warning-subtle: var(--spot-warning-subtle);
+  --color-warning-ink: var(--spot-warning-ink);
+  --color-warning-border: var(--spot-warning-border);
+  --color-danger: var(--spot-danger);
+  --color-danger-hover: var(--spot-danger-hover);
+  --color-danger-active: var(--spot-danger-active);
+  --color-danger-subtle: var(--spot-danger-subtle);
+  --color-danger-ink: var(--spot-danger-ink);
+  --color-danger-border: var(--spot-danger-border);
+  --color-muted-button: var(--spot-muted-button);
+  --color-state-hover: var(--spot-state-hover);
+  --color-state-active: var(--spot-state-active);
+  --color-state-selected: var(--spot-state-selected);
+  --color-track: var(--spot-track);
+  --color-scrim: var(--spot-scrim);
+
+  --shadow-popover: var(--spot-shadow-popover);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--spot-bg);
+    color: var(--spot-ink);
+    font-family: var(--spot-font-ui);
+    font-size: var(--text-base);
+    line-height: 1.55;
+    margin: 0;
+    /* The window never scrolls as a page: the shell owns the frame and the
+       content region is the one scroll container (see AppShell). */
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin-top: 0;
+  }
+
+  a {
+    color: var(--spot-accent-ink);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--spot-accent);
+    text-decoration: underline;
+  }
+
+  :focus-visible {
+    border-radius: var(--radius-xs);
+    box-shadow: var(--spot-focus-ring);
+    outline: none;
+  }
+}
+
+/*
+ * One scrollbar style for every region the shell scrolls (the sidebar and the
+ * content area): a thin, low-contrast indicator rather than the platform
+ * default, which is heavy next to the shell's borders.
+ */
+@utility app-scroll {
+  scrollbar-color: var(--spot-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--spot-scrollbar-thumb);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 5px;
+  }
+}
+
+/*
+ * The pywebview frameless window is dragged and its controls are pressed
+ * through the native window chrome: pywebview looks for these element classes
+ * and hands the events to the OS (see spotm3u/desktop_macos.py).
+ */
+@utility pywebview-drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+@utility pywebview-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/*
+ * The toast's entrance, mirrored from the Flask ``.app-toast`` transition:
+ * it arrives from half a notch below and settles into its place.
+ */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
