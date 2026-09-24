@@ -1,6 +1,7 @@
 """Online source search utilities for tracks without a local match."""
 
 from ..metadata import MetadataResult, enrich_metadata
+from ..metadata_jobs import MetadataJob
 from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
 from .cache import DownloadCache, cache_metadata_key, source_identity
 from .downloader import download_track
@@ -57,4 +58,5 @@ __all__ = [
     "validate_downloaded_audio",
     "enrich_metadata",
     "MetadataResult",
+    "MetadataJob",
 ]

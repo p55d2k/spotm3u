@@ -11,7 +11,8 @@ from typing import Literal
 
 from .audio.resolver import LocalAudioResolver
 from .log import TrackLogger
-from .metadata import enrich_metadata
+from .metadata import enrich_metadata  # noqa: F401 - compatibility seam for integrations/tests
+from .metadata_jobs import MetadataJob
 from .models import ResolvedTrack, Track
 from .online.audio_validation import AudioValidation, validate_downloaded_audio
 from .online.cache import DownloadCache
@@ -201,7 +202,7 @@ class TrackResolver:
             )
             log.info("local match found path=%s", local.resolved.local_path)
             report("enriching-metadata")
-            metadata_result = enrich_metadata(local.resolved.local_path, track, self.output_dir)
+            metadata_result = MetadataJob(track, self.output_dir, local.resolved.local_path).run()
             if metadata_result.errors:
                 log.info(
                     "metadata enrichment status=local path=%s errors=%s",
@@ -345,7 +346,7 @@ class TrackResolver:
                 self.cache.store(track, ranking.candidate.url, downloaded)
 
             report("enriching-metadata")
-            metadata_result = enrich_metadata(downloaded, track, self.output_dir)
+            metadata_result = MetadataJob(track, self.output_dir, downloaded).run()
             if metadata_result.errors:
                 log.info(
                     "metadata enrichment status=downloaded path=%s errors=%s",

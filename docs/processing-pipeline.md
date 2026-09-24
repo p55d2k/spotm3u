@@ -50,6 +50,14 @@ artist artwork, and the separate ID3 writes, provided writes to the same audio
 file are serialized. Candidate attempts must remain ordered by ranking, and
 M3U output must remain in playlist order.
 
+`spotm3u.metadata_jobs.MetadataJob` is the explicit handoff between these
+pipelines. It contains the track and metadata destination before audio exists;
+`with_audio_path()` creates the ready-to-run job after download. Its `run()`
+method delegates to the existing enrichment implementation and returns the
+existing `MetadataResult`, preserving provider behavior and cache semantics.
+This is a queueable boundary for Task 97 without starting additional workers
+or changing request rates in this task.
+
 ## Timing diagnostics
 
 The pipeline logs structured records using `timing stage=<name>
