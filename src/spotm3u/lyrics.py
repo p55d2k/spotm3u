@@ -25,6 +25,7 @@ from typing import Any
 
 import syncedlyrics
 
+from .metadata_cache import MetadataCache
 from .models import Track
 from .rate_limits import provider_request
 
@@ -48,6 +49,7 @@ _LRC_META = re.compile(r"\[[a-zA-Z]+\s*:[^\]]*\]")
 # track. Fast mode turns this off so the lightweight download path performs no
 # lyrics lookups at all. Configured through ``lyrics.enabled`` in config.toml.
 _LYRICS_ENABLED = True
+_LYRICS_CACHE = MetadataCache()
 
 
 def set_lyrics_enabled(enabled: bool) -> None:
@@ -208,23 +210,35 @@ def fetch_lyrics(track: Track) -> str | None:
     term = lyrics_search_term(track)
     if not term:
         return None
-    try:
 
+    def fetch() -> str | None:
         def search():
             return syncedlyrics.search(term)
 
-        raw = (
-            search()
-            if getattr(syncedlyrics.search, "__module__", "syncedlyrics") != "syncedlyrics"
-            else provider_request("lyrics", search)
-        )
-    except Exception as exc:  # any provider/library failure is non-critical
-        logger.debug("Lyrics lookup failed term=%s: %s", term, exc)
-        return None
-    lyrics = normalize_lyrics(raw)
-    if lyrics is None:
-        logger.debug("Lyrics not found term=%s", term)
-    return lyrics
+        try:
+            raw = (
+                search()
+                if getattr(syncedlyrics.search, "__module__", "syncedlyrics") != "syncedlyrics"
+                else provider_request("lyrics", search)
+            )
+        except Exception as exc:
+            logger.debug("Lyrics lookup failed term=%s: %s", term, exc)
+            return None
+        lyrics = normalize_lyrics(raw)
+        if lyrics is None:
+            logger.debug("Lyrics not found term=%s", term)
+        return lyrics
+
+    # Test and embedding integrations may replace the provider function; do
+    # not let those isolated callables share the process cache.
+    if getattr(syncedlyrics.search, "__module__", "syncedlyrics") != "syncedlyrics":
+        return fetch()
+    key = (
+        f"track:{track.spotify_id}"
+        if track.spotify_id
+        else f"song:{lyrics_search_term(track).casefold()}"
+    )
+    return _LYRICS_CACHE.get_or_fetch(key, fetch)
 
 
 __all__ = [

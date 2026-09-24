@@ -73,6 +73,13 @@ exponential backoff, and keeps request, retry, failure, rate-limit, and
 latency counters for diagnostics. Cached artwork paths do not enter the
 request layer.
 
+Metadata cache keys prefer stable track IDs for lyrics and normalized
+artist/album identities for artwork. Successful results are cached and
+concurrent misses use single-flight coordination, so duplicate tracks or
+artists share one request. Missing or failed results are not retained as
+permanent negative entries; they can recover on a later run. Cache metrics
+include requests, hits, misses, and single-flight joins.
+
 ## Timing diagnostics
 
 The pipeline logs structured records using `timing stage=<name>
