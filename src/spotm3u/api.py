@@ -690,15 +690,15 @@ def add_playlist_to_media_player(job_id: str, playlist_id: str):
     The playlist written by the processing job is reused as-is; nothing is
     regenerated for this action, and the M3U download stays available.
     """
+    job = current_app.config["JOB_MANAGER"].get(job_id, playlist_id)
+    if job is None or job.playlist_id != playlist_id or job.status != "completed":
+        return _error("That playlist is not ready to import.", ERROR_JOB_NOT_READY, 404)
     if not media_player_available():
         return _error(
             "Adding to the media player is only available on macOS and Windows.",
             ERROR_MEDIA_PLAYER_UNAVAILABLE,
             404,
         )
-    job = current_app.config["JOB_MANAGER"].get(job_id, playlist_id)
-    if job is None or job.playlist_id != playlist_id or job.status != "completed":
-        return _error("That playlist is not ready to import.", ERROR_JOB_NOT_READY, 404)
     state = _track_state(job)
     _annotate_lyrics(state)
     paths = [
