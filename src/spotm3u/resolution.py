@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -183,9 +184,14 @@ class TrackResolver:
                 stage_callback(stage)
 
         log = self._log.with_track(track)
+        track_started = time.perf_counter()
         log.info("stage=resolving-local")
         report("resolving-local")
         local = self.local_resolver.resolve(track)
+        log.info(
+            "timing stage=matching duration_ms=%.1f",
+            (time.perf_counter() - track_started) * 1000,
+        )
         if local.resolved is not None and _is_real_file(local.resolved.local_path):
             resolved = ResolvedTrack(
                 track,
@@ -210,7 +216,12 @@ class TrackResolver:
         log.info("stage=searching")
         report("searching")
         try:
+            search_started = time.perf_counter()
             candidates = tuple(self.searcher.search(track))
+            log.info(
+                "timing stage=searching duration_ms=%.1f",
+                (time.perf_counter() - search_started) * 1000,
+            )
         except (OSError, RuntimeError, ValueError) as exc:
             log.error("source search failed: %s", exc)
             return TrackResolution(track, "failed", reasons=(f"source search failed: {exc}",))
@@ -282,12 +293,17 @@ class TrackResolver:
                     reused_from_cache = True
                     log.info("download reused from cache path=%s", cached)
             if downloaded is None:
+                download_started = time.perf_counter()
                 try:
                     downloaded = self.downloader(track, ranking.candidate.url, self.output_dir)
                 except (DownloadError, OSError, RuntimeError) as exc:
                     download_failures += 1
                     log.warning("download failed url=%s error=%s", ranking.candidate.url, exc)
                     continue
+                log.info(
+                    "timing stage=audio-download duration_ms=%.1f",
+                    (time.perf_counter() - download_started) * 1000,
+                )
                 log.info("download completed path=%s", downloaded)
 
             report("validating-audio")
@@ -427,10 +443,20 @@ class TrackResolver:
         stage_callback: TrackStageCallback | None = None,
     ) -> TrackResolution:
         """Resolve one track without allowing an uncertain result to succeed."""
+        started = time.perf_counter()
         prepared = self.prepare(track, stage_callback=stage_callback)
         if not isinstance(prepared, PreparedTrack):
+            self._log.with_track(track).info(
+                "timing stage=track-processing duration_ms=%.1f",
+                (time.perf_counter() - started) * 1000,
+            )
             return prepared
-        return self.complete(prepared, stage_callback=stage_callback)
+        result = self.complete(prepared, stage_callback=stage_callback)
+        self._log.with_track(track).info(
+            "timing stage=track-processing duration_ms=%.1f",
+            (time.perf_counter() - started) * 1000,
+        )
+        return result
 
     def resolve_all(self, tracks: list[Track]) -> list[TrackResolution]:
         """Resolve tracks in playlist order, including intentional duplicates."""

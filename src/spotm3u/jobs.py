@@ -333,6 +333,7 @@ class ProcessingJob:
         """Resolve ``indices`` (or every track) and rewrite the M3U."""
         total = len(self.tracks) if indices is None else len(indices)
         track_log = TrackLogger(logger, job_id=self.job_id)
+        job_started = time.perf_counter()
         track_log.info(
             "job started playlist=%s tracks=%d output=%s fast_mode=%s",
             self.playlist_name,
@@ -361,10 +362,11 @@ class ProcessingJob:
                 self._status = "completed"
                 self._completed_at = time.time()
             track_log.info(
-                "job completed m3u_path=%s successful=%d failed=%d",
+                "job completed m3u_path=%s successful=%d failed=%d duration_ms=%.1f",
                 m3u_path,
                 self.successful,
                 self.failed,
+                (time.perf_counter() - job_started) * 1000,
             )
         except Exception as exc:  # pragma: no cover - defensive final state
             message = (

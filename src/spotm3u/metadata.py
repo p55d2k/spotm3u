@@ -7,6 +7,7 @@ caching these functions rely on lives in :mod:`spotm3u.artwork`.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -531,12 +532,18 @@ def enrich_metadata(
     embeddings_on = metadata_enabled()
 
     if embeddings_on and id3_tags_enabled():
+        started = time.perf_counter()
         try:
             fields_written.extend(_write_all_metadata(audio_path, track))
         except Exception as exc:  # pragma: no cover - defensive behavior
             errors.append(f"metadata write failed: {exc}")
+        logger.info(
+            "timing stage=metadata-embedding duration_ms=%.1f",
+            (time.perf_counter() - started) * 1000,
+        )
 
     if embeddings_on and album_artwork_enabled():
+        started = time.perf_counter()
         if track.artists:
             primary_artist = track.album_artist or track.artists[0]
             artwork_data, source = _find_album_artwork(
@@ -563,8 +570,12 @@ def enrich_metadata(
                 errors.append("artwork not found: unknown")
         else:
             errors.append("missing album/artist for artwork lookup")
+        logger.info(
+            "timing stage=album-artwork duration_ms=%.1f", (time.perf_counter() - started) * 1000
+        )
 
     if embeddings_on and artist_artwork_enabled() and track.artists:
+        started = time.perf_counter()
         artist_artwork_embedded, artist_artwork_source = _embed_artist_artwork(
             audio_path,
             download_path,
@@ -573,12 +584,17 @@ def enrich_metadata(
             album=track.album,
             title=track.title,
         )
+        logger.info(
+            "timing stage=artist-artwork duration_ms=%.1f", (time.perf_counter() - started) * 1000
+        )
 
     # Lyrics are skipped entirely in fast mode (``set_lyrics_enabled``) and by
     # the metadata master switch, which avoids the lyrics provider requests as
     # well as the metadata write.
     if embeddings_on and lyrics_enabled() and track.title:
+        started = time.perf_counter()
         fields_written.extend(_embed_track_lyrics(audio_path, track))
+        logger.info("timing stage=lyrics duration_ms=%.1f", (time.perf_counter() - started) * 1000)
 
     return MetadataResult(
         path=audio_path,
