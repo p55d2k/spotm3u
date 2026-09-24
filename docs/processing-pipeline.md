@@ -73,6 +73,20 @@ exponential backoff, and keeps request, retry, failure, rate-limit, and
 latency counters for diagnostics. Cached artwork paths do not enter the
 request layer.
 
+Finalization is driven by individual metadata futures: a completed track is
+committed to job state as soon as its own audio and metadata are ready rather
+than waiting for the playlist's slowest track. Progress exposes the
+`enriching-metadata` stage before completion, and finalization timing is logged
+as `timing stage=finalization`. Worker pools remain bounded and shut down before
+the job completes.
+
+Source validation classifies strong contradictions (wrong identity, explicit
+cover/karaoke/spoken content, or extreme duration mismatch) as hard rejections.
+Missing metadata, source-type preference, and moderate duration differences
+remain warnings or ranking penalties; they do not reject a plausible recording.
+This preserves retry behavior while avoiding false negatives from incomplete
+provider metadata.
+
 Metadata cache keys prefer stable track IDs for lyrics and normalized
 artist/album identities for artwork. Successful results are cached and
 concurrent misses use single-flight coordination, so duplicate tracks or

@@ -416,6 +416,7 @@ class ProcessingJob:
             if not result.successful or result.local_path is None:
                 self._finalize_track(index, result)
                 return
+            self._set_track_status(index, "enriching-metadata")
             metadata_futures.append(
                 (
                     index,
@@ -434,7 +435,11 @@ class ProcessingJob:
                 result = resolver.resolve(tracks[index], stage_callback=self._stage_reporter(index))
                 submit_metadata(index, result)
                 self._mark_searched(index)
-            for index, result, future in metadata_futures:
+            future_to_metadata = {
+                future: (index, result) for index, result, future in metadata_futures
+            }
+            for future in as_completed(future_to_metadata):
+                index, result = future_to_metadata[future]
                 metadata_result = future.result()
                 if metadata_result.errors:
                     TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
@@ -493,7 +498,9 @@ class ProcessingJob:
                     self._check_deadline()
                     index = future_to_index[future]
                     submit_metadata(index, future.result())
-        for index, result, future in metadata_futures:
+        future_to_metadata = {future: (index, result) for index, result, future in metadata_futures}
+        for future in as_completed(future_to_metadata):
+            index, result = future_to_metadata[future]
             metadata_result = future.result()
             if metadata_result.errors:
                 TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).info(
@@ -555,6 +562,7 @@ class ProcessingJob:
         )
 
     def _finalize_track(self, index: int, result: TrackResolution) -> None:
+        started = time.perf_counter()
         status = TRACK_STATUS_TERMINAL.get(result.status, "failed")
         with self._lock:
             self._current_index = index
@@ -579,6 +587,10 @@ class ProcessingJob:
                 result.status,
                 result.status,
                 result.local_path,
+            )
+            log.info(
+                "timing stage=finalization duration_ms=%.1f",
+                (time.perf_counter() - started) * 1000,
             )
         else:
             log.warning(
