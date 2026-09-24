@@ -106,12 +106,14 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
     }
   };
 
-  const active = state?.playlists.find((playlist) => playlist.status === "running") ?? null;
-  const currentTrack = active
-    ? active.current_track
-      ? `Active playlist: ${active.playlist.name} · Current: ${active.current_track.title} — ${statusLabel(active.current_track.status)}`
-      : `Active playlist: ${active.playlist.name}`
-    : undefined;
+  const runningPlaylists =
+    state?.playlists.filter((playlist) => playlist.status === "running") ?? [];
+  const currentTrack =
+    runningPlaylists.length > 0
+      ? `Running concurrently: ${runningPlaylists.map((playlist) => playlist.playlist.name).join(", ")}`
+      : state?.status === "running"
+        ? "Processing selected playlists concurrently"
+        : undefined;
 
   return (
     <>
