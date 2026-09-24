@@ -78,7 +78,7 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
     reasons: list[str] = []
 
     expected = track.duration_ms / 1000 if track.duration_ms else None
-    if expected and abs(duration - expected) > max(3.0, expected * 0.08):
+    if expected and abs(duration - expected) > 60:
         verdict = AudioValidation(
             audio_path,
             "invalid",
@@ -95,6 +95,8 @@ def validate_downloaded_audio(track: Track, path: str | Path) -> AudioValidation
             duration,
         )
         return verdict
+    if expected and abs(duration - expected) > max(3.0, expected * 0.08):
+        reasons.append("moderate duration difference")
 
     content_text = " ".join((*metadata.values(), audio_path.stem))
     hard_content = _CONTENT_HARD_RE.search(content_text)

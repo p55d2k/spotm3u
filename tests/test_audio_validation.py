@@ -46,6 +46,18 @@ def test_duration_mismatch_is_invalid(tmp_path, monkeypatch):
     assert validate_downloaded_audio(TRACK, path).status == "invalid"
 
 
+def test_moderate_duration_difference_is_a_warning(tmp_path, monkeypatch):
+    path = tmp_path / "song.mp3"
+    path.write_bytes(b"audio")
+    parsed = types.SimpleNamespace(info=types.SimpleNamespace(length=180), tags=None)
+    install_mutagen(monkeypatch, parsed)
+
+    result = validate_downloaded_audio(TRACK, path)
+
+    assert result.status == "valid"
+    assert "moderate duration difference" in result.reasons
+
+
 def test_corrupt_and_missing_files_are_invalid(tmp_path, monkeypatch):
     install_mutagen(monkeypatch, None)
     corrupt = tmp_path / "corrupt.mp3"
