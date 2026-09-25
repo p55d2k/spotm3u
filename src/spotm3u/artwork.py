@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import mutagen.id3 as mutagen_id3
@@ -493,6 +494,96 @@ def cached_artwork_path(download_dir: str | Path, track: Track) -> Path | None:
     return path if path.is_file() else None
 
 
+# How many distinct artists are resolved in parallel during a playlist-level
+# prefetch. Artist identity checks are a handful of HTTP requests each, so a
+# modest bound keeps a 50-track playlist from opening dozens of connections
+# while still resolving its artists well ahead of the per-track metadata pass.
+_ARTIST_PREFETCH_WORKERS = 4
+
+
+def _artist_evidence_rank(track: Track) -> int:
+    """How much identity evidence one track can offer for its artist.
+
+    An album is the strongest signal (it anchors the Deezer release check), a
+    title alone is weaker, and neither still lets the artist be resolved when
+    MusicBrainz carries the identity. The best-evidenced track is the one whose
+    album/title is handed to the artist resolver.
+    """
+    return (2 if track.album else 0) + (1 if track.title else 0)
+
+
+def unique_artwork_artists(tracks: Iterable[Track]) -> list[str]:
+    """Return the distinct artwork artists across ``tracks``, in first-seen order.
+
+    ``artwork_artist`` is the same identity the per-track pass embeds, so the
+    prefetch and the enrichment always agree on who an artist is.
+    """
+    seen: dict[str, None] = {}
+    for track in tracks:
+        artist = artwork_artist(track)
+        if artist:
+            seen.setdefault(artist, None)
+    return list(seen)
+
+
+def prefetch_artist_artwork(
+    download_dir: str | Path,
+    tracks: Iterable[Track],
+    *,
+    max_workers: int = _ARTIST_PREFETCH_WORKERS,
+) -> int:
+    """Resolve each unique artist's profile image once, off the per-track path.
+
+    A playlist usually credits the same artist across many tracks (three
+    ``Jungkook`` tracks, two ``IVE`` tracks, ...). Resolving the artist inside
+    each track's metadata pass makes the first track of every artist pay the
+    identity-check latency and lets concurrent workers race on the same
+    identity. This collects the distinct artists up front and resolves each one
+    a single time, with bounded concurrency, so the per-track pass is a cache
+    hit.
+
+    The best-evidenced track of each artist supplies the album/title used for
+    the identity check, which is what lets a MusicBrainz identity or a matching
+    Deezer release settle a namesake. Resolution is optional enrichment: a
+    failure is swallowed and simply leaves the artist unresolved, exactly as a
+    missing profile image does. Returns the number of unique artists resolved.
+    """
+    if not artist_artwork_enabled():
+        return 0
+    from .metadata import metadata_enabled  # local import avoids an import cycle
+
+    if not metadata_enabled():
+        return 0
+
+    evidence: dict[str, Track] = {}
+    for track in tracks:
+        artist = artwork_artist(track)
+        if not artist:
+            continue
+        current = evidence.get(artist)
+        if current is None or _artist_evidence_rank(track) > _artist_evidence_rank(current):
+            evidence[artist] = track
+    if not evidence:
+        return 0
+
+    directory = Path(download_dir)
+    workers = max(1, min(int(max_workers), len(evidence)))
+
+    def resolve(item: tuple[str, Track]) -> None:
+        artist, track = item
+        try:
+            _find_artist_artwork(directory, artist, album=track.album, title=track.title)
+        except Exception:  # noqa: BLE001 - prefetch must never fail a job
+            logger.debug("Artist artwork prefetch failed artist=%s", artist, exc_info=True)
+
+    with ThreadPoolExecutor(
+        max_workers=workers, thread_name_prefix="spotm3u-artist-artwork"
+    ) as pool:
+        list(pool.map(resolve, evidence.items()))
+    logger.debug("Artist artwork prefetched artists=%d", len(evidence))
+    return len(evidence)
+
+
 __all__ = [
     "_find_album_artwork",
     "_find_artist_artwork",
@@ -500,8 +591,10 @@ __all__ = [
     "artist_artwork_enabled",
     "artwork_artist",
     "cached_artwork_path",
+    "prefetch_artist_artwork",
     "prune_missing_artwork",
     "set_album_artwork_enabled",
     "set_artist_artwork_enabled",
     "set_artwork_verify_local",
+    "unique_artwork_artists",
 ]

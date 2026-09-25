@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from .artwork import artwork_artist, prune_missing_artwork
+from .artwork import artwork_artist, prefetch_artist_artwork, prune_missing_artwork
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
 from .metadata_jobs import MetadataJob
@@ -40,6 +40,19 @@ TrackProcessingStatus = Literal[
     "skipped",
 ]
 ResolverFactory = Callable[[], TrackResolver]
+
+
+def _prefetch_artist_artwork_best_effort(output_dir: Path, tracks: Sequence[Track]) -> None:
+    """Warm the artist-artwork cache for a playlist, never failing the job.
+
+    Runs on its own thread so the per-track metadata pass can start immediately
+    and later finds the artists it needs already resolved. Artist artwork is
+    optional enrichment, so any failure is swallowed here.
+    """
+    try:
+        prefetch_artist_artwork(output_dir, tracks)
+    except Exception:  # noqa: BLE001 - prefetch must never fail a job
+        logger.debug("Artist artwork prefetch failed", exc_info=True)
 
 
 def _missing_file(path: str | None) -> bool:
@@ -184,6 +197,8 @@ class ProcessingJob:
         self._results: list[TrackResolution | None] = [None] * len(self.tracks)
         # Set while a retry is running: the tracks the progress belongs to.
         self._pending: tuple[int, ...] | None = None
+        # The in-flight playlist-level artist-artwork prefetch, if any.
+        self._prefetch_thread: threading.Thread | None = None
 
     @property
     def status(self) -> JobStatus:
@@ -386,6 +401,10 @@ class ProcessingJob:
             # The user-facing message above is what the UI shows; the traceback
             # stays here for debugging.
             track_log.exception("job failed: %s", exc)
+        finally:
+            # The artist prefetch shares this run's cache and must not outlive
+            # it, or a later job (or test) could see requests it did not make.
+            self._join_prefetch()
 
     def _resolve_all(
         self,
@@ -413,6 +432,25 @@ class ProcessingJob:
             thread_name_prefix=f"spotm3u-metadata-{self.job_id}",
         )
         metadata_errors: list[Exception] = []
+        # Resolve each unique artist's profile image once, concurrently with the
+        # track pipeline, so the per-track metadata pass only ever reads the
+        # cache. Fast mode downloads MP3s with no metadata work at all, so it
+        # never warms the artist cache either.
+        prefetch_thread: threading.Thread | None = None
+        if not self.fast_mode:
+            prefetch_thread = threading.Thread(
+                target=_prefetch_artist_artwork_best_effort,
+                args=(self.output_dir, [tracks[index] for index in selected]),
+                name=f"spotm3u-artist-artwork-{self.job_id}",
+                daemon=True,
+            )
+            prefetch_thread.start()
+            self._prefetch_thread = prefetch_thread
+
+        def join_prefetch() -> None:
+            if prefetch_thread is not None:
+                prefetch_thread.join()
+            self._prefetch_thread = None
 
         def finalize_metadata(
             future: Future,
@@ -450,6 +488,7 @@ class ProcessingJob:
                 result = resolver.resolve(tracks[index], stage_callback=self._stage_reporter(index))
                 submit_metadata(index, result)
                 self._mark_searched(index)
+            join_prefetch()
             metadata_pool.shutdown()
             if metadata_errors:
                 raise metadata_errors[0]
@@ -504,9 +543,16 @@ class ProcessingJob:
                     self._check_deadline()
                     index = future_to_index[future]
                     submit_metadata(index, future.result())
+        join_prefetch()
         metadata_pool.shutdown()
         if metadata_errors:
             raise metadata_errors[0]
+
+    def _join_prefetch(self) -> None:
+        """Wait for this job's artist-artwork prefetch thread, if one is running."""
+        thread = self._prefetch_thread
+        if thread is not None:
+            thread.join()
 
     def _check_deadline(self) -> None:
         """Raise when the whole job has exceeded its ``timeout`` budget."""

@@ -1,6 +1,8 @@
 """Tests for artist artwork resolution and embedding."""
 
 import logging
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -755,3 +757,108 @@ def test_metadata_master_switch_leaves_the_audio_untouched(
     assert result.artwork_embedded is False
     assert result.artist_artwork_embedded is False
     assert mp3.read_bytes() == b"fake-mp3-data"
+
+
+# --- playlist-level artist prefetch -------------------------------------------
+
+
+def test_unique_artwork_artists_deduplicates_and_keeps_order() -> None:
+    """A playlist's artists are collected once each, without joining names."""
+    from spotm3u.artwork import unique_artwork_artists
+
+    tracks = [
+        Track("A", ["Jungkook"], album="GOLDEN"),
+        Track("B", ["Jungkook"], album="GOLDEN"),
+        Track("C", ["IVE"], album="IVE SWITCH"),
+        Track("D", []),
+    ]
+
+    assert unique_artwork_artists(tracks) == ["Jungkook", "IVE"]
+
+
+def test_prefetch_resolves_each_unique_artist_once(tmp_path, monkeypatch, artist_artwork_toggle):
+    """Regression: a 50-track playlist must not resolve an artist per track.
+
+    Three Jungkook tracks, two IVE tracks and one NewJeans track are three
+    resolutions, not six.
+    """
+    calls: list[str] = []
+
+    def fake_find(download_dir, artist, *, album=None, title=None):
+        calls.append(artist)
+        return b"artist-image", "deezer-artist:1:verified:test"
+
+    monkeypatch.setattr(artwork, "_find_artist_artwork", fake_find)
+    tracks = [
+        Track("S1", ["Jungkook"], album="GOLDEN"),
+        Track("S2", ["Jungkook"], album="GOLDEN"),
+        Track("S3", ["Jungkook"], album="GOLDEN"),
+        Track("S4", ["IVE"], album="IVE SWITCH"),
+        Track("S5", ["IVE"], album="IVE SWITCH"),
+        Track("S6", ["NewJeans"], album="Get Up"),
+    ]
+
+    resolved = artwork.prefetch_artist_artwork(tmp_path, tracks)
+
+    assert resolved == 3
+    assert sorted(calls) == ["IVE", "Jungkook", "NewJeans"]
+
+
+def test_prefetch_uses_the_best_evidenced_track_for_identity(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """The album-carrying track supplies the identity, not an album-less one."""
+    calls: list[tuple[str, str | None, str | None]] = []
+
+    def fake_find(download_dir, artist, *, album=None, title=None):
+        calls.append((artist, album, title))
+        return b"artist-image", "deezer-artist:1:verified:test"
+
+    monkeypatch.setattr(artwork, "_find_artist_artwork", fake_find)
+    tracks = [
+        Track("Only Title", ["Artist"]),
+        Track("Song", ["Artist"], album="Album"),
+        Track("Another", ["Artist"], album="Album"),
+    ]
+
+    artwork.prefetch_artist_artwork(tmp_path, tracks)
+
+    assert calls == [("Artist", "Album", "Song")]
+
+
+def test_prefetch_concurrency_is_bounded(tmp_path, monkeypatch, artist_artwork_toggle):
+    """Many artists resolve in parallel, but never more than ``max_workers`` at once."""
+    lock = threading.Lock()
+    state = {"active": 0, "peak": 0}
+
+    def fake_find(download_dir, artist, *, album=None, title=None):
+        with lock:
+            state["active"] += 1
+            state["peak"] = max(state["peak"], state["active"])
+        try:
+            time.sleep(0.05)
+            return b"artist-image", "deezer-artist:1:verified:test"
+        finally:
+            with lock:
+                state["active"] -= 1
+
+    monkeypatch.setattr(artwork, "_find_artist_artwork", fake_find)
+    tracks = [Track(f"S{index}", [f"Artist {index}"], album="Album") for index in range(8)]
+
+    artwork.prefetch_artist_artwork(tmp_path, tracks, max_workers=2)
+
+    assert state["peak"] == 2
+
+
+def test_prefetch_is_skipped_when_artist_artwork_is_disabled(
+    tmp_path, monkeypatch, artist_artwork_toggle
+):
+    """With artist artwork off, the prefetch makes no requests at all."""
+    artwork.set_artist_artwork_enabled(False)
+    called: list[str] = []
+    monkeypatch.setattr(artwork, "_find_artist_artwork", lambda *args, **kwargs: called.append("x"))
+
+    resolved = artwork.prefetch_artist_artwork(tmp_path, [Track("S", ["Artist"], album="Album")])
+
+    assert resolved == 0
+    assert called == []

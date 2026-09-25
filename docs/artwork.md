@@ -118,6 +118,15 @@ track credited to the same artist reuses one download, and concurrent workers
 share a single in-flight fetch through the same deduplication used for album
 artwork.
 
+Each playlist job also collects its **unique artists up front** and resolves
+them once each, in parallel with the track pipeline, bounded to a small number
+of concurrent resolutions (`_ARTIST_PREFETCH_WORKERS`). A playlist with 50
+tracks across 20 artists performs at most 20 artist resolutions, not 50, and the
+per-track metadata pass then only reads the cache instead of paying the
+identity-check latency for the first track of every artist. The best-evidenced
+track of each artist supplies the album/title used for the identity check. Fast
+mode embeds no metadata at all, so it performs no artist resolution.
+
 Artist artwork is **optional enrichment**: a missing, invalid or unavailable
 image is recorded as a non-fatal metadata error (`artist artwork not found`,
 `artist artwork embed failed`), the album artwork and ID3 fields are unaffected,

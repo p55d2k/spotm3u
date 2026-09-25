@@ -835,3 +835,54 @@ def test_retry_is_rejected_while_the_job_is_running(tmp_path: Path) -> None:
 
     release.set()
     job.wait(timeout=5)
+
+
+def test_job_prefetches_each_unique_artist_once(tmp_path: Path, monkeypatch) -> None:
+    """Artist artwork is resolved per unique artist, not per track.
+
+    Regression for the task-91 performance requirement: a playlist of duplicate
+    artists must not trigger one artist resolution per track. Tracks resolve as
+    ``missing`` so no per-track metadata pass runs and the only artist lookups
+    are the job's playlist-level prefetch.
+    """
+    from spotm3u import artwork as artwork_module
+
+    resolved: list[str] = []
+
+    def fake_find(download_dir, artist, *, album=None, title=None):
+        resolved.append(artist)
+        return b"artist-image", "deezer-artist:1:verified:test"
+
+    monkeypatch.setattr(artwork_module, "_find_artist_artwork", fake_find)
+    tracks = [_track("A", "Jungkook"), _track("B", "Jungkook"), _track("C", "IVE")]
+
+    job = _job(tracks, [_resolution(track, "missing") for track in tracks], tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    assert sorted(resolved) == ["IVE", "Jungkook"]
+
+
+def test_fast_mode_job_skips_artist_artwork_prefetch(tmp_path: Path, monkeypatch) -> None:
+    """Fast mode downloads audio only, so it never resolves artist artwork."""
+    called: list[int] = []
+    monkeypatch.setattr(
+        "spotm3u.jobs.prefetch_artist_artwork",
+        lambda *args, **kwargs: called.append(1) or 0,
+    )
+    track = _track("A", "Jungkook")
+    resolver = FakeResolver([_resolution(track, "missing")])
+    job = ProcessingJob(
+        job_id="fast",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=[track],
+        output_dir=tmp_path / "output",
+        resolver_factory=lambda: resolver,
+        fast_mode=True,
+    )
+
+    job.start()
+    job.wait(timeout=5)
+
+    assert called == []
