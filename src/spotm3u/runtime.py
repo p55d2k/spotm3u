@@ -1,12 +1,14 @@
 """Runtime environment helpers shared by the launcher and packaging helpers.
 
 Distinguishes a PyInstaller bundle from a normal interpreter, reports whether
-standard streams exist, and returns the directories that hold bundled resources
-and sibling binaries.
+standard streams exist, returns the directories that hold bundled resources and
+sibling binaries, and names the per-user directory the application may keep its
+own state in.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -24,6 +26,25 @@ def has_console() -> bool:
     graphical error mechanism is needed instead.
     """
     return sys.stdout is not None or sys.stderr is not None
+
+
+def user_data_dir() -> Path:
+    """The per-user directory SpotM3U keeps its own state in.
+
+    ``%LOCALAPPDATA%\\SpotM3U`` on Windows, ``~/Library/Application
+    Support/SpotM3U`` on macOS, and ``$XDG_DATA_HOME/spotm3u`` (or
+    ``~/.local/share/spotm3u``) on Linux. The WebView's own storage directory
+    and the saved UI preferences both live under it; the directory is created
+    by whoever writes into it, never here.
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        root = Path(base) if base else Path.home() / "AppData" / "Local"
+        return root / "SpotM3U"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "SpotM3U"
+    data = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(data) / "spotm3u"
 
 
 def bundle_root() -> Path:

@@ -36,6 +36,7 @@ from flask import (
 )
 from werkzeug.exceptions import RequestEntityTooLarge
 
+from . import preferences
 from .artwork import cached_artwork_path
 from .exportify import ExportifyParseError, parse_exportify
 from .m3u import check_playlist
@@ -48,6 +49,7 @@ from .media_player import (
 )
 from .models import Playlist, Track
 from .normalization import sanitize_filename_component
+from .preferences import read_preferences, write_preferences
 from .uploads import PickedFile
 from .web_jobs import (
     _annotate_artwork,
@@ -84,6 +86,8 @@ ERROR_JOB_NOT_READY = "job_not_ready"
 ERROR_JOB_RUNNING = "job_running"
 # The generated playlist points at files that are gone.
 ERROR_PLAYLIST_INCOMPLETE = "playlist_incomplete"
+# A UI preference was sent with a value the application does not accept.
+ERROR_PREFERENCE_INVALID = "preference_invalid"
 # Media library handoff.
 ERROR_MEDIA_PLAYER_UNAVAILABLE = "media_player_unavailable"
 ERROR_NOTHING_TO_IMPORT = "nothing_to_import"
@@ -276,6 +280,51 @@ def metadata():
 def update_status():
     """Whether a newer SpotM3U release is available (never fails on the network)."""
     return jsonify(update_payload(current_app))
+
+
+@api.get("/preferences")
+def ui_preferences():
+    """The stored UI preferences (an empty object when nothing is chosen yet).
+
+    The frontend keeps its own copy in ``localStorage``, but that copy does not
+    survive in the desktop shell (pywebview's macOS backend drops WebView
+    storage on exit), so this is the record that actually persists.
+    """
+    return jsonify(read_preferences())
+
+
+@api.put("/preferences")
+def update_ui_preferences():
+    """Store a UI preference: ``{"theme": "light"|"dark"}``.
+
+    Answers with what is stored afterwards, so a write that could not happen
+    (for example a read-only state directory) reports the unchanged value
+    instead of claiming success. The theme itself is never required: an empty
+    object is refused because it names no preference to store.
+    """
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload:
+        return _error(
+            'Send the preference to store, for example {"theme": "dark"}.',
+            ERROR_PREFERENCE_INVALID,
+            400,
+        )
+    unknown = sorted(key for key in payload if key not in preferences.PREFERENCE_KEYS)
+    if unknown:
+        return _error(
+            f"Unknown preference: {', '.join(unknown)}.",
+            ERROR_PREFERENCE_INVALID,
+            400,
+        )
+    if not preferences.is_valid("theme", payload["theme"]):
+        options = " or ".join(f'"{theme}"' for theme in preferences.THEMES)
+        return _error(
+            f"The theme must be {options}.",
+            ERROR_PREFERENCE_INVALID,
+            400,
+        )
+    write_preferences({"theme": payload["theme"]})
+    return jsonify(read_preferences())
 
 
 @api.get("/icon.png")

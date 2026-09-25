@@ -6,15 +6,25 @@ from types import SimpleNamespace
 import pytest
 from flask import Flask
 
-from spotm3u import frontend
+from spotm3u import frontend, preferences
 
 _INDEX = '<!doctype html><div id="root"></div><script src="/assets/app.js"></script>'
+_HTML_INDEX = (
+    '<!doctype html><html lang="en"><head><title>SpotM3U</title></head>'
+    '<body><div id="root"></div><script src="/assets/app.js"></script></body></html>'
+)
 
 
-def _built(directory: Path, *, assets: dict[str, str] | None = None) -> Path:
+@pytest.fixture(autouse=True)
+def _state_dir(monkeypatch, tmp_path):
+    """Keep stored preferences (which theme the shell renders) out of the way."""
+    monkeypatch.setenv(preferences.STATE_DIR_ENV, str(tmp_path / "state"))
+
+
+def _built(directory: Path, *, assets: dict[str, str] | None = None, index: str = _INDEX) -> Path:
     """Write a minimal Vite-style build into ``directory`` and return it."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "index.html").write_text(_INDEX, encoding="utf-8")
+    (directory / "index.html").write_text(index, encoding="utf-8")
     for name, content in (assets or {"app.js": "console.log(1)"}).items():
         asset = directory / "assets" / name
         asset.parent.mkdir(parents=True, exist_ok=True)
@@ -214,6 +224,49 @@ def test_files_outside_the_build_are_not_served(monkeypatch, tmp_path) -> None:
 
     assert response.status_code == 404
     assert "do not serve" not in response.get_data(as_text=True)
+
+
+def test_the_shell_carries_the_stored_theme(monkeypatch, tmp_path) -> None:
+    """The stored theme reaches the first paint, not just the first API answer.
+
+    The desktop window keeps no WebView storage, so a theme read only from the
+    page would flash the system's theme on every launch.
+    """
+    preferences.write_preferences({"theme": "dark"})
+    client = _app(monkeypatch, _built(tmp_path / "dist", index=_HTML_INDEX)).test_client()
+
+    document = client.get("/").get_data(as_text=True)
+
+    assert '<html data-theme="dark" lang="en">' in document
+    assert 'id="root"' in document
+
+
+def test_an_unthemed_shell_is_served_exactly_as_built(monkeypatch, tmp_path) -> None:
+    client = _app(monkeypatch, _built(tmp_path / "dist", index=_HTML_INDEX)).test_client()
+
+    assert client.get("/").get_data(as_text=True) == _HTML_INDEX
+
+
+def test_a_client_route_carries_the_stored_theme_too(monkeypatch, tmp_path) -> None:
+    preferences.write_preferences({"theme": "light"})
+    client = _app(monkeypatch, _built(tmp_path / "dist", index=_HTML_INDEX)).test_client()
+
+    assert '<html data-theme="light" lang="en">' in client.get("/result").get_data(as_text=True)
+
+
+def test_a_shell_that_already_sets_a_theme_is_left_alone(monkeypatch, tmp_path) -> None:
+    preferences.write_preferences({"theme": "dark"})
+    index = '<!doctype html><html data-theme="light" lang="en"><body></body></html>'
+    client = _app(monkeypatch, _built(tmp_path / "dist", index=index)).test_client()
+
+    assert client.get("/").get_data(as_text=True) == index
+
+
+def test_a_shell_without_an_html_tag_is_served_as_built(monkeypatch, tmp_path) -> None:
+    preferences.write_preferences({"theme": "dark"})
+    client = _app(monkeypatch, _built(tmp_path / "dist")).test_client()
+
+    assert client.get("/").get_data(as_text=True) == _INDEX
 
 
 def test_an_unbuilt_frontend_explains_how_to_build_it(monkeypatch, tmp_path) -> None:

@@ -55,7 +55,7 @@ from .launcher import (
 from .log import PACKAGE_LOGGER
 from .m3u import check_playlist
 from .normalization import sanitize_filename_component
-from .runtime import bundle_roots, is_frozen
+from .runtime import bundle_roots, is_frozen, user_data_dir
 
 _LOGGER = logging.getLogger(PACKAGE_LOGGER)
 
@@ -496,25 +496,22 @@ def webview_storage_path() -> Path:
     to say where it is; the desktop shell owns that decision. pywebview's
     default is private mode, which *deletes* the WebView's data store on every
     launch (``clear_user_data`` on Windows, ``removeDataOfTypes_`` on macOS), so
-    the theme chosen in the sidebar and the dismissed update notice would come
-    back reset on every single run - behaviour no desktop application has.
+    anything the pages keep only in WebView storage would come back reset on
+    every single run - behaviour no desktop application has.
 
-    The store lives in the platform's application-data directory:
-    ``%LOCALAPPDATA%\\SpotM3U`` on Windows,
-    ``~/Library/Application Support/SpotM3U`` on macOS, and ``$XDG_DATA_HOME``
-    (or ``~/.local/share``) on Linux. ``SPOTM3U_WEBVIEW_STORAGE`` overrides it.
+    The store lives under the platform's application-data directory (see
+    :func:`spotm3u.runtime.user_data_dir`). ``SPOTM3U_WEBVIEW_STORAGE``
+    overrides it.
+
+    Note that pywebview only honors ``storage_path`` on some backends: its
+    macOS (Cocoa) backend ignores it and uses WebKit's own data store. A
+    preference that must survive a restart is therefore stored by the
+    application itself (see :mod:`spotm3u.preferences`), not here.
     """
     override = os.environ.get(WEBVIEW_STORAGE_ENV)
     if override:
         return Path(override).expanduser()
-    if sys.platform == "win32":
-        base = os.environ.get("LOCALAPPDATA")
-        root = Path(base) if base else Path.home() / "AppData" / "Local"
-        return root / "SpotM3U" / "webview"
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "SpotM3U" / "webview"
-    data = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(data) / "spotm3u" / "webview"
+    return user_data_dir() / "webview"
 
 
 def webview_persistence_kwargs() -> dict[str, object]:

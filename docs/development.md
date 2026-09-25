@@ -66,11 +66,14 @@ panel. The window also gets a
 persistent WebView storage directory
 (`%LOCALAPPDATA%\SpotM3U`,
 `~/Library/Application Support/SpotM3U`, or `$XDG_DATA_HOME/spotm3u`;
-`SPOTM3U_WEBVIEW_STORAGE` overrides it), so the theme and a dismissed update
-notice survive a restart instead of resetting with pywebview's default private
-mode. `SPOTM3U_NO_WEBVIEW=1` skips the window and only serves,
-which is what the release smoke test uses. Developers are not required to use
-the desktop window; it never replaces the plain browser workflow above.
+`SPOTM3U_WEBVIEW_STORAGE` overrides it), instead of pywebview's default private
+mode. That directory only helps on the backends that honor it (pywebview's
+macOS backend ignores `storage_path` and drops WebView storage on exit), so a
+preference the user set deliberately is kept by the application itself, in
+`preferences.json` under the same directory (`SPOTM3U_STATE_DIR` moves it).
+See [web.md](web.md#theme). `SPOTM3U_NO_WEBVIEW=1` skips the window and only
+serves, which is what the release smoke test uses. Developers are not required
+to use the desktop window; it never replaces the plain browser workflow above.
 
 The packaged applications use the same desktop launcher, where the reloader is
 disabled and the Windows build is windowed instead of console-based; see

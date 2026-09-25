@@ -6,7 +6,9 @@ import { applyTheme, initialTheme } from "./hooks/useTheme";
 import "./index.css";
 
 // The theme is pushed onto <html> before the first paint so a fresh window
-// never flashes the other theme, matching the Flask _theme_init.html script.
+// never flashes the other theme. The stored preference is already in the
+// document (Flask renders it into the shell), and this covers the browser copy
+// and the OS setting for a page served without one.
 applyTheme(initialTheme());
 
 const container = document.getElementById("root");

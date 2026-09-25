@@ -42,6 +42,27 @@ through the native save panel in the desktop shell, and can import a completed
 playlist into the platform media player. Batch results expose the same actions
 for each playlist.
 
+## Theme
+
+The sidebar footer toggles between the light and dark theme; with no choice
+made, SpotM3U follows the operating system setting.
+
+An explicit choice is stored by the application, in `preferences.json` under its
+user data directory (`~/Library/Application Support/SpotM3U` on macOS,
+`%LOCALAPPDATA%\SpotM3U` on Windows, `$XDG_DATA_HOME/spotm3u` on Linux;
+`SPOTM3U_STATE_DIR` moves it). It is read back through `GET /api/preferences`
+and written with `PUT /api/preferences`, and the stored theme is rendered
+straight into the served page's `<html data-theme>` so the window opens in the
+right theme without flashing the other one.
+
+The desktop window cannot keep this in the page (WebView storage is not
+persisted by every pywebview backend), which is why the application owns it; the
+page's own `localStorage` copy is only a cache for the current session. A
+theme that cannot be saved still applies for the session, and a corrupt or
+hand-edited `preferences.json` simply reads as "no choice stored".
+
+## Client-side routes
+
 The client-side routes are history-based, so Flask returns the React shell for
 deep links without a file suffix. API errors remain JSON responses, including
 for unknown `/api/...` paths.

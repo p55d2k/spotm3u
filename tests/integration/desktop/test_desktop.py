@@ -129,6 +129,13 @@ def test_webview_storage_path_is_the_platform_application_data_directory(
     assert desktop.webview_storage_path() == expected
 
 
+def test_webview_storage_path_sits_under_the_application_data_directory(monkeypatch) -> None:
+    monkeypatch.delenv(desktop.WEBVIEW_STORAGE_ENV, raising=False)
+    monkeypatch.setattr(desktop, "user_data_dir", lambda: Path("/data/SpotM3U"))
+
+    assert desktop.webview_storage_path() == Path("/data/SpotM3U") / "webview"
+
+
 def test_webview_storage_path_can_be_overridden(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv(desktop.WEBVIEW_STORAGE_ENV, str(tmp_path / "store"))
 

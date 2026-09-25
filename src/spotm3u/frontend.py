@@ -21,12 +21,14 @@ browser as they are.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 
 from flask import Flask, Response, abort, send_from_directory
 
 from .launcher import DEFAULT_HOST
+from .preferences import read_preferences
 from .runtime import bundle_roots
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +43,10 @@ MOUNT = "/"
 
 # Absolute path to a built directory, replacing the lookup above.
 DIST_ENV = "SPOTM3U_FRONTEND_DIST"
+
+# The ``<html ...>`` tag, so the stored theme can be rendered with the shell.
+_HTML_TAG_RE = re.compile(r"<html\b([^>]*)>", re.IGNORECASE)
+_THEME_ATTRIBUTE_RE = re.compile(r"\bdata-theme=", re.IGNORECASE)
 
 _NOT_BUILT = (
     "The React frontend has not been built. Run 'uv run build' (or 'npm run build' in "
@@ -171,10 +177,45 @@ def register_frontend(app: Flask) -> None:
 
 
 def _index_response() -> Response:
+    """The application shell, carrying the stored theme when one is chosen.
+
+    The desktop shell cannot keep WebView storage (pywebview's macOS backend
+    drops it on exit), so a theme read only from the page would flash the
+    system's theme on every launch before the API answered. Rendering the
+    stored choice into ``<html data-theme>`` makes the very first paint the
+    right one; the page then applies its own choice on top, unchanged. A build
+    that is not themed is served exactly as Vite produced it.
+    """
     directory = dist_directory()
     if directory is None:
         return _not_built_response()
-    return send_from_directory(directory, INDEX)
+    themed = _themed_document(directory)
+    if themed is None:
+        return send_from_directory(directory, INDEX)
+    return Response(themed, mimetype="text/html")
+
+
+def _themed_document(directory: Path) -> str | None:
+    """The built index with the stored theme attribute added, or ``None``.
+
+    ``None`` means "serve the file as it is": no theme is stored yet, the file
+    cannot be read, or the build already sets ``data-theme`` itself.
+    """
+    theme = read_preferences().get("theme")
+    if theme is None:
+        return None
+    try:
+        document = (directory / INDEX).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    if _THEME_ATTRIBUTE_RE.search(document):
+        return None
+    themed, replaced = _HTML_TAG_RE.subn(
+        lambda match: f'<html data-theme="{theme}"{match.group(1)}>',
+        document,
+        count=1,
+    )
+    return themed if replaced else None
 
 
 def _not_built_response() -> Response:

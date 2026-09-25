@@ -251,8 +251,27 @@ export type BatchImportResponse = {
   message: string;
 };
 
+/** The UI preferences the application stores for the user (the theme). */
+export type Preferences = {
+  theme?: "light" | "dark";
+};
+
 export function getMeta(): Promise<MetaResponse> {
   return request("/meta");
+}
+
+/** The stored UI preferences; empty when nothing has been chosen yet. */
+export function getPreferences(): Promise<Preferences> {
+  return request("/preferences");
+}
+
+/** Store the theme, answering with what is stored afterwards. */
+export function savePreferences(theme: "light" | "dark"): Promise<Preferences> {
+  return request("/preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ theme }),
+  });
 }
 
 /** Upload an Exportify ZIP the browser picked (multipart ``file`` part). */

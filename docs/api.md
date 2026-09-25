@@ -47,6 +47,7 @@ and answer `413 upload_too_large` as JSON instead of the page.
 | `media_player_unavailable` | 404 | The platform media player or its library cannot be reached. |
 | `nothing_to_import` | 409 | The playlist has no resolved tracks to hand over. |
 | `media_player_failed` | 502 | The handoff itself failed. |
+| `preference_invalid` | 400 | The preference body is empty, names an unknown preference, or carries a value that preference does not accept. |
 | `not_found` | 404 | No such API endpoint (or track, or cached image). |
 | `method_not_allowed` | 405 | Wrong HTTP method for an endpoint. |
 
@@ -58,7 +59,16 @@ and answer `413 upload_too_large` as JSON instead of the page.
 | --- | --- | --- |
 | `GET` | `/api/meta` | Version, media-player and media-library availability, fast-mode default, upload limits. |
 | `GET` | `/api/update` | Whether a newer release is available; never fails on the network. |
+| `GET` | `/api/preferences` | The stored UI preferences (`{"theme": "dark"}`); `{}` when nothing is stored yet. |
+| `PUT` | `/api/preferences` | Store a UI preference: `{"theme": "light"|"dark"}`. Answers with what is stored afterwards. |
 | `GET` | `/api/icon.png` | The canonical application icon. |
+
+The theme is the only preference that exists so far: it is stored by the
+application (see [web.md](web.md#theme)) because the desktop window cannot keep
+WebView storage, and the stored value is rendered into the served shell as
+`<html data-theme="...">`. An unsupported theme, an unknown preference name, or
+an empty body answers `400 preference_invalid`; a write that cannot happen
+answers `200` with the unchanged stored state rather than claiming success.
 
 ### Import and browse
 
@@ -108,5 +118,5 @@ hand.
 ## Not here yet
 
 The settings screen does not exist in the current application (it is task 118),
-so no settings endpoints exist either; `/api/meta` covers the read-only
+so `/api/preferences` covers only the theme; `/api/meta` covers the read-only
 defaults the shell needs today. Nothing under `/api` renders HTML.
