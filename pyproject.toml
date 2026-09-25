@@ -57,6 +57,7 @@ addopts = ["-ra"]
 testpaths = ["tests"]
 markers = [
     "slow: integration tests with real external tools, excluded from pre-commit",
+    "network: tests that require live network access, opt-in only",
 ]
 
 [tool.ruff]
