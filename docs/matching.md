@@ -54,7 +54,10 @@ Ranking evaluates two independent questions:
 
 Artist identity is first-class. A confirmed wrong artist outweighs every title
 and source-quality advantage; the source-quality preference only operates among
-candidates that already appear to be the correct recording. This matters for
+candidates that already appear to be the correct recording. A title made only of
+symbols has no text to compare, so it is compared through the name it expands
+into (`❤️` against `Heart`), which is how the artist's own upload of such a
+track is recognized; the artist, duration and version checks are unchanged. This matters for
 common song titles (for example Joker Xue's `演员`): a candidate whose artist is
 confirmed outranks a same-title candidate that only shares the song name, and a
 conflicting artist is rejected even on an exact title match.
@@ -107,6 +110,20 @@ always paired as `{artist} {title}` with a few focused audio hints (`official
 audio`, `audio`, `official`). Title-only queries are a fallback for when artist
 information is genuinely absent, because a title-only search tends to return
 covers by other artists.
+
+A title is not always a searchable string, so hard-to-search titles are
+expanded. A track called `❤️` or `♾️` (Coldplay has both) is searched for as
+written *and* as `{artist} heart` / `{artist} red heart` / `{artist} infinity`;
+an emoji used as decoration is named the same way (`My Universe ❤️` also
+searches `my universe heart`). Expansion **supplements** the original: the
+queries for the title as written always run first (and are what fast mode tries
+first), only a couple of expansions are added per track, and they come from a
+small curated table of symbols plus a generic fallback that derives a phrase
+from the character's Unicode name. Symbols with no search value — note glyphs,
+typographic signs — are never turned into queries like `musical note`. Full-width
+and compatibility variants (`Ａｖｉｃｉｉ`) are folded to their plain form, and
+non-Latin titles are kept exactly as written: they are never transliterated or
+approximated. An ordinary title produces the same queries it always did.
 
 ## Duration and version
 

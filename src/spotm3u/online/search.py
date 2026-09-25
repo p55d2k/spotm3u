@@ -19,6 +19,7 @@ from ..log import track_identifier
 from ..models import Track
 from ..normalization import normalize
 from ._ytdlp import ensure_ytdlp_plugins_loaded
+from .search_terms import search_title_forms
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,13 @@ TITLE_ONLY_QUERY_TEMPLATES = (
     "{title} audio",
     "{title} official",
 )
+
+# How many symbol-expanded title forms get their own query. They are searched
+# with the plain ``{artist} {title}`` form only, and only a couple of them, so a
+# title made of emoji cannot turn one track into a flood of network requests.
+# The queries for the title as written always come first, so a title that
+# already searches well is unaffected and fast mode tries the original first.
+MAX_EXPANDED_TITLES = 2
 
 _SEARCH_EXCLUSION_TOKENS = (
     "interview",
@@ -236,10 +244,21 @@ class OnlineSourceSearcher:
 
 
 def build_search_queries(track: Track) -> tuple[str, ...]:
-    """Build a small set of artist-aware queries for the standalone recording."""
-    title = _clean_query(track.title)
-    if not title:
+    """Build a small set of artist-aware queries for the standalone recording.
+
+    The queries for the title as written come first. When the title contains
+    symbols, emoji or hard-to-search characters, the expansion layer adds a few
+    supplementing queries — the symbol-preserving title and its named forms
+    (``❤️`` -> ``heart`` / ``red heart``) — which are tried only after the
+    original ones. Candidates found through any of them still go through the
+    normal ranking and source validation; nothing is trusted because of the
+    query it came from.
+    """
+    title_forms = search_title_forms(track.title)
+    if not title_forms:
         return ()
+    title = title_forms[0]
+    expanded_titles = title_forms[1 : 1 + MAX_EXPANDED_TITLES]
 
     artists = [
         cleaned_artist
@@ -261,6 +280,8 @@ def build_search_queries(track: Track) -> tuple[str, ...]:
     query_variants: list[str] = []
     for template in templates:
         query_variants.append(template.format(artist=artist_text, title=title).strip())
+    for expanded_title in expanded_titles:
+        query_variants.append(_plain_query(artist_text, expanded_title))
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -270,6 +291,16 @@ def build_search_queries(track: Track) -> tuple[str, ...]:
             seen.add(normalized.casefold())
             deduped.append(normalized)
     return tuple(deduped)
+
+
+def _plain_query(artist_text: str, title: str) -> str:
+    """Build the plain ``{artist} {title}`` query for an expanded title form.
+
+    Expanded forms keep their symbols, so they are not passed through
+    :func:`_clean_query` (which would strip the very character being searched
+    for).
+    """
+    return f"{artist_text} {title}".strip()
 
 
 def _is_instrumental_title(title: str) -> bool:
@@ -362,6 +393,7 @@ def _is_unwanted_candidate(candidate: SourceCandidate) -> bool:
 
 __all__ = [
     "OnlineSourceSearcher",
+    "MAX_EXPANDED_TITLES",
     "SEARCH_QUERY_TEMPLATES",
     "SourceCandidate",
     "TITLE_ONLY_QUERY_TEMPLATES",

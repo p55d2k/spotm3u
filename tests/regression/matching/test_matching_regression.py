@@ -55,6 +55,7 @@ def make_candidate(
     uploader: str | None = "Artist",
     duration_s: float | None = 210.0,
     url: str = "https://example.com/candidate",
+    source_query: str | None = None,
     **metadata,
 ) -> SourceCandidate:
     """Build a YouTube-side candidate with representative metadata."""
@@ -68,6 +69,7 @@ def make_candidate(
         duration_s=duration_s,
         source_type="youtube",
         metadata=metadata,
+        source_query=source_query,
     )
 
 
@@ -134,6 +136,44 @@ def test_instrumental_request_searches_the_instrumental_variant() -> None:
 
     assert any("instrumental" in query.casefold() for query in queries)
     assert not any("lyric" in query.casefold() for query in queries)
+
+
+@pytest.mark.parametrize(
+    ("title", "first_query", "expected"),
+    [
+        pytest.param(
+            "❤️",
+            "coldplay ❤",
+            ("coldplay heart", "coldplay red heart"),
+            id="heart",
+        ),
+        pytest.param("♾️", "coldplay ♾", ("coldplay infinity",), id="infinity"),
+    ],
+)
+def test_regression_coldplay_symbol_titles_gain_searchable_queries(
+    title: str, first_query: str, expected: tuple[str, ...]
+) -> None:
+    """Coldplay tracks titled with only a symbol (``❤️`` / ``♾️``).
+
+    Regression: the symbol was treated as punctuation, the title normalized to
+    nothing, and the track produced no search queries at all. The title as
+    written stays searchable and the symbol is expanded into its meaning.
+    """
+    queries = build_search_queries(make_track(title, ["Coldplay"]))
+
+    assert queries
+    assert queries[0] == first_query
+    for query in expected:
+        assert query in queries
+
+
+def test_regression_symbol_titles_keep_the_plain_queries_first() -> None:
+    """An emoji beside real title text must not disturb the existing queries."""
+    plain = build_search_queries(make_track("Higher Power", ["Coldplay"]))
+    decorated = build_search_queries(make_track("Higher Power ♾️", ["Coldplay"]))
+
+    assert decorated[: len(plain)] == plain
+    assert "coldplay higher power infinity" in decorated[len(plain) :]
 
 
 def test_title_only_queries_when_artist_is_unknown() -> None:
@@ -511,6 +551,55 @@ def test_regression_coldplay_emoji_titles(emoji_title: str, candidate_title: str
     assert normalize(emoji_title).startswith("higher power") or normalize(emoji_title).startswith(
         "my universe"
     )
+
+
+@pytest.mark.parametrize(
+    ("symbol_title", "symbol_query", "named_title"),
+    [
+        pytest.param("❤️", "coldplay ❤", "Heart", id="heart"),
+        pytest.param("♾️", "coldplay ♾", "Infinity", id="infinity"),
+    ],
+)
+def test_regression_coldplay_symbol_only_titles_resolve(
+    symbol_title: str, symbol_query: str, named_title: str
+) -> None:
+    """Coldplay's ``❤️`` / ``♾️`` singles, which are titled only with a symbol.
+
+    Regression: with no title text to compare, *every* candidate was rejected --
+    including the artist's own upload. The title is compared through the name
+    the search layer expands the symbol into, so the recording is found, while a
+    wrong artist and a conflicting live version are still rejected.
+    """
+    track = make_track(symbol_title, ["Coldplay"], duration_ms=210_000)
+
+    for candidate in (
+        make_candidate(
+            f"Coldplay - {symbol_title} (Official Audio)",
+            artist="Coldplay",
+            uploader="Coldplay",
+            source_query=symbol_query,
+        ),
+        make_candidate(
+            f"Coldplay - {named_title} (Official Audio)",
+            artist="Coldplay",
+            uploader="Coldplay",
+            source_query=f"coldplay {named_title.casefold()}",
+        ),
+    ):
+        assert rank_source_candidate(track, candidate).accepted
+
+    wrong_artist = make_candidate(
+        f"Some Cover Band - {named_title}",
+        artist="Some Cover Band",
+        uploader="Some Cover Band",
+        source_query=f"coldplay {named_title.casefold()}",
+    )
+    live_version = make_candidate(
+        f"Coldplay - {symbol_title} (Live)", artist="Coldplay", uploader="Coldplay"
+    )
+
+    assert not rank_source_candidate(track, wrong_artist).accepted
+    assert not rank_source_candidate(track, live_version).accepted
 
 
 def test_regression_collaboration_track_matches_either_ordering() -> None:

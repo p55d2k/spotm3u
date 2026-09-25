@@ -24,6 +24,7 @@ from typing import Literal
 from ..models import Track
 from ..normalization import normalize_artists, normalize_cjk
 from .search import SourceCandidate
+from .search_terms import search_title_forms
 from .source_quality import quality_label, quality_points, source_profile
 
 logger = logging.getLogger(__name__)
@@ -132,9 +133,15 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
 
     # Strip the requested artist's name from candidate-title cores so that
     # ``薛之谦 演员`` and a bare ``演员`` compare against the same underlying
-    # identity (an artist attribution is never a title difference).
-    candidate_core_for_title = _strip_artist_phrases(candidate_core, requested_artists)
-    requested_core_for_title = _strip_artist_phrases(requested_core, requested_artists)
+    # identity (an artist attribution is never a title difference). A title made
+    # only of symbols (``❤️``, ``♾️``) has no core of its own, so it is compared
+    # through the names the search layer expands it into (``heart``).
+    candidate_core_for_title = _strip_artist_phrases(
+        candidate_core, requested_artists
+    ) or _expanded_title_core(candidate.title, requested_artists)
+    requested_core_for_title = _strip_artist_phrases(
+        requested_core, requested_artists
+    ) or _expanded_title_core(track.title, requested_artists)
 
     candidate_artist_text = _artist_text(candidate.artist) if candidate.artist else ""
     creator_text = (
@@ -407,6 +414,29 @@ def split_title(value: str | None) -> tuple[str, frozenset[str]]:
         title = pattern.sub(" ", title)
     title = _REMASTER_RE.sub(" ", title)
     return _collapse(title), frozenset(versions)
+
+
+def _expanded_title_core(value: str | None, artist_keys: list[str]) -> str:
+    """Return the comparison core of a title that has none of its own.
+
+    ``❤️`` and ``♾️`` are real track titles (Coldplay's singles), but their text
+    carries no comparison tokens, so :func:`split_title` reduces them to an
+    empty core and *every* candidate was rejected before any identity evidence
+    could be weighed. The named forms the search layer expands the symbol into
+    (``heart``, ``infinity``) are exactly what an upload of the same recording
+    writes in its title, so they are what the empty side is compared through.
+
+    Only used when the title (after label and artist stripping) has no core at
+    all: a title with real words is compared exactly as it was before, so this
+    can only add candidates that were previously unreachable, never re-rank a
+    title that already had text.
+    """
+    for form in search_title_forms(value)[1:]:
+        core, _versions = split_title(form)
+        stripped = _strip_artist_phrases(core, artist_keys)
+        if stripped:
+            return stripped
+    return ""
 
 
 def _version_conflict(requested: frozenset[str], candidate: frozenset[str]) -> str | None:

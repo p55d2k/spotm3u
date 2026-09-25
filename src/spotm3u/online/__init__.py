@@ -17,6 +17,7 @@ from .search import (
     SourceCandidate,
     build_search_queries,
 )
+from .search_terms import search_title_forms
 from .source_quality import (
     SourceProfile,
     SourceQuality,
@@ -35,6 +36,7 @@ __all__ = [
     "OnlineSourceSearcher",
     "SourceCandidate",
     "build_search_queries",
+    "search_title_forms",
     "CandidateRanking",
     "ScoreComponents",
     "rank_source_candidate",
