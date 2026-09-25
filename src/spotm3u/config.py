@@ -73,6 +73,8 @@ class Config:
     artwork_memory_cache_size: int = 1024
     # [lyrics]
     lyrics_enabled: bool = True
+    # [apple_music]
+    apple_catalog_id: bool = False
     # [download]
     audio_quality: str = "192"
     max_download_workers: int = 2
@@ -119,6 +121,7 @@ class Config:
             "ARTWORK_ARTIST_VERIFICATION_LIMIT": self.artwork_artist_verification_limit,
             "ARTWORK_MEMORY_CACHE_SIZE": self.artwork_memory_cache_size,
             "LYRICS_ENABLED": self.lyrics_enabled,
+            "APPLE_CATALOG_ID": self.apple_catalog_id,
             "DOWNLOAD_QUALITY": self.audio_quality,
             "DOWNLOAD_MAX_WORKERS": self.max_download_workers,
             "METADATA_MAX_WORKERS": self.max_metadata_workers,
@@ -175,6 +178,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "artwork.artist_verification_limit": "artwork_artist_verification_limit",
     "artwork.memory_cache_size": "artwork_memory_cache_size",
     "lyrics.enabled": "lyrics_enabled",
+    "apple_music.catalog_id": "apple_catalog_id",
     "download.audio_quality": "audio_quality",
     "download.workers": "max_download_workers",
     "metadata.workers": "max_metadata_workers",

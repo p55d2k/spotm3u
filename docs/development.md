@@ -140,6 +140,7 @@ src/spotm3u/
   artwork.py             artwork lookup order, embedding, and cleanup
   artwork_sources.py     MusicBrainz/iTunes/Deezer lookups and candidate matching
   artwork_cache.py       artwork cache layout, cache keys, and the in-process memo
+  apple_music.py         experimental, opt-in Apple Music catalog id matching
   metadata.py            ID3 metadata read/write and enrichment
   config.py              optional TOML and environment configuration
   desktop.py             native WebView shell used by the packaged application

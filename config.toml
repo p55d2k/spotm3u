@@ -169,6 +169,19 @@
 # [metadata] enabled = false).
 # enabled = true
 
+[apple_music]
+# EXPERIMENTAL, OFF BY DEFAULT. Apple Music does not read an imported MP3's
+# embedded SYLT for synchronized lyrics. Community experimentation suggests
+# that writing Apple's catalog track id into the local file may let Music
+# associate the import with its catalog track, after which Apple's own
+# server-side synced lyrics can appear. That behaviour is undocumented and
+# unverified, so SpotM3U leaves it off unless you opt in. When enabled, the
+# catalog id is written as an ID3 TXXX:ITUNESCATALOGID frame and the standard
+# metadata is written alongside it, exactly as usual. Matching is strict
+# (title, artist, version, album and duration must agree), a miss writes
+# nothing, and no failure ever affects a download.
+# catalog_id = false
+
 [download]
 # MP3 bitrate used by yt-dlp when extracting downloaded audio.
 # audio_quality = "192"

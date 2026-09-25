@@ -153,6 +153,11 @@ Lyrics are optional enrichment and never affect resolution:
 The [result page](web.md) labels each track **Synced lyrics** or **Plain
 lyrics** (nothing when the file has no lyrics), read from the file itself.
 
+Importing into Apple Music is a separate, **experimental and opt-in** matter:
+Music ignores embedded `SYLT` for local files, and writing Apple's own catalog
+id may or may not make it supply its lyrics. See
+[Apple Music catalog IDs](apple-music.md).
+
 ## Cache
 
 Successful downloads may be cached and reused when their association with the

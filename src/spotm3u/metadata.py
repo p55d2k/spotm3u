@@ -15,6 +15,7 @@ from typing import Literal
 import mutagen.id3 as mutagen_id3
 from mutagen import MutagenError
 
+from .apple_music import apple_catalog_id_enabled, find_catalog_track
 from .artwork import (
     _find_album_artwork,
     _find_artist_artwork,
@@ -41,6 +42,7 @@ COMM = mutagen_id3.COMM
 USLT = mutagen_id3.USLT
 SYLT = mutagen_id3.SYLT
 APIC = mutagen_id3.APIC
+TXXX = mutagen_id3.TXXX
 
 _ORIGINAL_ID3 = ID3
 _ORIGINAL_ID3NoHeaderError = ID3NoHeaderError
@@ -56,6 +58,7 @@ _ORIGINAL_COMM = COMM
 _ORIGINAL_USLT = USLT
 _ORIGINAL_SYLT = SYLT
 _ORIGINAL_APIC = APIC
+_ORIGINAL_TXXX = TXXX
 
 # The plain lyrics frame, holding timestamp-free text that any player can read.
 _USLT_FRAME = "USLT"
@@ -73,6 +76,12 @@ _SYLT_TYPE_LYRICS = 1
 # Sidecar lyrics file written beside an audio file that has timestamped lyrics,
 # for the players that read an ``.lrc`` next to the track instead of ID3 frames.
 _LYRICS_SIDECAR_SUFFIX = ".lrc"
+
+# The experimental Apple Music catalog id, stored as an ID3 ``TXXX`` frame with
+# the ``ITUNESCATALOGID`` description. Only written when the opt-in
+# ``[apple_music] catalog_id`` setting is enabled (see :mod:`spotm3u.apple_music`).
+_APPLE_CATALOG_FRAME = "TXXX"
+_APPLE_CATALOG_DESC = "ITUNESCATALOGID"
 
 
 def _id3_symbol(name: str):
@@ -95,6 +104,7 @@ class MetadataResult:
     errors: tuple[str, ...]
     artist_artwork_embedded: bool = False
     artist_artwork_source: str | None = None
+    catalog_id: int | None = None
 
 
 class MetadataError(RuntimeError):
@@ -412,6 +422,52 @@ def _embed_track_lyrics(path: Path, track: Track) -> tuple[str, ...]:
         return ()
 
 
+def _write_catalog_id(path: Path, catalog_id: int) -> bool:
+    """Write the Apple Music catalog id as a ``TXXX:ITUNESCATALOGID`` frame.
+
+    Experimental: this is the community-reported field Apple Music may read
+    when associating an imported local file with its catalog track. Only the
+    catalog frame is touched, so tags, artwork and lyrics are preserved.
+    Returns ``True`` when the frame was saved.
+    """
+    ID3_cls = _id3_symbol("ID3")
+    ID3NoHeaderError_cls = _id3_symbol("ID3NoHeaderError")
+    TXXX_cls = _id3_symbol("TXXX")
+
+    try:
+        tags = ID3_cls(str(path))
+    except ID3NoHeaderError_cls:
+        tags = ID3_cls()
+
+    frame_key = f"{_APPLE_CATALOG_FRAME}:{_APPLE_CATALOG_DESC}"
+    tags[frame_key] = TXXX_cls(encoding=3, desc=_APPLE_CATALOG_DESC, text=[str(catalog_id)])
+    try:
+        tags.save(str(path), v2_version=3)
+        return True
+    except (OSError, ValueError) as exc:
+        logger.debug("Failed to write catalog id path=%s: %s", path, exc)
+        return False
+
+
+def _embed_catalog_id(path: Path, track: Track) -> int | None:
+    """Resolve and write the track's Apple Music catalog id, never failing.
+
+    Returns the id written, or ``None`` when the lookup is off, found no
+    confident match, or the frame could not be written. Catalog matching is an
+    experimental optional enrichment and never affects resolution.
+    """
+    try:
+        match = find_catalog_track(track)
+    except Exception as exc:  # pragma: no cover - defensive behavior
+        logger.debug("Catalog lookup failed path=%s: %s", path, exc)
+        return None
+    if match is None:
+        return None
+    if not _write_catalog_id(path, match.catalog_id):
+        return None
+    return match.catalog_id
+
+
 LyricsForm = Literal["synced", "plain"]
 
 
@@ -528,6 +584,7 @@ def enrich_metadata(
     artwork_source: str | None = None
     artist_artwork_embedded = False
     artist_artwork_source: str | None = None
+    catalog_id: int | None = None
 
     embeddings_on = metadata_enabled()
 
@@ -596,6 +653,18 @@ def enrich_metadata(
         fields_written.extend(_embed_track_lyrics(audio_path, track))
         logger.info("timing stage=lyrics duration_ms=%.1f", (time.perf_counter() - started) * 1000)
 
+    # Experimental and opt-in: Apple Music catalog matching. Fast mode never
+    # reaches here (it embeds no metadata), and a missing match writes nothing.
+    if embeddings_on and id3_tags_enabled() and apple_catalog_id_enabled():
+        started = time.perf_counter()
+        catalog_id = _embed_catalog_id(audio_path, track)
+        if catalog_id is not None:
+            fields_written.append(f"{_APPLE_CATALOG_FRAME}:{_APPLE_CATALOG_DESC}")
+        logger.info(
+            "timing stage=apple-catalog duration_ms=%.1f",
+            (time.perf_counter() - started) * 1000,
+        )
+
     return MetadataResult(
         path=audio_path,
         artwork_embedded=artwork_embedded,
@@ -604,6 +673,7 @@ def enrich_metadata(
         errors=tuple(errors),
         artist_artwork_embedded=artist_artwork_embedded,
         artist_artwork_source=artist_artwork_source,
+        catalog_id=catalog_id,
     )
 
 

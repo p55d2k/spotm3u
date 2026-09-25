@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Flask
 
 from .api import register_api
+from .apple_music import set_apple_catalog_id_enabled
 from .artwork import (
     set_album_artwork_enabled,
     set_artist_artwork_enabled,
@@ -69,6 +70,7 @@ def create_app(config: dict | None = None) -> Flask:
     set_album_artwork_enabled(bool(app.config.get("ARTWORK_ALBUM_ARTWORK", True)))
     set_artist_artwork_enabled(bool(app.config.get("ARTWORK_ARTIST_ARTWORK", True)))
     set_lyrics_enabled(bool(app.config.get("LYRICS_ENABLED", True)))
+    set_apple_catalog_id_enabled(bool(app.config.get("APPLE_CATALOG_ID", False)))
     set_pot_provider_timeout(int(app.config.get("YTDLP_POT_PROVIDER_TIMEOUT", 5)))
 
     report = describe_youtube_setup(
