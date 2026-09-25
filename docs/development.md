@@ -160,35 +160,18 @@ docs/                    public project documentation
 
 ### Test layout
 
-Tests are grouped by what they exercise, not by filename. Add a test to the
-directory whose neighbours fail for the same reason:
+Tests are grouped by what they exercise, not by filename, under `tests/`:
 
-```text
-tests/
-  conftest.py            shared offline fixtures and helpers
-  unit/                  one component, every external boundary mocked
-    matching/            normalization, source search, ranking and validation
-    metadata/            ID3 tags, metadata caches and Apple Music matching
-    lyrics/              lyrics retrieval, parsing, and frame/sidecar writing
-    artwork/             album and artist artwork resolution and embedding
-    downloads/           downloader, download cache, audio validation, FFmpeg
-    library/             local audio discovery, Exportify parsing, M3U writing
-    media_player/        the platform "Add to Media Player" integration
-    uploads/             ZIP uploads and upload-directory cleanup
-    utilities/           models, configuration, and logging
-  integration/           several components driven together
-    processing/          resolution, jobs, fast mode, and the full pipeline
-    api/                 the Flask app and its `/api` routes
-    frontend/            locating, building, and serving the React build
-    desktop/             native window shell and the production launcher
-  regression/            pinned bugs and pipeline decisions that must not change
-    matching/            the matching regression suite and the live (opt-in) checks
-  packaging/             release helpers: build, icons, bundles, smoke test
-```
+- `unit/` — one component, every external boundary mocked
+- `integration/` — several components driven together
+- `regression/` — previously found bugs and decisions that must not change
+- `packaging/` — the release helpers: build, icons, bundles, smoke test
 
-Unit tests must stay runnable offline: the root `conftest.py` already stubs
-artwork and lyrics providers, and a test that needs a real provider belongs
-behind the `network` marker (see `regression/matching`) instead.
+[`tests/README.md`](../tests/README.md) maps every directory, lists the running
+conventions, and shows how to run one group on its own. Unit tests must stay
+runnable offline: the root `conftest.py` already stubs artwork and lyrics
+providers, and a test that needs a real provider belongs behind the `network`
+marker (see `regression/matching`) instead.
 
 Keep Flask routes thin and put reusable behavior in the relevant package.
 Exportify-specific parsing should not leak CSV details into generic playlist,
