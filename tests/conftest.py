@@ -1,12 +1,18 @@
 """Shared test fixtures and helpers."""
 
 from io import BytesIO
+from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
 import requests
 
 from spotm3u import artwork
+
+# The repository root, for the tests that inspect files outside ``tests/``
+# (packaging scripts, ``config.toml``, ``assets/``). Deriving it here keeps the
+# tests independent of how deeply they are nested under ``tests/``.
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)

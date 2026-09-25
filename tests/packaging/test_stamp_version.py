@@ -1,15 +1,13 @@
 """Tests for the release-version stamping helper."""
 
 import importlib.util
-from pathlib import Path
 
 import pytest
-
-_REPO = Path(__file__).resolve().parent.parent
+from conftest import REPO_ROOT
 
 
 def _load(name: str) -> object:
-    spec = importlib.util.spec_from_file_location(name, _REPO / "packaging" / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "packaging" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -56,7 +54,7 @@ def test_stamp_fails_when_the_constant_appears_twice() -> None:
 def test_package_version_line_is_stampable() -> None:
     # Guards the release workflow: if the real constant is ever renamed or
     # reformatted, stamping must fail in CI rather than silently not apply.
-    text = (_REPO / "src" / "spotm3u" / "__init__.py").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "src" / "spotm3u" / "__init__.py").read_text(encoding="utf-8")
 
     assert stamp_version.stamp(text, "1.2.3") != text
 

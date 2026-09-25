@@ -17,10 +17,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import REPO_ROOT
 
-_REPO = Path(__file__).resolve().parent.parent
-_ICON_PNG = _REPO / "assets" / "icon.png"
-_PACKAGING = _REPO / "packaging"
+_ICON_PNG = REPO_ROOT / "assets" / "icon.png"
+_PACKAGING = REPO_ROOT / "packaging"
 
 
 def _load(name: str) -> object:

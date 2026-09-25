@@ -63,9 +63,10 @@ are treated as no match rather than guessed between.
 ## Prototype and findings
 
 Because the Apple Music side cannot be exercised automatically, the prototype is
-split in two: an **offline matcher prototype** (`tests/test_apple_music.py`, 13
-tests, mocked iTunes responses, no network) and a **manual import check** that a
-maintainer with macOS and Apple Music has to run.
+split in two: an **offline matcher prototype**
+(`tests/unit/metadata/test_apple_music.py`, 14 tests, mocked iTunes responses, no
+network) and a **manual import check** that a maintainer with macOS and Apple
+Music has to run.
 
 Offline prototype results — representative tracks, one row per behavior:
 

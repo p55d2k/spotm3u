@@ -12,9 +12,9 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from conftest import REPO_ROOT
 
-_REPO = Path(__file__).resolve().parent.parent
-_PACKAGING = _REPO / "packaging"
+_PACKAGING = REPO_ROOT / "packaging"
 
 
 def _load(name: str) -> object:

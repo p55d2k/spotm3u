@@ -7,12 +7,11 @@ import sys
 from pathlib import Path
 
 import pytest
-
-_REPO = Path(__file__).resolve().parent.parent
+from conftest import REPO_ROOT
 
 
 def _load(name: str) -> object:
-    path = _REPO / "packaging" / f"{name}.py"
+    path = REPO_ROOT / "packaging" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

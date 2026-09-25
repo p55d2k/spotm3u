@@ -16,10 +16,10 @@ import struct
 from pathlib import Path
 
 import pytest
+from conftest import REPO_ROOT
 
-_REPO = Path(__file__).resolve().parent.parent
-_ICON_PNG = _REPO / "assets" / "icon.png"
-_PACKAGING = _REPO / "packaging"
+_ICON_PNG = REPO_ROOT / "assets" / "icon.png"
+_PACKAGING = REPO_ROOT / "packaging"
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _FLAT_PIXEL = bytes([0x40, 0x80, 0xC0, 0xFF])

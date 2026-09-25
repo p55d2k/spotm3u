@@ -1,15 +1,13 @@
 """Tests for the release-tag guard that gates the release workflow."""
 
 import importlib.util
-from pathlib import Path
 
 import pytest
-
-_REPO = Path(__file__).resolve().parent.parent
+from conftest import REPO_ROOT
 
 
 def _load(name: str) -> object:
-    spec = importlib.util.spec_from_file_location(name, _REPO / "packaging" / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "packaging" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -53,7 +51,7 @@ def test_refusal_names_the_offending_tag() -> None:
 def test_release_workflow_gates_every_build_on_the_guard() -> None:
     # The guard only prevents a partial release while it is wired in front of
     # the build matrix; removing either half must not pass unnoticed.
-    workflow = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert "check_release_tag.py" in workflow
     assert "needs: validate-tag" in workflow

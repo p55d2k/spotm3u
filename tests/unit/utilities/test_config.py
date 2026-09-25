@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
+from conftest import REPO_ROOT
 
 from spotm3u.app import create_app
 from spotm3u.audio.resolver import AUDIO_EXTENSIONS
@@ -23,7 +24,7 @@ from spotm3u.config import (
 # runs from the project root pick up. Both promises are asserted below, so a
 # new setting that never reaches the sample -- or a sample value that quietly
 # differs from the built-in default -- fails here instead of shipping.
-SAMPLE_CONFIG = Path(__file__).resolve().parent.parent / "config.toml"
+SAMPLE_CONFIG = REPO_ROOT / "config.toml"
 
 
 def _documented_settings(path: Path) -> set[str]:

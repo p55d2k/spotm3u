@@ -11,12 +11,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-
-_REPO = Path(__file__).resolve().parent.parent
+from conftest import REPO_ROOT
 
 
 def _load(name: str) -> object:
-    spec = importlib.util.spec_from_file_location(name, _REPO / "packaging" / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "packaging" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -262,7 +261,7 @@ def test_wait_for_home_times_out_with_the_captured_log(tmp_path) -> None:
 
 
 def _dist_bundle() -> Path | None:
-    candidate = Path(__file__).resolve().parent.parent / "dist" / "SpotM3U"
+    candidate = REPO_ROOT / "dist" / "SpotM3U"
     return candidate if candidate.is_dir() else None
 
 
