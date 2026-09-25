@@ -73,8 +73,13 @@ _SYLT_FRAME = "SYLT"
 _SYLT_FORMAT_LRC = 3
 _SYLT_TYPE_LYRICS = 1
 
-# Sidecar lyrics file written beside an audio file that has timestamped lyrics,
-# for the players that read an ``.lrc`` next to the track instead of ID3 frames.
+# Sidecar lyrics files, for the players that read an ``.lrc`` instead of ID3
+# frames. They live in their own directory under the download folder - like the
+# artwork cache - rather than beside the tracks, so a music folder is not buried
+# under one sidecar per song. The file keeps the audio file's name
+# (``song.mp3`` -> ``lyrics_cache/song.lrc``), which is what identifies it and
+# what the LRC convention expects.
+_LYRICS_SIDECAR_DIR = "lyrics_cache"
 _LYRICS_SIDECAR_SUFFIX = ".lrc"
 
 # The experimental Apple Music catalog id, stored as an ID3 ``TXXX`` frame with
@@ -379,29 +384,43 @@ def _embed_lyrics(path: Path, lyrics: Lyrics) -> tuple[str, ...]:
         return ()
 
 
-def _write_lyrics_sidecar(path: Path, lyrics: str) -> bool:
-    """Write an ``.lrc`` sidecar beside ``path`` for the embedded lyrics.
+def lyrics_sidecar_path(download_dir: Path, audio_path: Path) -> Path:
+    """Where one audio file's ``.lrc`` sidecar lives.
 
-    Reuses the audio file's name (``song.mp3`` -> ``song.lrc``), which is the
-    convention LRC-aware players look for. A failure here is contained: the
-    lyrics frame is already written, so the track keeps its lyrics.
+    ``song.mp3`` -> ``<download_dir>/lyrics_cache/song.lrc``. Keeping sidecars
+    out of the track folder is deliberate: they are derived content that a
+    player only needs when it reads a sidecar, and a library of downloaded MP3s
+    is far easier to browse without one ``.lrc`` beside every song. The file
+    still carries the audio file's own name, so it stays identifiable.
     """
+    return download_dir / _LYRICS_SIDECAR_DIR / f"{audio_path.stem}{_LYRICS_SIDECAR_SUFFIX}"
+
+
+def _write_lyrics_sidecar(path: Path, lyrics: str, download_dir: Path) -> bool:
+    """Write the ``.lrc`` sidecar for ``path`` into the lyrics directory.
+
+    A failure here is contained: the lyrics frames are already written, so the
+    track keeps its lyrics even when the sidecar cannot be saved.
+    """
+    sidecar = lyrics_sidecar_path(download_dir, path)
     try:
-        path.with_suffix(_LYRICS_SIDECAR_SUFFIX).write_text(lyrics, encoding="utf-8")
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(lyrics, encoding="utf-8")
         return True
     except OSError as exc:
-        logger.debug("Failed to write lyrics sidecar path=%s: %s", path, exc)
+        logger.debug("Failed to write lyrics sidecar path=%s: %s", sidecar, exc)
         return False
 
 
-def _embed_track_lyrics(path: Path, track: Track) -> tuple[str, ...]:
+def _embed_track_lyrics(path: Path, track: Track, download_dir: Path) -> tuple[str, ...]:
     """Retrieve and embed a track's lyrics, never failing the track.
 
     Lyrics are optional enrichment: retrieval, an unsupported audio format, or
     a metadata write problem are all contained here and reported through the
     return value. The raw result is parsed once into structured lyrics, then
     both frames (plain ``USLT``, and ``SYLT`` for timed lyrics) are derived from
-    that single parse. Timestamped lyrics additionally get an ``.lrc`` sidecar —
+    that single parse. Timestamped lyrics additionally get an ``.lrc`` sidecar in
+    the download folder's lyrics directory (see :func:`lyrics_sidecar_path`) —
     there is nothing to put in one for plain text, which the lyrics frame
     already holds. An existing sidecar is never deleted, matching how a missing
     result leaves the lyrics frame from an earlier run in place.
@@ -415,7 +434,7 @@ def _embed_track_lyrics(path: Path, track: Track) -> tuple[str, ...]:
             return ()
         written = _embed_lyrics(path, lyrics)
         if lyrics.synced:
-            _write_lyrics_sidecar(path, raw)
+            _write_lyrics_sidecar(path, raw, download_dir)
         return written
     except Exception as exc:  # pragma: no cover - defensive behavior
         logger.debug("Lyrics enrichment failed path=%s: %s", path, exc)
@@ -650,7 +669,7 @@ def enrich_metadata(
     # well as the metadata write.
     if embeddings_on and lyrics_enabled() and track.title:
         started = time.perf_counter()
-        fields_written.extend(_embed_track_lyrics(audio_path, track))
+        fields_written.extend(_embed_track_lyrics(audio_path, track, download_path))
         logger.info("timing stage=lyrics duration_ms=%.1f", (time.perf_counter() - started) * 1000)
 
     # Experimental and opt-in: Apple Music catalog matching. Fast mode never
@@ -683,6 +702,7 @@ __all__ = [
     "MetadataResult",
     "embedded_lyrics_form",
     "enrich_metadata",
+    "lyrics_sidecar_path",
     "id3_tags_enabled",
     "metadata_enabled",
     "set_id3_tags_enabled",

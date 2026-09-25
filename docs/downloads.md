@@ -133,11 +133,23 @@ and written as two ID3 frames: the plain `USLT` frame holds only the clean,
 timestamp-free text (Apple Music reads this and would otherwise render the LRC
 tags literally), and the `SYLT` frame holds the same lines with their
 millisecond timing for players that support synchronized lyrics. Apple Music
-may ignore `SYLT` for imported local files, which is expected. An `.lrc` file
-is also written next to the audio file (`song.mp3` → `song.lrc`) for players
-that read a sidecar instead of ID3 frames. Plain lyrics go into `USLT` only —
-there is nothing to time, so no `SYLT` and no sidecar. Deezer is not a lyrics
-source: its public API has no lyrics endpoint.
+may ignore `SYLT` for imported local files, which is expected. Plain lyrics go
+into `USLT` only — there is nothing to time, so no `SYLT` and no sidecar.
+Deezer is not a lyrics source: its public API has no lyrics endpoint.
+
+### Sidecar files
+
+Timed lyrics are also written as an `.lrc` file, for players that read a
+sidecar instead of ID3 frames. Sidecars are **not** placed beside the tracks:
+like the artwork cache, they live in their own directory, `<download_dir>/
+lyrics_cache/`, keeping the audio file's own name (`song.mp3` →
+`lyrics_cache/song.lrc`). A download folder therefore stays readable — audio,
+artwork and the M3U — instead of carrying one `.lrc` per song.
+
+Players that only look for a sidecar next to the audio (the common convention)
+need to be pointed at `lyrics_cache/`, or the file copied beside the track it
+belongs to; the embedded frames are unaffected either way, and SpotM3U never
+moves or deletes a sidecar it did not write.
 
 Lyrics are optional enrichment and never affect resolution:
 
@@ -148,7 +160,7 @@ Lyrics are optional enrichment and never affect resolution:
 - a sidecar that cannot be written only costs the sidecar, not the embedded
   lyrics
 - existing metadata and embedded artwork are preserved
-- an `.lrc` from an earlier run is never deleted
+- an `.lrc` from an earlier run is never deleted, wherever it lives
 
 The [result page](web.md) labels each track **Synced lyrics** or **Plain
 lyrics** (nothing when the file has no lyrics), read from the file itself.

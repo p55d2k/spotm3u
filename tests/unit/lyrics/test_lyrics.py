@@ -20,7 +20,12 @@ from spotm3u.lyrics import (
     parse_lyrics,
     set_lyrics_enabled,
 )
-from spotm3u.metadata import MetadataResult, embedded_lyrics_form, enrich_metadata
+from spotm3u.metadata import (
+    MetadataResult,
+    embedded_lyrics_form,
+    enrich_metadata,
+    lyrics_sidecar_path,
+)
 from spotm3u.models import Track
 from spotm3u.online import SourceCandidate
 from spotm3u.resolution import TrackResolver
@@ -81,6 +86,10 @@ def _sylt_pairs(path: Path) -> list[list[tuple[str, int]]]:
     return [frame.text for frame in mutagen_id3.ID3(str(path)).getall("SYLT")]
 
 
+def _sidecar(tmp_path: Path, audio_name: str = "track.mp3") -> Path:
+    return lyrics_sidecar_path(tmp_path, tmp_path / audio_name)
+
+
 def test_lyrics_are_written_to_the_standard_lyrics_field(tmp_path, monkeypatch, lyrics_on):
     """Plain lyrics go into the field and get no sidecar, which would be untimed."""
     calls = _stub_search(monkeypatch, LYRICS)
@@ -90,7 +99,7 @@ def test_lyrics_are_written_to_the_standard_lyrics_field(tmp_path, monkeypatch, 
 
     assert "USLT" in result.fields_written
     assert _uslt_texts(path) == [LYRICS]
-    assert not (tmp_path / "track.lrc").exists()
+    assert not _sidecar(tmp_path).exists()
     # One lookup for "[title] [artist]", asking the library for its default
     # (prefer synced, fall back to plain) rather than plain-only.
     assert calls == [("Wonderwall Oasis", {})]
@@ -115,8 +124,26 @@ def test_synced_lyrics_are_written_to_both_frame_types_and_a_sidecar(
     assert _sylt_pairs(path) == [
         [("Today is gonna be the day", 6210), ("That they're gonna throw it back to you", 11000)]
     ]
-    sidecar = tmp_path / sidecar_name
+    sidecar = _sidecar(tmp_path, audio_name)
+    assert sidecar == tmp_path / "lyrics_cache" / sidecar_name
     assert sidecar.read_text(encoding="utf-8") == SYNCED_LYRICS
+
+
+def test_the_sidecar_goes_into_its_own_directory_not_beside_the_track(
+    tmp_path, monkeypatch, lyrics_on
+) -> None:
+    """A downloaded folder keeps only audio, artwork and the M3U.
+
+    One ``.lrc`` beside every song buries the tracks; the sidecars live together
+    in ``lyrics_cache/`` instead, keeping the audio file's own name.
+    """
+    _stub_search(monkeypatch, SYNCED_LYRICS)
+    path = _write_mp3(tmp_path)
+
+    enrich_metadata(path, TRACK, tmp_path)
+
+    assert not (tmp_path / "track.lrc").exists()
+    assert _sidecar(tmp_path).read_text(encoding="utf-8") == SYNCED_LYRICS
 
 
 def test_uslt_never_contains_timestamps(tmp_path, monkeypatch, lyrics_on):
@@ -159,7 +186,7 @@ def test_missing_lyrics_leaves_the_lyrics_field_empty(tmp_path, monkeypatch, lyr
 
     assert "USLT" not in result.fields_written
     assert _uslt_texts(path) == []
-    assert not (tmp_path / "track.lrc").exists()
+    assert not _sidecar(tmp_path).exists()
     assert "TIT2" in result.fields_written
 
 
@@ -173,7 +200,7 @@ def test_unusable_lyrics_result_is_ignored(tmp_path, monkeypatch, lyrics_on, unu
     assert isinstance(result, MetadataResult)
     assert "USLT" not in result.fields_written
     assert _uslt_texts(path) == []
-    assert not (tmp_path / "track.lrc").exists()
+    assert not _sidecar(tmp_path).exists()
 
 
 def test_unwritable_sidecar_still_keeps_the_embedded_lyrics(tmp_path, monkeypatch, lyrics_on):
@@ -181,7 +208,7 @@ def test_unwritable_sidecar_still_keeps_the_embedded_lyrics(tmp_path, monkeypatc
     _stub_search(monkeypatch, SYNCED_LYRICS)
     path = _write_mp3(tmp_path)
     # A directory where the .lrc file would go makes the write fail.
-    (tmp_path / "track.lrc").mkdir()
+    _sidecar(tmp_path).mkdir(parents=True)
 
     result = enrich_metadata(path, TRACK, tmp_path)
 
@@ -298,7 +325,7 @@ def test_lyrics_disabled_skips_retrieval_entirely(tmp_path, monkeypatch, lyrics_
     assert calls == []
     assert "USLT" not in result.fields_written
     assert _uslt_texts(path) == []
-    assert not (tmp_path / "track.lrc").exists()
+    assert not _sidecar(tmp_path).exists()
 
 
 def test_lyrics_failure_does_not_fail_the_download(tmp_path, monkeypatch, lyrics_on):
