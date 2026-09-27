@@ -54,11 +54,12 @@ const TONE_CLASSES: Record<ToastTone, { border: string; tile: string }> = {
   err: { border: "border-danger-border", tile: "bg-danger-subtle text-danger-ink" },
 };
 
-// ``both`` so the toast does not jump as the animation ends: the keyframes
-// carry the same ``translate(-50%)`` as the element, so the animated and the
-// resting position are one thing. Without a fill mode the transform is dropped
-// the moment the animation finishes, which left the toast sitting to the right
-// of centre with only its left edge at the centre.
+// Centred with ``inset-x-0 mx-auto w-fit`` instead of ``left-1/2
+// -translate-x-1/2``: the entrance keyframes animate ``transform``, and
+// Tailwind's translate utility sets the separate ``translate`` property, so a
+// half-width translate on the element compounded with the animation's own and
+// pulled the toast into the bottom-left corner. Keeping the horizontal
+// placement out of both properties lets the animation stay vertical only.
 const TOAST_ANIMATION = "animate-[toast-in_0.18s_ease_both]";
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -108,7 +109,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <div
           role="status"
           aria-live="polite"
-          className={`pointer-events-auto fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex min-w-64 max-w-[min(44rem,calc(100vw-2rem))] items-center gap-3 rounded-lg border bg-surface p-3 pr-4 shadow-popover ${TOAST_ANIMATION} ${tone.border}`}
+          className={`pointer-events-auto fixed inset-x-0 bottom-6 z-[300] mx-auto flex w-fit min-w-64 max-w-[min(44rem,calc(100vw-2rem))] items-center gap-3 rounded-lg border bg-surface p-3 pr-4 shadow-popover ${TOAST_ANIMATION} ${tone.border}`}
         >
           <span
             className={`flex size-7 shrink-0 items-center justify-center rounded-full ${tone.tile}`}

@@ -265,16 +265,20 @@
 }
 
 /*
- * The toast's entrance, mirrored from the Flask ``.app-toast`` transition:
- * it arrives from half a notch below and settles into its place.
+ * The toast's entrance: it arrives from half a notch below and settles into
+ * its place. Only the vertical offset and opacity are animated. The toast is
+ * centred with ``inset-x-0 mx-auto w-fit`` rather than a half-width
+ * translate, because Tailwind's translate utilities set the ``translate``
+ * property while a ``transform`` here would compound with it and drag the
+ * toast off-centre.
  */
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 0.5rem);
+    transform: translateY(0.5rem);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
