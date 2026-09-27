@@ -312,6 +312,35 @@ def test_window_controls_attach_tolerates_a_missing_window() -> None:
     assert controls.window is None
 
 
+def test_window_controls_keep_state_pushed_before_the_page_is_ready() -> None:
+    """A maximize that lands before the page can still be read back.
+
+    The frontend registers ``window.spotm3uTitlebar`` itself, so an event the
+    OS raises while the page is still loading cannot be delivered. The state is
+    recorded first and the page asks for it once it is up, so the change is not
+    lost -- this is the case the page-not-ready handshake has to survive.
+    """
+    controls = desktop.WindowControls()
+
+    class _NotReadyWindow(_FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            raise RuntimeError("the page is not ready")
+
+    window = _NotReadyWindow()
+    controls.attach(window)
+
+    window.events.maximized.fire()
+    window.events.restored.fire()
+
+    # Delivering to the page failed, but the state itself is intact and the
+    # title bar re-reads it on the way up.
+    assert window.scripts == []
+    assert controls.is_maximized() is False
+
+    window.events.maximized.fire()
+    assert controls.is_maximized() is True
+
+
 def test_window_controls_are_safe_before_a_window_exists() -> None:
     controls = desktop.WindowControls()
 

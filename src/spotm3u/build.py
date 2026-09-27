@@ -6,9 +6,10 @@ installed in the default environment. The exact PyInstaller invocation and
 ``SPOTM3U_FFMPEG_DIR`` handling match ``docs/packaging.md``.
 
 ``uv run build`` is the single command for a complete distributable: it
-regenerates the platform icons, builds the React frontend (Vite), and only then
-runs PyInstaller, which packs that frontend build into the bundle. Node is a
-build-time tool only; the packaged application never needs it.
+regenerates the platform icons, stamps the platform it is building for into the
+frontend, builds the React frontend (Vite), and only then runs PyInstaller,
+which packs that frontend build into the bundle. Node is a build-time tool only;
+the packaged application never needs it.
 
 The GitHub Actions release workflow runs the same command, so a local
 ``uv run build`` produces the same kind of application as a release build. It
@@ -33,6 +34,7 @@ _FFMPEG_STAGE = _ROOT / "ffmpeg-stage"
 _ICON_GENERATOR = _ROOT / "packaging" / "generate_icons.py"
 _ICON_PNG = _ROOT / "assets" / "icon.png"
 _MAKE_PKG = _ROOT / "packaging" / "make_pkg.py"
+_STAMPER = _ROOT / "packaging" / "stamp_version.py"
 # Mirrors the SPOTM3U_APP_VERSION default in packaging/spotm3u.spec.
 _VERSION_DEFAULT = "0.0.0"
 
@@ -40,6 +42,13 @@ _VERSION_DEFAULT = "0.0.0"
 # ``frontend/dist`` this is how the spec is iterated on without rebuilding the
 # UI every time; a release never sets it.
 SKIP_FRONTEND_ENV = "SPOTM3U_SKIP_FRONTEND"
+
+# The frontend draws the window frame for the platform the bundle is built for,
+# and stamping it here means a local bundle is framed correctly without the
+# developer having to remember the release step. Cross-compilation is not
+# supported, so the build host is the target; a release sets the variable
+# explicitly so the runner is not taken on trust.
+TARGET_PLATFORM_ENV = "SPOTM3U_TARGET_PLATFORM"
 
 
 def build_command(argv: list[str] | None = None) -> list[str]:
@@ -134,6 +143,21 @@ def generate_icons() -> None:
         raise SystemExit(1)
 
 
+def stamp_target_platform() -> None:
+    """Stamp the platform this build is for into the frontend source.
+
+    The frontend decides the window frame from a value baked in at build time,
+    so it has to be set before the frontend build runs. The stamping helper is
+    the guard: a platform it does not recognize fails the build here rather
+    than producing a bundle whose frame was decided by a guess.
+    """
+    platform = os.environ.get(TARGET_PLATFORM_ENV) or sys.platform
+    status = subprocess.call([sys.executable, str(_STAMPER), "--platform", platform])
+    if status != 0:
+        print(f"Target platform stamping failed (exit status {status}).", file=sys.stderr)
+        raise SystemExit(status)
+
+
 def build_frontend() -> None:
     """Build the React frontend so the bundle carries the current UI.
 
@@ -185,6 +209,7 @@ def main(argv: list[str] | None = None) -> None:
     if _FFMPEG_STAGE.is_dir():
         env.setdefault("SPOTM3U_FFMPEG_DIR", str(_FFMPEG_STAGE))
     generate_icons()
+    stamp_target_platform()
     build_frontend()
     status = subprocess.call(build_command(argv), cwd=str(_ROOT), env=env)
     if status != 0:

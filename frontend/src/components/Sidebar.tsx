@@ -11,7 +11,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Link, appUrl, useRoute } from "../lib/router";
 import { DeveloperTools } from "./DeveloperTools";
-import { useShell } from "./Shell";
+import { frameChrome, useShell } from "./Shell";
 import { UpdateNotice } from "./UpdateNotice";
 import { useTheme } from "../hooks/useTheme";
 
@@ -46,8 +46,9 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
   // The history is not a workflow step, so it is marked from the route itself.
   const onHistory = useRoute().startsWith("/history");
 
-  const trafficGap =
-    framed && platform === "mac" && !maximized ? "var(--spot-traffic-gap)" : undefined;
+  const chrome = frameChrome(platform);
+  const trafficLights = framed && chrome.trafficLightClearance;
+  const trafficGap = trafficLights && !maximized ? "var(--spot-traffic-gap)" : undefined;
 
   return (
     <aside
@@ -55,7 +56,7 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
       aria-label="Application navigation"
     >
       <div
-        className={`px-4 ${trafficGap ? "pb-4" : framed && platform === "mac" ? "pb-5 pt-5" : "pb-4 pt-5"}`}
+        className={`px-4 ${trafficGap ? "pb-4" : trafficLights ? "pb-5 pt-5" : "pb-4 pt-5"}`}
         style={trafficGap ? { paddingTop: trafficGap } : undefined}
       >
         <a href={appUrl("/")} aria-label="SpotM3U home" className="inline-flex items-center gap-3 text-ink no-underline">

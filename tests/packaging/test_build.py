@@ -1,5 +1,6 @@
 """Tests for the ``uv run build`` shortcut entry point."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,7 @@ def _install_fake_build(
     calls: dict[str, object] = {}
     calls["commands"] = []
     calls["frontend_cwds"] = []
+    calls["stamped_platform"] = []
 
     def fake_call(command, *, cwd=None, env=None) -> int:
         calls["commands"].append(command)
@@ -95,6 +97,9 @@ def _install_fake_build(
         calls["command"] = command
         calls["cwd"] = cwd
         calls["ffmpeg"] = env.get("SPOTM3U_FFMPEG_DIR") if env else None
+        if Path(command[1]).name == "stamp_version.py":
+            calls["stamped_platform"].append(command[3])
+            return 0
         if command[1].endswith("generate_icons.py"):
             return 0
         return result
@@ -141,13 +146,55 @@ def test_main_builds_the_frontend_between_icons_and_pyinstaller(
     build.main()
 
     commands = calls["commands"]
-    assert len(commands) == 4
+    assert len(commands) == 5
     assert Path(commands[0][1]).name == "generate_icons.py"
-    assert commands[1] is _NPM_INSTALL
-    assert commands[2] is _NPM_BUILD
+    assert Path(commands[1][1]).name == "stamp_version.py"
+    assert commands[2] is _NPM_INSTALL
+    assert commands[3] is _NPM_BUILD
     # PyInstaller runs last so it packages the fresh frontend build.
-    assert Path(commands[3][-1]).name == "spotm3u.spec"
+    assert Path(commands[4][-1]).name == "spotm3u.spec"
     assert "Build complete." in capsys.readouterr().out
+
+
+def test_main_stamps_the_build_host_as_the_target_platform(monkeypatch, tmp_path) -> None:
+    # Cross-compilation is not supported, so the build host is the target. The
+    # stamping helper is what rejects a platform it does not recognize.
+    calls = _install_fake_build(monkeypatch, tmp_path, result=0)
+    monkeypatch.delenv(build.TARGET_PLATFORM_ENV, raising=False)
+
+    build.main()
+
+    assert calls["stamped_platform"] == [sys.platform]
+
+
+def test_main_stamps_an_explicit_target_platform(monkeypatch, tmp_path) -> None:
+    # A release states the target outright so the runner is not taken on trust,
+    # and the stamp still happens if the developer forgets the release step.
+    calls = _install_fake_build(monkeypatch, tmp_path, result=0)
+    monkeypatch.setenv(build.TARGET_PLATFORM_ENV, "linux")
+
+    build.main()
+
+    assert calls["stamped_platform"] == ["linux"]
+
+
+def test_main_fails_loudly_when_platform_stamping_fails(monkeypatch, tmp_path, capsys) -> None:
+    _install_fake_build(monkeypatch, tmp_path, result=0)
+
+    def fail_only_the_stamp(command, **_kwargs) -> int:
+        return 6 if Path(command[1]).name == "stamp_version.py" else 0
+
+    monkeypatch.setattr(
+        build,
+        "subprocess",
+        type("Subprocess", (), {"call": staticmethod(fail_only_the_stamp)})(),
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        build.main()
+
+    assert exit_info.value.code == 6
+    assert "platform stamping failed" in capsys.readouterr().err.lower()
 
 
 def test_main_runs_the_frontend_steps_in_the_frontend_directory(monkeypatch, tmp_path) -> None:
@@ -184,8 +231,9 @@ def test_main_fails_with_a_hint_when_npm_is_missing(monkeypatch, tmp_path, capsy
     assert exit_info.value.code == 1
     assert "npm was not found" in capsys.readouterr().err
     # Icons were regenerated, and nothing was packaged from a half-built tree.
-    assert len(calls["commands"]) == 1
+    assert len(calls["commands"]) == 2
     assert Path(calls["commands"][0][1]).name == "generate_icons.py"
+    assert Path(calls["commands"][1][1]).name == "stamp_version.py"
 
 
 def test_main_fails_loudly_when_the_dependency_install_fails(monkeypatch, tmp_path, capsys) -> None:

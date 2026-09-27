@@ -144,17 +144,22 @@ jobs:
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      - name: Stamp the release version
+      - name: Stamp the release version and target platform
         shell: bash
         # The packaged app reports spotm3u.__version__ to the in-app update
         # check, so the tag must reach the frozen source instead of the
-        # version committed on main.
-        run: uv run -q python packaging/stamp_version.py "$VERSION"
+        # version committed on main. The frontend decides the window frame from
+        # a platform baked in at build time, so the target is stated outright
+        # here rather than inferred from the runner later.
+        run: >-
+          uv run -q python packaging/stamp_version.py "$VERSION"
+          --platform "${{ matrix.platform }}"
 
       - name: Build with PyInstaller
         env:
           SPOTM3U_FFMPEG_DIR: ${{ github.workspace }}/ffmpeg-stage
           SPOTM3U_APP_VERSION: ${{ env.VERSION }}
+          SPOTM3U_TARGET_PLATFORM: ${{ matrix.platform }}
         run: uv run -q build
 
       - name: Verify Windows app config is packaged

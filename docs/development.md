@@ -75,6 +75,21 @@ See [web.md](web.md#theme). `SPOTM3U_NO_WEBVIEW=1` skips the window and only
 serves, which is what the release smoke test uses. Developers are not required
 to use the desktop window; it never replaces the plain browser workflow above.
 
+Which frame is drawn is decided in one place, from the platform the bundle was
+built for: `packaging/stamp_version.py` stamps `BUILD_TARGET_PLATFORM` into
+`frontend/src/lib/target.ts` before the frontend build, the same way the release
+tag stamps `spotm3u.__version__`, and the build fails for a platform it does not
+recognize rather than shipping a bundle that guesses. The value is authoritative
+because the application is built per platform and cross-compilation is not
+supported. pywebview's `window.pywebview.platform` only corroborates it: the
+bridge injects itself on its own thread, so a first render can beat it, and it
+names its WebView backend rather than the operating system. An unknown platform
+is not a platform — nothing is drawn for it, so no window controls appear until
+the platform is known, and on macOS the traffic light clearance is reserved at
+every point in the session. `uv run build` stamps the build host, which is the
+target; a release states the target outright with
+`SPOTM3U_TARGET_PLATFORM` so the runner is not taken on trust.
+
 The packaged applications use the same desktop launcher, where the reloader is
 disabled and the Windows build is windowed instead of console-based; see
 [packaging.md](packaging.md). Build a local distributable with

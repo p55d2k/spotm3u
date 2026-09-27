@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import type { WorkflowStage } from "./Sidebar";
-import { ShellContext, SHELL_STORAGE_KEY } from "./Shell";
+import { ShellContext, SHELL_STORAGE_KEY, frameChrome } from "./Shell";
 import type { ShellStatus } from "./Shell";
 import { windowPlatform } from "../lib/bridge";
 
@@ -17,7 +17,8 @@ import { windowPlatform } from "../lib/bridge";
  * On the first load of a desktop window the bridge handshake (``pywebviewready``)
  * lands a frame late, so the frame state is also read from session memory to
  * be drawn immediately on reloads and in-app navigations -- the same
- * mechanism the Flask shell uses.
+ * mechanism the Flask shell uses. The platform is not read back: it is stamped
+ * into the bundle by the build, so it is known on the very first render.
  */
 export function AppShell({
   currentStage = 1,
@@ -28,16 +29,19 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [status, setStatus] = useState<ShellStatus>(() => {
-    let stored: string | null = null;
+    // Only the frame flag is remembered; the platform comes from the bundle's
+    // build stamp, so a value lost to a first render before the bridge existed
+    // cannot be read back as a later "known" answer.
+    let framed = false;
     try {
-      stored = sessionStorage.getItem(SHELL_STORAGE_KEY);
+      framed = sessionStorage.getItem(SHELL_STORAGE_KEY) !== null;
     } catch {
       // sessionStorage can be unavailable; the frame appears once the bridge
       // handshake completes.
     }
     return {
-      framed: stored !== null,
-      platform: stored ? (stored as "mac" | "windows" | "linux") : windowPlatform(),
+      framed,
+      platform: windowPlatform(),
       maximized: false,
     };
   });
@@ -53,8 +57,9 @@ export function AppShell({
   // On Windows and Linux the native title bar occupies the top strip, so the
   // content frame clears it. On macOS the traffic lights float over the content
   // and the frame extends right up under them.
+  const chrome = frameChrome(status.platform);
   const frameOffset =
-    status.framed && status.platform !== "mac" ? "var(--spot-titlebar-h)" : undefined;
+    status.framed && chrome.offsetTitlebar ? "var(--spot-titlebar-h)" : undefined;
 
   return (
     <ShellContext.Provider value={value}>

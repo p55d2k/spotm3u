@@ -1,8 +1,8 @@
 import { Minus, Square, Copy, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { getBridge, hasWindowControls, windowPlatform } from "../lib/bridge";
 import type { Bridge } from "../lib/bridge";
-import { useShell } from "./Shell";
+import { SHELL_STORAGE_KEY, frameChrome, useShell } from "./Shell";
 
 /**
  * Custom title bar for the frameless native window, migrated from
@@ -15,23 +15,39 @@ import { useShell } from "./Shell";
  * AppKit traffic lights are restored (see ``desktop_macos.py``), so the bar is
  * only a transparent drag strip and the controls are hidden. macOS's green
  * control is full screen; Windows and Linux maximize and restore within the
- * current desktop.
+ * current desktop. Which of the two applies is decided by the platform stamped
+ * into the bundle at build time, not read once when this effect happens to run.
  */
 
 export function TitleBar() {
   const { framed, platform, maximized, setStatus } = useShell();
   const apiRef = useRef<Bridge | null>(null);
 
-  const isMac = platform === "mac";
+  const chrome = useMemo(() => frameChrome(platform), [platform]);
+  const isMac = chrome.macStrip;
 
   useEffect(() => {
-    const platform = windowPlatform();
+    // Registered before the handshake is awaited, and re-registered on it, so a
+    // maximize/restore the OS pushes while the page is still loading reaches
+    // the icon instead of being dropped on a hook that did not exist yet. The
+    // hook is kept for the life of the window rather than removed on cleanup.
+    const registerTitlebarBridge = () => {
+      window.spotm3uTitlebar = {
+        setMaximized: (value) => setStatus({ maximized: Boolean(value) }),
+      };
+    };
+
     const activate = (api: Bridge) => {
       if (!hasWindowControls()) return;
       apiRef.current = api;
-      setStatus({ framed: true, platform });
+      registerTitlebarBridge();
+      setStatus({ framed: true, platform: windowPlatform() });
       try {
-        sessionStorage.setItem("spotm3u-shell", platform ?? "");
+        // Only the frame flag is remembered. The platform is stamped into the
+        // bundle, so writing it here would persist a value a first render may
+        // have read before the bridge existed, and every later read would
+        // reproduce it.
+        sessionStorage.setItem(SHELL_STORAGE_KEY, "1");
       } catch {
         // sessionStorage can be unavailable; the frame still appears once the
         // bridge handshake completes.
@@ -41,32 +57,35 @@ export function TitleBar() {
         .catch(() => undefined);
     };
 
-    // The Python bridge uses this hook to push OS-driven maximize/restore
-    // changes (window snapping, native gestures) into the icon, not just our
-    // buttons.
-    window.spotm3uTitlebar = {
-      setMaximized: (value) => setStatus({ maximized: Boolean(value) }),
-    };
-
     const ready = () => {
       const api = getBridge();
       if (api) activate(api);
     };
 
+    registerTitlebarBridge();
+    // The Python bridge uses this hook to push OS-driven maximize/restore
+    // changes (window snapping, native gestures) into the icon, not just our
+    // buttons.
+    window.addEventListener("pywebviewready", ready);
+
     // Session flag so reloads draw the frame immediately; the bridge handshake
     // may still be pending on the very first load of a fresh desktop window.
-    const stored = sessionStorage.getItem("spotm3u-shell");
+    let stored: string | null = null;
+    try {
+      stored = sessionStorage.getItem(SHELL_STORAGE_KEY);
+    } catch {
+      // sessionStorage can be unavailable; the frame appears once the bridge
+      // handshake completes.
+    }
     if (stored !== null && hasWindowControls()) {
-      setStatus({ framed: true, platform: stored ? (stored as "mac" | "windows" | "linux") : null });
-      window.addEventListener("pywebviewready", ready, { once: true });
-      return;
+      setStatus({ framed: true, platform: windowPlatform() });
+      return () => window.removeEventListener("pywebviewready", ready);
     }
     const api = getBridge();
     if (api && hasWindowControls()) {
       activate(api);
-      return;
+      return () => window.removeEventListener("pywebviewready", ready);
     }
-    window.addEventListener("pywebviewready", ready, { once: true });
     return () => window.removeEventListener("pywebviewready", ready);
   }, [setStatus]);
 
@@ -102,14 +121,14 @@ export function TitleBar() {
           run("maximize");
         }}
       >
-        {!isMac && (
+        {isMac ? null : (
           <span className="inline-flex items-center gap-2 pl-4">
             <img src="/api/icon.png" alt="" width="20" height="20" className="rounded-[0.25rem]" />
             <span className="text-sm font-semibold tracking-[0.02em] text-ink-muted">SpotM3U</span>
           </span>
         )}
       </div>
-      {!isMac && (
+      {chrome.windowControls && (
         <div className="pywebview-no-drag flex h-full items-center" role="group" aria-label="Window controls">
           <button
             type="button"

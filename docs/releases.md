@@ -50,9 +50,13 @@ Version tags should follow semantic versioning: increment the patch for
 backward-compatible fixes, the minor for backward-compatible features, and the
 major for incompatible changes.
 
-Once the tag is accepted, the workflow runs `packaging/stamp_version.py <tag>`
-to write the tag into `src/spotm3u/__init__.py`'s `__version__`, so every
-packaged app reports the release it was actually built from. This matters because the in-app
+Once the tag is accepted, the workflow runs
+`packaging/stamp_version.py <tag> --platform <target>` to write the tag into
+`src/spotm3u/__init__.py`'s `__version__` and the target into the frontend's
+`BUILD_TARGET_PLATFORM`, so every packaged app reports the release it was
+actually built from and draws the window frame for the platform it was built
+for. Both are rejected if the value is not one the build understands, so a
+release fails instead of shipping a bundle that guesses. This matters because the in-app
 update check compares that constant against the published release tag: a bundle
 carrying a stale version would offer an update it already has, forever. The
 verification job asserts the packaged app reports the tag (`smoke_test.py

@@ -121,6 +121,19 @@ specific release version, stamp it first:
 uv run -q python packaging/stamp_version.py 1.2.3
 ```
 
+The same helper stamps the platform the bundle is built for, which the frontend
+needs to decide the window frame before the pywebview bridge exists (see
+[development.md](development.md)). `uv run build` does this
+itself, stamping the build host because cross-compilation is not supported, and
+fails for a platform it does not recognize. A release states the target
+outright instead:
+
+```bash
+uv run -q python packaging/stamp_version.py 1.2.3 --platform mac
+```
+
+`SPOTM3U_TARGET_PLATFORM` overrides what the build stamps for the same reason.
+
 The release workflow does this automatically from the pushed tag; commit a real
 version before stamping so the tree is not left reporting a release that does
 not match it.

@@ -10,7 +10,30 @@
  * resolved at call time, never imported eagerly.
  */
 
+import { BUILD_TARGET_PLATFORM } from "./target";
+
 export type WindowPlatform = "mac" | "windows" | "linux";
+
+/** pywebview names its WebView backends after the platforms they run on. */
+const BRIDGE_PLATFORMS: Readonly<Record<string, WindowPlatform>> = {
+  cocoa: "mac",
+  edgechromium: "windows",
+  mshtml: "windows",
+  gtk3: "linux",
+  qt: "linux",
+  qtwebkit: "linux",
+};
+
+const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set([
+  "mac",
+  "windows",
+  "linux",
+]);
+
+function asPlatform(value: string | null | undefined): WindowPlatform | null {
+  if (!value) return null;
+  return SUPPORTED_PLATFORMS.has(value) ? (value as WindowPlatform) : null;
+}
 
 export type NativeFileResult = {
   cancelled?: boolean;
@@ -92,13 +115,28 @@ export function hasWindowControls(): boolean {
   return Boolean(api && typeof api.minimize === "function" && typeof api.close === "function");
 }
 
-/** pywebview names its WebView backends after the platforms they run on. */
+/** The platform this bundle was built for, or null when it was not stamped. */
+export function buildTargetPlatform(): WindowPlatform | null {
+  return asPlatform(BUILD_TARGET_PLATFORM);
+}
+
+/** The platform the bridge reports, or null until it reports a usable one. */
+export function bridgePlatform(): WindowPlatform | null {
+  const backend = window.pywebview?.platform || "";
+  return BRIDGE_PLATFORMS[backend] ?? null;
+}
+
+/**
+ * The platform the window frame is drawn for.
+ *
+ * The stamped build target is authoritative: the application is built per
+ * platform, so this is already known before the bridge handshake completes. The
+ * bridge corroborates it and covers a bundle that was built without stamping.
+ * An unrecognized value is not a platform -- anything this cannot name is
+ * reported as unknown so the frame draws nothing rather than guessing.
+ */
 export function windowPlatform(): WindowPlatform | null {
-  if (!window.pywebview) return null;
-  const platform = window.pywebview.platform || "";
-  if (platform === "cocoa") return "mac";
-  if (platform === "edgechromium" || platform === "mshtml") return "windows";
-  return "linux";
+  return buildTargetPlatform() ?? bridgePlatform();
 }
 
 export function getTitlebarBridge(): TitlebarBridge | null {
