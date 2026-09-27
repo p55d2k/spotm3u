@@ -233,25 +233,22 @@ class LocalAudioResolver:
 
         return frozenset(indices)
 
-    def _score(self, title_key: str, artist_key: str, query: str, index: int) -> float:
+    def _title_score(self, title_key: str, artist_key: str, index: int) -> float:
+        """Return how well the *title alone* identifies this file.
+
+        The artist may only support this score, never create it: a file whose
+        name merely repeats the artist is a different recording.
+        """
         stem = self._stems[index]
         score = 0.0
 
         for key in self._keys[index]:
-            if key == query:
-                score = max(score, 1.0)
-            elif title_key == key or f"{artist_key} {title_key}".strip() == key:
+            if title_key == key:
                 score = max(score, 0.95)
         if title_key and title_key in stem:
             score = max(score, 0.9)
-        # The artist is never scored on its own: a filename that only shares the
-        # artist with the track is a different song, not a match. It enters the
-        # score through ``query`` (title + artist) so it can support a title
-        # match without creating one.
-        if stem:
-            for target in (query, title_key):
-                if target and _length_compatible(target, stem):
-                    score = max(score, _fuzzy_ratio(target, stem))
+        if stem and _length_compatible(title_key, stem):
+            score = max(score, _fuzzy_ratio(title_key, stem))
         # Filenames are usually ``<artist> - <title>`` (or the reverse), so a
         # close title match is easier to see with the artist removed from the
         # stem. This only strips the artist; the title still has to match.
@@ -262,6 +259,19 @@ class LocalAudioResolver:
                     score = max(score, 0.9)
                 elif _length_compatible(title_key, remainder):
                     score = max(score, _fuzzy_ratio(title_key, remainder))
+        return score
+
+    def _score(self, title_key: str, artist_key: str, query: str, index: int) -> float:
+        stem = self._stems[index]
+        score = self._title_score(title_key, artist_key, index)
+
+        for key in self._keys[index]:
+            if key == query:
+                score = max(score, 1.0)
+            elif f"{artist_key} {title_key}".strip() == key:
+                score = max(score, 0.95)
+        if stem and _length_compatible(query, stem):
+            score = max(score, _fuzzy_ratio(query, stem))
         return score
 
     def resolve(self, track: Track) -> Resolution:
@@ -281,7 +291,7 @@ class LocalAudioResolver:
         query = track_key(track.title, track.artists)
         scored = sorted(
             (
-                (self._score(title_key, artist_key, query, index), self._files[index])
+                (self._score(title_key, artist_key, query, index), index)
                 for index in sorted(self._fuzzy_candidates(title_key, artist_key))
             ),
             key=lambda item: item[0],
@@ -294,11 +304,20 @@ class LocalAudioResolver:
         if best_score < _FUZZY_SCORE_CUTOFF:
             return Resolution(track, None)
 
-        tied = tuple(path for score, path in scored if score >= best_score - 0.02)
+        tied = tuple(index for score, index in scored if score >= best_score - 0.02)
         if len(tied) > 1:
-            return Resolution(track, None, tied)
+            return Resolution(track, None, tuple(self._files[index] for index in tied))
         chosen = tied[0]
-        return Resolution(track, ResolvedTrack(track, chosen), tied)
+        # ``_score`` also weighs title+artist together, and a shared artist name
+        # is enough on its own to clear the cutoff for the wrong song: for
+        # ``Yellow - Coldplay.mp3`` the query "everglow coldplay" scores 0.81
+        # while the titles themselves share nothing (0.57). A local match
+        # renames the file it points at, so a wrong one silently overwrites
+        # another track's tags and leaves its audio in place. Require the title
+        # to clear the cutoff on its own before reusing a file.
+        if self._title_score(title_key, artist_key, chosen) < _FUZZY_SCORE_CUTOFF:
+            return Resolution(track, None)
+        return Resolution(track, ResolvedTrack(track, self._files[chosen]), (self._files[chosen],))
 
     def resolve_all(self, tracks: list[Track], *, max_workers: int = 1) -> list[Resolution]:
         """Resolve tracks in source order, preserving duplicates.

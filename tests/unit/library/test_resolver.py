@@ -17,6 +17,24 @@ def test_resolver_does_not_match_another_song_by_the_same_artist(tmp_path: Path)
     assert result.resolved is None
 
 
+def test_resolver_does_not_match_a_same_artist_song_with_a_similar_title(tmp_path: Path) -> None:
+    """A shared artist must not carry a fuzzy match on its own.
+
+    ``"everglow coldplay"`` scores 0.81 against the stem ``"yellow coldplay"``
+    purely because of the shared artist, which is above the 0.72 cutoff even
+    though the titles share nothing. Reusing that file would rename Yellow's
+    audio to Everglow and leave Yellow's artwork in place.
+    """
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "Yellow - Coldplay.mp3").write_bytes(b"audio")
+
+    result = LocalAudioResolver(music_dir).resolve(Track(title="Everglow", artists=["Coldplay"]))
+
+    assert result.status == "missing"
+    assert result.resolved is None
+
+
 def test_resolver_matches_the_right_song_among_one_artist_files(tmp_path: Path) -> None:
     music_dir = tmp_path / "music"
     music_dir.mkdir()
