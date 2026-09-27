@@ -57,12 +57,24 @@ def source_identity(url: str) -> str:
 
 
 def cache_metadata_key(track: Track) -> str:
-    """Build the recording identity key from normalized track metadata."""
-    core, versions = split_title(track.title)
+    """Build the recording identity key from normalized track metadata.
+
+    Collaborators are part of the key because the resolver treats an unrequested
+    featured artist as a different recording; without them the cache would hand
+    back the single's file for the collaboration and reintroduce the very
+    confusion ranking rejects. They are appended last so a key for a track with
+    no collaborator is byte-identical to the one written before this field
+    existed, and existing manifests keep hitting.
+    """
+    parts = split_title(track.title)
     artists = normalize_cjk(normalize_artists(track.artists))
-    version_text = " ".join(sorted(versions))
-    parts = [part for part in (artists, core, version_text) if part]
-    return " || ".join(parts)
+    segments = (
+        artists,
+        parts.core,
+        " ".join(sorted(parts.versions)),
+        " ".join(sorted(parts.collaborations)),
+    )
+    return " || ".join(segment for segment in segments if segment)
 
 
 class DownloadCache:
@@ -135,13 +147,14 @@ class DownloadCache:
         except (OSError, ValueError):
             relative = Path(file_path.name)
 
-        core, versions = split_title(track.title)
+        parts = split_title(track.title)
         entry: dict[str, Any] = {
             "key": cache_metadata_key(track),
             "title": track.title,
             "artists": list(track.artists),
-            "core": core,
-            "version": " ".join(sorted(versions)) or None,
+            "core": parts.core,
+            "version": " ".join(sorted(parts.versions)) or None,
+            "collaborations": " ".join(sorted(parts.collaborations)) or None,
             "duration_s": _seconds(track.duration_ms),
             "source_url": url,
             "file": str(relative),

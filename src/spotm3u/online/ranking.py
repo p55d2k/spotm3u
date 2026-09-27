@@ -19,7 +19,7 @@ import logging
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from ..models import Track
 from ..normalization import normalize_artists, normalize_cjk
@@ -59,6 +59,22 @@ _CONFLICT_MARKERS = frozenset(_VERSION_KEYS)
 _VERSION_KEY_PATTERNS = tuple(
     (key, re.compile(rf"\b{re.escape(key)}\b", re.IGNORECASE)) for key in _VERSION_KEYS
 )
+
+# An extra credited performer is recording identity, not upload decoration.
+# ``Love Me Not`` and ``Love Me Not (feat. Rex Orange County)`` can be different
+# recordings, so the collaborator is lifted out of the title and compared
+# explicitly. Left inside the title core it would be free: token containment
+# reads the longer title as a superset and scores it a perfect match. ``feat`` /
+# ``ft`` / ``featuring`` are unambiguous music conventions; a bare ``with`` is
+# only read as a marker inside brackets, because titles such as ``Dance With
+# Me`` are ordinary English rather than a credit.
+_FEATURED_RE = re.compile(
+    r"(?:\(\s*|\b)(?:feat|ft|featuring)\b\.?\s*"
+    r"(?P<names>[^()\[\]]+?)(?=\s*[)\]]|\s+[-–—]\s|\s*$)",
+    re.IGNORECASE,
+)
+_BRACKETED_WITH_RE = re.compile(r"\(\s*with\s+(?P<names>[^()\[\]]+?)\s*\)", re.IGNORECASE)
+_COLLABORATION_SPLIT_RE = re.compile(r"\s*(?:&|,|×|✕|\+|\band\b)\s*", re.IGNORECASE)
 
 _POSITIVE_SOURCE_RE = re.compile(
     r"\b(?:official\s+audio|official|audio|topic|artist|records?|vevo)\b",
@@ -123,8 +139,10 @@ def rank_source_candidates(
 
 def rank_source_candidate(track: Track, candidate: SourceCandidate) -> CandidateRanking:
     """Rank a single candidate: identity first, then source quality."""
-    requested_core, requested_versions = split_title(track.title)
-    candidate_core, candidate_versions = split_title(candidate.title)
+    requested_parts = split_title(track.title)
+    candidate_parts = split_title(candidate.title)
+    requested_core, requested_versions = requested_parts.core, requested_parts.versions
+    candidate_core, candidate_versions = candidate_parts.core, candidate_parts.versions
     candidate_text = _candidate_text(candidate)
     profile = source_profile(candidate)
     requested_instrumental = _is_instrumental_title(track.title)
@@ -133,15 +151,20 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
 
     # Strip the requested artist's name from candidate-title cores so that
     # ``薛之谦 演员`` and a bare ``演员`` compare against the same underlying
-    # identity (an artist attribution is never a title difference). A title made
-    # only of symbols (``❤️``, ``♾️``) has no core of its own, so it is compared
-    # through the names the search layer expands it into (``heart``).
+    # identity (an artist attribution is never a title difference).
     candidate_core_for_title = _strip_artist_phrases(
         candidate_core, requested_artists
     ) or _expanded_title_core(candidate.title, requested_artists)
-    requested_core_for_title = _strip_artist_phrases(
-        requested_core, requested_artists
-    ) or _expanded_title_core(track.title, requested_artists)
+    requested_core_stripped = _strip_artist_phrases(requested_core, requested_artists)
+    requested_core_for_title = requested_core_stripped or _expanded_title_core(
+        track.title, requested_artists
+    )
+    # A title made only of symbols (``❤️``, ``♾️``) has no core of its own, so it
+    # is compared through the names the search layer expands it into (``heart``,
+    # ``infinity``). That expansion is a discovery hint, not proof of identity:
+    # it says how to *find* an upload, not that the upload is this recording, so
+    # a match resting on it alone also has to clear the artist evidence bar.
+    title_from_alias = not requested_core_stripped
 
     candidate_artist_text = _artist_text(candidate.artist) if candidate.artist else ""
     creator_text = (
@@ -179,6 +202,15 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     else:
         identity_evidence = 0.0
 
+    # A collaborator the request never mentioned identifies a different
+    # recording, so it outranks however good the rest of the match looks. A
+    # collaborator is allowed when the request asked for it, either in its own
+    # title or as one of its credited artists (Spotify lists both sides of a
+    # collaboration, so ``Artist A, Artist B - Song`` may be matched by
+    # ``Song feat. Artist B``).
+    allowed_collaborations = requested_parts.collaborations | frozenset(requested_artists)
+    extra_collaborations = candidate_parts.collaborations - allowed_collaborations
+
     reasons: list[str] = []
     if title_similarity >= 0.98:
         reasons.append("title matches")
@@ -200,6 +232,11 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
             reasons.append("uploader differs (artist identity not confirmed)")
         else:
             reasons.append("artist identity not confirmed")
+
+    if extra_collaborations:
+        reasons.append("unrequested collaborator: " + ", ".join(sorted(extra_collaborations)))
+    elif candidate_parts.collaborations:
+        reasons.append("collaborator matches request")
 
     identity_score = 40 * identity_evidence
     title_score = 35 * title_similarity
@@ -313,6 +350,15 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     rejection_reason: str | None = None
     if weak_evidence:
         rejection_reason = "title does not match the requested track"
+    elif extra_collaborations:
+        rejection_reason = "candidate credits an unrequested artist: " + ", ".join(
+            sorted(extra_collaborations)
+        )
+    elif title_from_alias and identity_evidence < 0.7:
+        # The title only lined up because a symbol was expanded into its English
+        # name, and nothing ties the upload to the requested artist. That is a
+        # coincidence of vocabulary, not a match.
+        rejection_reason = "symbol title matched only through a search alias"
     elif explicit_conflict:
         rejection_reason = "explicit artist conflicts with requested artist"
     elif non_music_markers:
@@ -399,11 +445,58 @@ def rank_source_candidate(track: Track, candidate: SourceCandidate) -> Candidate
     )
 
 
-def split_title(value: str | None) -> tuple[str, frozenset[str]]:
-    """Return (core title, version markers) with labels and versions removed."""
+class TitleParts(NamedTuple):
+    """A title split into the three things that mean different things.
+
+    ``core`` is the title text left once upload labels, version modifiers and
+    credited collaborators are removed. ``versions`` are the recording-variant
+    markers that were removed, and ``collaborations`` the extra performers the
+    title credits. They are kept apart because they answer different questions:
+    a source label only says how the track was uploaded, a version marker says
+    which recording it is, and a collaborator is part of the recording's
+    identity. Collapsing all three into one string is what let a candidate
+    carrying an unrequested featured artist look like an exact title match.
+    """
+
+    core: str
+    versions: frozenset[str]
+    collaborations: frozenset[str]
+
+
+def _collaboration_names(value: str | None) -> frozenset[str]:
+    """Return the extra performers a title credits, normalized for comparison."""
     if not value:
-        return "", frozenset()
-    title = _AUDIO_LABEL_RE.sub(" ", _cjk_text(value))
+        return frozenset()
+    names: set[str] = set()
+    for pattern in (_FEATURED_RE, _BRACKETED_WITH_RE):
+        for match in pattern.finditer(value):
+            for part in _COLLABORATION_SPLIT_RE.split(match.group("names")):
+                if key := _artist_text(part):
+                    names.add(key)
+    return frozenset(names)
+
+
+def split_title(value: str | None) -> TitleParts:
+    """Return the title core, version markers and credited collaborators.
+
+    Source annotations (``Official Audio`` and friends) are upload decoration and
+    are dropped; version modifiers and collaborators are recorded rather than
+    discarded, so the caller can tell a different recording from a different
+    upload of the same one.
+
+    Collaborations are read from the raw title, before normalization. The
+    comparison text has every non-alphanumeric character replaced by a space, so
+    by the time it is built the ``feat.`` marker, its brackets and any ``&``
+    between two collaborators are all gone and nothing structural is left to
+    parse.
+    """
+    if not value:
+        return TitleParts("", frozenset(), frozenset())
+    collaborations = _collaboration_names(value)
+    remainder = value
+    for pattern in (_FEATURED_RE, _BRACKETED_WITH_RE):
+        remainder = pattern.sub(" ", remainder)
+    title = _AUDIO_LABEL_RE.sub(" ", _cjk_text(remainder))
     versions: set[str] = set()
     for key, pattern in _VERSION_KEY_PATTERNS:
         if pattern.search(title):
@@ -413,7 +506,7 @@ def split_title(value: str | None) -> tuple[str, frozenset[str]]:
     for _, pattern in _VERSION_KEY_PATTERNS:
         title = pattern.sub(" ", title)
     title = _REMASTER_RE.sub(" ", title)
-    return _collapse(title), frozenset(versions)
+    return TitleParts(_collapse(title), frozenset(versions), collaborations)
 
 
 def _expanded_title_core(value: str | None, artist_keys: list[str]) -> str:
@@ -432,8 +525,7 @@ def _expanded_title_core(value: str | None, artist_keys: list[str]) -> str:
     title that already had text.
     """
     for form in search_title_forms(value)[1:]:
-        core, _versions = split_title(form)
-        stripped = _strip_artist_phrases(core, artist_keys)
+        stripped = _strip_artist_phrases(split_title(form).core, artist_keys)
         if stripped:
             return stripped
     return ""
@@ -566,6 +658,7 @@ __all__ = [
     "CandidateRanking",
     "Confidence",
     "ScoreComponents",
+    "TitleParts",
     "rank_source_candidate",
     "rank_source_candidates",
     "split_title",

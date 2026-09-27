@@ -77,6 +77,27 @@ def test_identity_helpers():
     )
 
 
+def test_collaboration_and_source_annotation_do_not_collide_in_the_cache():
+    """A featured credit is part of the recording; ``Official Audio`` is not."""
+    plain = cache_metadata_key(Track("Love Me Not", ["Ravyn Lenae"]))
+    featured = cache_metadata_key(Track("Love Me Not (feat. Rex Orange County)", ["Ravyn Lenae"]))
+    alternate_order = cache_metadata_key(
+        Track("Love Me Not (Official Audio) ft. Rex Orange County", ["Ravyn Lenae"])
+    )
+
+    assert plain != featured
+    assert featured == alternate_order
+    # Upload decoration must not split the cache.
+    assert plain == cache_metadata_key(Track("Love Me Not (Official Audio)", ["Ravyn Lenae"]))
+
+
+def test_symbol_only_title_does_not_collide_with_its_alias_in_the_cache():
+    """``♾️`` and ``Infinity`` are different recordings, not the same cache entry."""
+    assert cache_metadata_key(Track("♾️", ["Coldplay"])) != cache_metadata_key(
+        Track("Infinity", ["Coldplay"])
+    )
+
+
 def test_same_source_is_reused_without_redownloading(tmp_path, monkeypatch):
     cache = DownloadCache(tmp_path / "downloads")
     calls: list[str] = []

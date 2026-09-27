@@ -602,6 +602,64 @@ def test_regression_coldplay_symbol_only_titles_resolve(
     assert not rank_source_candidate(track, live_version).accepted
 
 
+def test_regression_symbol_only_title_does_not_accept_an_artistless_candidate() -> None:
+    """An expanded symbol is a search hint, never proof of identity.
+
+    Regression: ``♾️`` was compared through the expanded name ``infinity``, so a
+    bare ``Infinity`` upload carrying no Coldplay evidence scored 39 and was
+    accepted as ``plausible`` -- which is how a James Young track was downloaded
+    as Coldplay. With no artist evidence left to weigh, a symbol-only title must
+    not accept a candidate that merely shares the alias.
+    """
+    track = make_track("♾️", ["Coldplay"], duration_ms=210_000)
+    artistless = make_candidate(
+        "Infinity",
+        artist=None,
+        uploader=None,
+        source_query="coldplay infinity",
+    )
+
+    result = rank_source_candidate(track, artistless)
+
+    assert not result.accepted
+    assert any("search alias" in reason for reason in result.reasons)
+
+
+def test_regression_unrequested_featured_artist_is_not_a_title_match() -> None:
+    """A credit the request did not contain is a different recording.
+
+    Regression: token containment read ``love me not`` as a subset of
+    ``love me not feat rex orange county``, giving a perfect title score, so the
+    candidate scored 100 and was accepted as ``strong``. The same upload still
+    matches when the request credits the guest, or when Spotify lists them in
+    ``artists``.
+    """
+    track = make_track("Love Me Not", ["Ravyn Lenae"], duration_ms=200_000)
+    featured = make_candidate(
+        "Love Me Not (feat. Rex Orange County) (Official Audio)",
+        artist="Ravyn Lenae",
+        uploader="Ravyn Lenae",
+    )
+
+    result = rank_source_candidate(track, featured)
+
+    assert not result.accepted
+    assert any("unrequested artist" in reason for reason in result.reasons)
+
+    for agreeing in (
+        make_track("Love Me Not (feat. Rex Orange County)", ["Ravyn Lenae"], duration_ms=200_000),
+        make_track("Love Me Not", ["Ravyn Lenae", "Rex Orange County"], duration_ms=200_000),
+    ):
+        assert rank_source_candidate(
+            agreeing,
+            make_candidate(
+                "Love Me Not (feat. Rex Orange County) (Official Audio)",
+                artist="Ravyn Lenae",
+                uploader="Ravyn Lenae",
+            ),
+        ).accepted
+
+
 def test_regression_collaboration_track_matches_either_ordering() -> None:
     """Collaboration tracks.
 

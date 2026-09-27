@@ -204,3 +204,203 @@ def test_instrumental_candidate_beats_unmarked_candidate() -> None:
 
     assert ranked[0].candidate.title.endswith("Instrumental")
     assert ranked[0].accepted
+
+
+# --- title analysis: source labels vs collaborators vs versions ----------------
+
+
+def test_source_annotation_is_not_part_of_the_title_core() -> None:
+    """``Official Audio`` describes the upload, not the recording."""
+    from spotm3u.online.ranking import split_title
+
+    plain = split_title("Love Me Not")
+    labelled = split_title("Love Me Not (Official Audio)")
+
+    assert plain.core == labelled.core == "love me not"
+    assert labelled.collaborations == frozenset()
+    assert labelled.versions == frozenset()
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Love Me Not (feat. Rex Orange County)",
+        "Love Me Not (feat. Rex Orange County) (Official Audio)",
+        "Love Me Not (Official Audio) ft. Rex Orange County",
+        "Love Me Not ft Rex Orange County",
+    ],
+)
+def test_credited_collaborator_is_lifted_out_of_the_title(title: str) -> None:
+    from spotm3u.online.ranking import split_title
+
+    parts = split_title(title)
+
+    assert parts.core == "love me not"
+    assert parts.collaborations == frozenset({"rex orange county"})
+
+
+def test_multiple_collaborators_are_separated() -> None:
+    from spotm3u.online.ranking import split_title
+
+    parts = split_title("Song (feat. Anna & Ben)")
+
+    assert parts.core == "song"
+    assert parts.collaborations == frozenset({"anna", "ben"})
+
+
+def test_bare_with_in_a_title_is_not_a_collaboration() -> None:
+    """``Dance With Me`` is English, not a credit; only bracketed ``with`` is."""
+    from spotm3u.online.ranking import split_title
+
+    assert split_title("Dance With Me").collaborations == frozenset()
+    assert split_title("Song (with Anna)").collaborations == frozenset({"anna"})
+
+
+def test_featured_artist_prefix_stops_at_the_title_separator() -> None:
+    """``Artist feat. Guest - Song Name`` credits ``Guest``, not ``Guest - ...``."""
+    from spotm3u.online.ranking import split_title
+
+    parts = split_title("Artist feat. Guest - Song Name")
+
+    assert parts.collaborations == frozenset({"guest"})
+    assert parts.core == "artist song name"
+
+
+def test_version_modifier_is_kept_out_of_the_core_and_recorded() -> None:
+    from spotm3u.online.ranking import split_title
+
+    parts = split_title("Song Name (Remix)")
+
+    assert parts.core == "song name"
+    assert "remix" in parts.versions
+
+
+def test_unknown_parenthetical_is_not_silently_discarded() -> None:
+    from spotm3u.online.ranking import split_title
+
+    parts = split_title("Song Name (Anniversary Edition)")
+
+    assert "anniversary edition" in parts.core
+    assert parts.collaborations == frozenset()
+
+
+# --- symbol identity is not search expansion -----------------------------------
+
+
+def test_symbol_title_does_not_match_a_different_artist_through_the_alias() -> None:
+    """``♾️`` expands to ``infinity`` for *search*, which is not proof of identity.
+
+    Regression: Coldplay's ``♾️`` resolved to James Young's ``Infinity`` because
+    both sides were compared through the expanded name and the unrelated artist
+    was never required to show up in the candidate at all.
+    """
+    track = Track("♾️", ["Coldplay"], duration_ms=210_000)
+    wrong = candidate(
+        title="Infinity", artist="James Young", uploader="James Young", duration_s=200.0
+    )
+
+    result = rank_source_candidate(track, wrong)
+
+    assert not result.accepted
+    assert any("search alias" in reason for reason in result.reasons)
+
+
+@pytest.mark.parametrize(
+    "title", ["Coldplay - ♾️ (Official Audio)", "Coldplay - Infinity (Official Audio)"]
+)
+def test_symbol_title_still_resolves_the_requesting_artist(title: str) -> None:
+    """The artist's own upload is still found through the alias."""
+    track = Track("♾️", ["Coldplay"], duration_ms=210_000)
+
+    result = rank_source_candidate(
+        track, candidate(title=title, artist="Coldplay", uploader="Coldplay", duration_s=200.0)
+    )
+
+    assert result.accepted
+
+
+# --- collaboration identity ----------------------------------------------------
+
+
+def test_unrequested_collaborator_is_rejected() -> None:
+    """An extra credited performer can be a different recording.
+
+    Regression: token containment read ``love me not`` as a subset of
+    ``love me not feat rex orange county`` and scored the candidate a perfect
+    title match, so the collaboration scored 100 and was accepted as ``strong``.
+    """
+    track = Track("Love Me Not", ["Ravyn Lenae"], duration_ms=200_000)
+    featured = candidate(
+        title="Love Me Not (feat. Rex Orange County) (Official Audio)",
+        artist="Ravyn Lenae",
+        uploader="Ravyn Lenae",
+        duration_s=200.0,
+    )
+
+    result = rank_source_candidate(track, featured)
+
+    assert not result.accepted
+    assert any("unrequested artist" in reason for reason in result.reasons)
+
+
+def test_plain_single_still_matches_its_own_upload() -> None:
+    track = Track("Love Me Not", ["Ravyn Lenae"], duration_ms=200_000)
+
+    result = rank_source_candidate(
+        track,
+        candidate(
+            title="Love Me Not (Official Audio)",
+            artist="Ravyn Lenae",
+            uploader="Ravyn Lenae",
+            duration_s=200.0,
+        ),
+    )
+
+    assert result.accepted
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Love Me Not (feat. Rex Orange County) (Official Audio)",
+        "Love Me Not (Official Audio) ft. Rex Orange County",
+        "Love Me Not ft Rex Orange County",
+    ],
+)
+def test_collaboration_matches_when_both_sides_agree(title: str) -> None:
+    track = Track("Love Me Not (feat. Rex Orange County)", ["Ravyn Lenae"], duration_ms=200_000)
+
+    result = rank_source_candidate(
+        track,
+        candidate(title=title, artist="Ravyn Lenae", uploader="Ravyn Lenae", duration_s=200.0),
+    )
+
+    assert result.accepted
+
+
+def test_collaborator_listed_in_the_requested_artists_is_allowed() -> None:
+    """Spotify credits both sides, so the guest need not appear in the title."""
+    track = Track("Love Me Not", ["Ravyn Lenae", "Rex Orange County"], duration_ms=200_000)
+
+    result = rank_source_candidate(
+        track,
+        candidate(
+            title="Love Me Not (feat. Rex Orange County) (Official Audio)",
+            artist="Ravyn Lenae",
+            uploader="Ravyn Lenae",
+            duration_s=200.0,
+        ),
+    )
+
+    assert result.accepted
+
+
+def test_both_artists_in_the_candidate_title_is_not_a_collaboration_conflict() -> None:
+    """``Guest & Artist - Song`` is handled by artist evidence, not a credit."""
+    track = Track("Song Name", ["Artist", "Guest"], duration_ms=200_000)
+
+    result = rank_source_candidate(
+        track, candidate(title="Guest & Artist - Song Name", artist="Guest & Artist")
+    )
+
+    assert result.accepted

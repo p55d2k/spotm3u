@@ -133,6 +133,46 @@ and compatibility variants (`Ａｖｉｃｉｉ`) are folded to their plain form
 non-Latin titles are kept exactly as written: they are never transliterated or
 approximated. An ordinary title produces the same queries it always did.
 
+**Expansion finds the recording; it never identifies it.** The expanded name is
+a query, not the title. `♾️` is searched as `infinity` because that is how the
+upload is likely labelled, but a candidate that only shares the expanded name is
+not thereby the same recording — otherwise Coldplay's `♾️` resolves to James
+Young's `Infinity`, since both titles compare equal once the symbol is expanded.
+A symbol-only title therefore has no title text of its own to stand on, so the
+artist has to: the alias is accepted only with artist evidence, and without it
+the candidate is rejected as an alias-only match.
+
+## Title analysis
+
+A candidate title is split into three parts before comparison, because the three
+carry different weight:
+
+- **Source annotation** — `Official Audio`, `Official Video`, `Lyric Video`,
+  `Audio`, `Visualizer`. This describes the *upload*, not the recording, so it is
+  dropped. It is used to prefer one upload over another, never to judge identity.
+- **Version modifier** — `Live`, `Remastered`, `Remix`, `Acoustic`, `Extended`.
+  Recorded separately and compared as a conflict, so requesting `Song - Live`
+  does not match a plain `Song`.
+- **Collaborator** — `feat.`, `ft.`, `featuring`, and bracketed `with`. A credit
+  is part of the recording identity and is lifted out of the title text, so
+  `Love Me Not` and `Love Me Not (feat. Rex Orange County)` are two different
+  recordings. A candidate is rejected when it credits an artist the request did
+  not: for `Love Me Not` by Ravyn Lenae, the Rex Orange County version is
+  rejected even though its title contains the requested one. The credit is
+  accepted when the request agrees — the title carries `feat. Rex Orange County`,
+  or Spotify lists him in `artists`.
+
+The distinctions are read from the raw title, before normalization. The
+comparison text has every non-alphanumeric character replaced by a space, so by
+the time it is built the `feat.` marker, its brackets and any `&` between two
+collaborators are gone and there is nothing left to parse. An unrecognised
+parenthetical is kept in the title text rather than silently discarded, so an
+unknown qualifier cannot vanish and turn two different tracks into one.
+
+The same split feeds the cache key, so a collaboration and its plain single no
+longer share one download. Keys for tracks without a collaboration are
+unchanged.
+
 ## Duration and version
 
 Duration is a useful signal, not a strict equality check — different masters,
