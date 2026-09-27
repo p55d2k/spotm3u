@@ -75,3 +75,14 @@ Temporary job data has a deterministic lifecycle:
 The generated M3U and the successfully downloaded audio it references are kept
 as long as they are useful — captured downloads are reused across runs via the
 download cache (see [downloads](downloads.md)).
+
+## Processing history
+
+The processing history is a local SQLite file in the user data directory. It
+holds metadata only — track identity, state, source URL, output path, reasons
+and timestamps — never audio, artwork or credentials, and its free text is
+bounded. It is written by the processing job and read through the read-only
+`/api/history` routes; like the rest of `/api` it has no authentication of its
+own, which is why it is only readable from the local application. The oldest
+finished runs are dropped once `history.max_runs` is reached, and
+`history.enabled = false` stops the file being written at all.

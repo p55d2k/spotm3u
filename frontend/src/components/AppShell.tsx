@@ -23,6 +23,7 @@ export function AppShell({
   currentStage = 1,
   children,
 }: {
+  /** The workflow step to mark, or nothing for a page outside the workflow. */
   currentStage?: WorkflowStage;
   children: ReactNode;
 }) {

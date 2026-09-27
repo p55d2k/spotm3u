@@ -42,6 +42,36 @@ through the native save panel in the desktop shell, and can import a completed
 playlist into the platform media player. Batch results expose the same actions
 for each playlist.
 
+## Download history
+
+**Download history** in the sidebar footer opens what this machine has converted.
+It is a record kept by the application itself, not by the page: the backend
+processing job writes each track's state down as it happens (see
+[architecture](architecture.md#processing-history)), and the page only reads it
+back. Closing the application therefore does not lose it, and a run that was
+interrupted is shown as cancelled instead of quietly claiming to be finished.
+
+The list is one row per conversion, newest first: the playlist name, how many
+tracks finished, how many failed or were skipped, when it ran and how long it
+took, the folder it wrote to, and the state it ended in. It filters by state,
+searches the playlist name, track titles and artists, sorts by recency, age or
+name, and reveals more runs a page at a time - a long history stays readable
+because the list is bounded rather than dumped. While a conversion is still
+running anywhere in the list, the list keeps itself up to date.
+
+Opening a run shows what happened to every track: the resolution, the stage it
+reached, the source it used, the file it wrote, how many times it was retried,
+and - for a track that did not make it - the reason the pipeline recorded. A
+file that has since been deleted from the download folder is called out, so the
+history never sends you looking for something that is gone.
+
+The record lives in a small SQLite file next to `preferences.json` in the user
+data directory, on this machine only, and it is created automatically on the
+first conversion. `[history] enabled = false` turns it off (conversions then
+behave exactly as before, and the page says the history is off rather than
+showing an empty list), `[history] max_runs` bounds how many finished
+conversions are kept, and `[history] database` moves the file.
+
 ## Theme
 
 The sidebar footer toggles between the light and dark theme; with no choice

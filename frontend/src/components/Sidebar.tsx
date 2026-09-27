@@ -1,6 +1,15 @@
-import { ArrowLeftRight, Check, CircleCheck, ListMusic, Moon, Sun, Upload } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Check,
+  CircleCheck,
+  History,
+  ListMusic,
+  Moon,
+  Sun,
+  Upload,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { appUrl } from "../lib/router";
+import { Link, appUrl, useRoute } from "../lib/router";
 import { DeveloperTools } from "./DeveloperTools";
 import { useShell } from "./Shell";
 import { UpdateNotice } from "./UpdateNotice";
@@ -10,8 +19,9 @@ import { useTheme } from "../hooks/useTheme";
  * The application navigation, migrated from ``_sidebar.html``: the brand, the
  * four conversion steps with one leading icon and a dot that carries workflow
  * state (position, or a check once the step is done), and a footer holding the
- * update notice, the developer tools, and the theme toggle. On macOS the native
- * traffic lights float over the sidebar, so the brand is kept clear of them.
+ * download history, the update notice, the developer tools, and the theme
+ * toggle. On macOS the native traffic lights float over the sidebar, so the
+ * brand is kept clear of them.
  */
 
 export type WorkflowStage = 1 | 2 | 3 | 4;
@@ -33,6 +43,8 @@ const STEPS: SidebarStep[] = [
 export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) {
   const { framed, platform, maximized } = useShell();
   const { theme, toggle } = useTheme();
+  // The history is not a workflow step, so it is marked from the route itself.
+  const onHistory = useRoute().startsWith("/history");
 
   const trafficGap =
     framed && platform === "mac" && !maximized ? "var(--spot-traffic-gap)" : undefined;
@@ -112,6 +124,20 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
       </div>
 
       <div className="flex flex-col gap-1 border-t border-line p-3">
+        <Link
+          to="/history"
+          aria-current={onHistory ? "page" : undefined}
+          className={`inline-flex w-full items-center justify-start gap-3 rounded-md px-3 py-2 text-md font-medium no-underline transition-colors ${
+            onHistory
+              ? "bg-state-selected text-ink"
+              : "text-ink-muted hover:bg-state-hover hover:text-ink"
+          }`}
+        >
+          <span className="inline-flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+            <History className="size-4" />
+          </span>
+          <span>Download history</span>
+        </Link>
         <UpdateNotice />
         <DeveloperTools />
         <button

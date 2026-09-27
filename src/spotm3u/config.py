@@ -22,6 +22,8 @@ DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 DEFAULT_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
 DEFAULT_MAX_ARCHIVE_ENTRIES = 10_000
 DEFAULT_MAX_JOB_AGE = 24 * 60 * 60
+# How many finished conversions the local processing history keeps.
+DEFAULT_MAX_HISTORY_RUNS = 200
 SUPPORTED_COOKIE_BROWSERS = frozenset(
     {"brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"}
 )
@@ -90,6 +92,10 @@ class Config:
     # [m3u]
     m3u_extended: bool = True
     m3u_relative: bool = False
+    # [history]
+    history_enabled: bool = True
+    history_database: str | None = None
+    history_max_runs: int = DEFAULT_MAX_HISTORY_RUNS
     # [update]
     check_updates: bool = True
     update_check_interval_hours: int = 24
@@ -135,6 +141,8 @@ class Config:
             "YTDLP_POT_PROVIDER_TIMEOUT": self.pot_provider_timeout,
             "M3U_EXTENDED": self.m3u_extended,
             "M3U_RELATIVE": self.m3u_relative,
+            "HISTORY_ENABLED": self.history_enabled,
+            "HISTORY_MAX_RUNS": self.history_max_runs,
             "UPDATE_CHECK": self.check_updates,
             "UPDATE_CHECK_INTERVAL_HOURS": self.update_check_interval_hours,
             "UPDATE_REQUEST_TIMEOUT": self.update_request_timeout,
@@ -148,6 +156,8 @@ class Config:
             values["MUSIC_LIBRARY"] = str(Path(self.music_library).expanduser())
         if self.download_dir:
             values["DOWNLOAD_DIR"] = str(Path(self.download_dir).expanduser())
+        if self.history_database:
+            values["HISTORY_DB"] = str(Path(self.history_database).expanduser())
         return values
 
 
@@ -192,6 +202,9 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "download.pot_provider_timeout": "pot_provider_timeout",
     "m3u.extended": "m3u_extended",
     "m3u.relative": "m3u_relative",
+    "history.enabled": "history_enabled",
+    "history.database": "history_database",
+    "history.max_runs": "history_max_runs",
     "update.check": "check_updates",
     "update.check_interval_hours": "update_check_interval_hours",
     "update.request_timeout": "update_request_timeout",

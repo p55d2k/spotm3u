@@ -109,7 +109,9 @@ def test_preferences_live_in_the_state_directory(monkeypatch, tmp_path) -> None:
 
 def test_preferences_otherwise_live_in_the_application_data_directory(monkeypatch) -> None:
     monkeypatch.delenv(preferences.STATE_DIR_ENV, raising=False)
-    monkeypatch.setattr(preferences, "user_data_dir", lambda: Path("/data/SpotM3U"))
+    # The state directory is resolved in one place for everything the app keeps
+    # for the user, so that is where the data directory is faked out.
+    monkeypatch.setattr("spotm3u.runtime.user_data_dir", lambda: Path("/data/SpotM3U"))
 
     assert (
         preferences.preferences_path() == Path("/data/SpotM3U") / preferences.PREFERENCES_FILENAME

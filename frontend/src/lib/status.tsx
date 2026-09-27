@@ -9,6 +9,7 @@ import {
   Download,
   FileX,
   FlaskConical,
+  Loader,
   Search,
   ShieldCheck,
   SkipForward,
@@ -60,10 +61,26 @@ const JOB_LABELS: Record<string, string> = {
   failed: "Processing failed",
 };
 
+/**
+ * The six states a stored run (and each of its tracks) can be in. They reuse
+ * the track colours, but they are named after the stored record rather than the
+ * live job, so a finished conversion reads as "Finished" instead of "Processing
+ * complete" on the history pages.
+ */
+export const RUN_STATUSES: Record<string, StatusInfo> = {
+  queued: { label: "Waiting to start", group: "wait", icon: FlaskConical },
+  processing: { label: "In progress", group: "wait", icon: Loader },
+  completed: { label: "Finished", group: "ok", icon: CircleCheck },
+  failed: { label: "Failed", group: "err", icon: CircleX },
+  cancelled: { label: "Cancelled", group: "warn", icon: Ban },
+  skipped: { label: "Skipped", group: "warn", icon: SkipForward },
+};
+
 /** The user-facing name of a stage or a job status, in the app's words. */
 export function statusLabel(status: string) {
   const entry = TRACK_STATUSES[status];
   if (entry) return entry.label;
+  if (RUN_STATUSES[status]) return RUN_STATUSES[status].label;
   if (JOB_LABELS[status]) return JOB_LABELS[status];
   const name = String(status || "").replace(/[-_]+/g, " ");
   return name.charAt(0).toUpperCase() + name.slice(1);
@@ -78,20 +95,29 @@ const GROUP_COLORS: Record<StatusGroup, string> = {
 
 /** The coloured status glyph rows carry, with the shared tooltip text. */
 export function TrackStatusIcon({ status }: { status: string }) {
+  return <StatusGlyph status={status} entry={TRACK_STATUSES[status]} />;
+}
+
+/** The same glyph for one of the six stored run states. */
+export function RunStatusIcon({ status }: { status: string }) {
+  return <StatusGlyph status={status} entry={RUN_STATUSES[status]} />;
+}
+
+function StatusGlyph({ status, entry }: { status: string; entry?: StatusInfo }) {
   const tooltip = useTooltip();
-  const entry = TRACK_STATUSES[status] ?? {
+  const info = entry ?? {
     label: statusLabel(status),
     group: "wait" as const,
     icon: CircleHelp,
   };
-  const Icon = entry.icon;
-  const color = GROUP_COLORS[entry.group];
+  const Icon = info.icon;
+  const color = GROUP_COLORS[info.group];
   return (
     <span
       data-status-icon
-      aria-label={entry.label}
+      aria-label={info.label}
       className={`ml-auto inline-flex size-6 flex-none items-center justify-center ${color}`}
-      {...tooltip.bind(entry.label)}
+      {...tooltip.bind(info.label)}
     >
       <Icon aria-hidden="true" className="size-4" />
     </span>

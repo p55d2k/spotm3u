@@ -152,6 +152,40 @@ The M3U writer receives the final ordered local audio paths and writes the
 playlist. It does not search, match, download, or validate — see
 [M3U playlists](m3u.md).
 
+## Processing history
+
+Processing state is persistent, and the backend owns it. `src/spotm3u/history.py`
+stores one record per conversion and one row per track in a small SQLite file
+under the user data directory (`history.db` beside `preferences.json`;
+`SPOTM3U_STATE_DIR` moves it, `[history] database` overrides it, and `[history]
+enabled = false` turns recording off). Nothing is uploaded anywhere: the file
+stays on the user's machine, and there is no server to depend on.
+
+Each track moves through six states — `queued`, `processing`, `completed`,
+`failed`, `cancelled`, `skipped` — and carries its identity (title, artists,
+album, Spotify id, playlist), the state, the stage it last reached, the
+resolution, the source URL, the output path, the reason and error text, its
+retry count, its cancellation flag, and queued/started/finished timestamps.
+Free text is bounded and no audio or artwork is stored, so the file stays small:
+`[history] max_runs` also drops the oldest finished runs, while a run that is
+still in flight is always kept.
+
+`ProcessingJob` writes the record as it works rather than at the end: the run is
+opened when processing starts, each track's stage is stored as it changes, the
+outcome and output are stored when the track resolves, and the run is closed
+when the playlist finishes, fails, or is retried (a retry requeues only the
+unresolved tracks and counts the attempt on the same rows). The interface the
+pages read is `GET /api/history` and `GET /api/history/<id>`; the React pages
+observe that state and never own it. History is best-effort: a history that
+cannot be written or read is reported as unavailable, and never fails a
+conversion.
+
+On startup the store reconciles what it finds. A run still marked in flight can
+only be one the previous session left behind, so it is closed as `cancelled`
+with an error saying the application went away mid-conversion, and the tracks it
+had not finished are cancelled with it. A track that had already finished keeps
+its recorded outcome.
+
 ## Diagnostics
 
 Every per-track processing record carries a job and track identifier, so a

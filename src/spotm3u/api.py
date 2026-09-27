@@ -39,6 +39,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from . import preferences
 from .artwork import cached_artwork_path
 from .exportify import ExportifyParseError, parse_exportify
+from .history import HISTORY_ORDERS, RUN_STATUSES, HistoryUnavailableError
 from .m3u import check_playlist
 from .maintenance import CLEAR_ITEMS, CONFIRM_PHRASE, unknown_items
 from .media_player import (
@@ -65,6 +66,8 @@ from .web_jobs import (
     _selection_matches,
     _valid_playlist_index,
     clear_downloaded_data,
+    history_page,
+    history_run,
     storage_inventory,
     store_and_parse,
     update_payload,
@@ -101,11 +104,22 @@ ERROR_CLEAR_FAILED = "clear_failed"
 ERROR_MEDIA_PLAYER_UNAVAILABLE = "media_player_unavailable"
 ERROR_NOTHING_TO_IMPORT = "nothing_to_import"
 ERROR_MEDIA_PLAYER_FAILED = "media_player_failed"
+# The persistent processing history.
+ERROR_HISTORY_INVALID = "history_invalid"
+ERROR_HISTORY_NOT_FOUND = "history_not_found"
+ERROR_HISTORY_UNAVAILABLE = "history_unavailable"
 # Transport-level answers from the API as a whole.
 ERROR_NOT_FOUND = "not_found"
 ERROR_METHOD_NOT_ALLOWED = "method_not_allowed"
 
 api = Blueprint("api", __name__, url_prefix=API_PREFIX)
+
+# Said the same way wherever the history cannot be read, so the interface can
+# show it without knowing whether recording is off or the file is unusable.
+HISTORY_UNAVAILABLE_MESSAGE = (
+    "The download history is not available. It is kept in a local file; "
+    "check that the application can write to its data folder."
+)
 
 
 def _error(message: str, code: str, status: int):
@@ -400,6 +414,76 @@ def clear_stored_data():
         }.get(status, ERROR_CLEAR_FAILED)
         return _error(error, code, status)
     return jsonify(report)
+
+
+@api.get("/history")
+def history_runs():
+    """What the backend recorded about past conversions, ready to page through.
+
+    ``?status=`` narrows to one state, ``?q=`` matches a playlist name or any of
+    its tracks, ``?order=`` is ``recent`` (default), ``oldest``, or ``name``, and
+    ``?limit=``/``?offset=`` page the answer. The history is read from the local
+    store rather than from anything the interface kept, so it is the same on a
+    fresh launch as it was when the conversion ran.
+    """
+    status = (request.args.get("status") or "").strip() or None
+    if status is not None and status not in RUN_STATUSES:
+        return _error(
+            f"Unknown history status: {status}. Use one of {', '.join(RUN_STATUSES)}.",
+            ERROR_HISTORY_INVALID,
+            400,
+        )
+    order = (request.args.get("order") or "recent").strip() or "recent"
+    if order not in HISTORY_ORDERS:
+        return _error(
+            f"Unknown history order: {order}. Use one of {', '.join(HISTORY_ORDERS)}.",
+            ERROR_HISTORY_INVALID,
+            400,
+        )
+    query = (request.args.get("q") or "").strip() or None
+    limit = _history_int("limit", default=50, minimum=1, maximum=500)
+    offset = _history_int("offset", default=0, minimum=0)
+    if limit is None or offset is None:
+        return _error(
+            "The history page size and offset must be whole numbers.",
+            ERROR_HISTORY_INVALID,
+            400,
+        )
+    try:
+        payload = history_page(
+            current_app, status=status, query=query, order=order, limit=limit, offset=offset
+        )
+    except HistoryUnavailableError:
+        return _error(HISTORY_UNAVAILABLE_MESSAGE, ERROR_HISTORY_UNAVAILABLE, 503)
+    return jsonify(payload)
+
+
+@api.get("/history/<int:run_ref>")
+def history_run_detail(run_ref: int):
+    """One recorded run with every track it processed, in playlist order."""
+    try:
+        run = history_run(current_app, run_ref)
+    except HistoryUnavailableError:
+        return _error(HISTORY_UNAVAILABLE_MESSAGE, ERROR_HISTORY_UNAVAILABLE, 503)
+    if run is None:
+        return _error("That conversion is not in the history.", ERROR_HISTORY_NOT_FOUND, 404)
+    return jsonify(run)
+
+
+def _history_int(
+    name: str, *, default: int, minimum: int, maximum: int | None = None
+) -> int | None:
+    """Read a paging argument, clamped to what the store will accept."""
+    raw = request.args.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    if value < minimum:
+        return minimum
+    return value if maximum is None else min(value, maximum)
 
 
 @api.post("/upload")

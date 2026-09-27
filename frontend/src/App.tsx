@@ -1,4 +1,5 @@
 import { AppShell } from "./components/AppShell";
+import type { WorkflowStage } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TooltipProvider } from "./components/Tooltip";
 import { parseRoute, useRoute } from "./lib/router";
@@ -9,6 +10,8 @@ import Processing from "./pages/Processing";
 import BatchProcessing from "./pages/BatchProcessing";
 import Result from "./pages/Result";
 import BatchResult from "./pages/BatchResult";
+import History from "./pages/History";
+import HistoryRun from "./pages/HistoryRun";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 
 /**
@@ -38,7 +41,8 @@ function AppShellContent() {
   );
 }
 
-function stageFor(name: AppRoute["name"]): 1 | 2 | 3 | 4 {
+// The history pages are not a conversion, so no workflow step is current there.
+function stageFor(name: AppRoute["name"]): WorkflowStage | undefined {
   switch (name) {
     case "import":
       return 1;
@@ -50,6 +54,9 @@ function stageFor(name: AppRoute["name"]): 1 | 2 | 3 | 4 {
     case "result":
     case "batch-result":
       return 4;
+    case "history":
+    case "history-run":
+      return undefined;
   }
 }
 
@@ -67,6 +74,10 @@ function routeKey(route: AppRoute): string {
       return `/jobs/${route.jobId}/processing`;
     case "batch-result":
       return `/jobs/${route.jobId}/result`;
+    case "history":
+      return "/history";
+    case "history-run":
+      return `/history/${route.runId}`;
   }
 }
 
@@ -84,5 +95,9 @@ function pageFor(route: AppRoute) {
       return <BatchProcessing jobId={route.jobId} />;
     case "batch-result":
       return <BatchResult jobId={route.jobId} />;
+    case "history":
+      return <History />;
+    case "history-run":
+      return <HistoryRun runId={route.runId} />;
   }
 }

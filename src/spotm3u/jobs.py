@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from .artwork import artwork_artist, prefetch_artist_artwork, prune_missing_artwork
+from .history import HistoryStore, RunIdentity, persisted_run_status, persisted_track_status
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
 from .metadata_jobs import MetadataJob
@@ -160,6 +161,7 @@ class ProcessingJob:
         m3u_relative: bool = False,
         m3u_filename: str = "playlist.m3u",
         fast_mode: bool = False,
+        history: HistoryStore | None = None,
     ) -> None:
         self.job_id = job_id
         self.playlist_id = playlist_id
@@ -178,6 +180,11 @@ class ProcessingJob:
         # actually skips; the flag is kept here for the UI and diagnostics.
         self.fast_mode = fast_mode
         self.manager: JobManager | None = None
+        # Where the processing state is written down as it happens, so it
+        # outlives this object. Optional: without a store the job behaves
+        # exactly as before and the history stays empty.
+        self._history = history
+        self._history_ref: int | None = None
 
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -195,6 +202,11 @@ class ProcessingJob:
             for index, track in enumerate(self.tracks)
         ]
         self._results: list[TrackResolution | None] = [None] * len(self.tracks)
+        # The persistent state last written for each track, so a stage that
+        # maps onto the state already stored is not written again, and the stage
+        # a track is left at once it stops.
+        self._history_states: list[str | None] = [None] * len(self.tracks)
+        self._history_stages: list[str] = [""] * len(self.tracks)
         # Set while a retry is running: the tracks the progress belongs to.
         self._pending: tuple[int, ...] | None = None
         # The in-flight playlist-level artist-artwork prefetch, if any.
@@ -259,6 +271,7 @@ class ProcessingJob:
                 name=f"spotm3u-job-{self.job_id}",
                 daemon=True,
             )
+        self._begin_history()
         self._thread.start()
 
     def wait(self, timeout: float | None = None) -> None:
@@ -306,6 +319,10 @@ class ProcessingJob:
                 self._track_states[index] = TrackJobState(
                     current.index, current.title, current.artists, "queued"
                 )
+                # The retried tracks are recorded as waiting again, so the
+                # attempt that is about to start is written to the history.
+                self._history_states[index] = None
+                self._history_stages[index] = ""
             self._thread = threading.Thread(
                 target=self._process,
                 args=(indices,),
@@ -315,6 +332,8 @@ class ProcessingJob:
         TrackLogger(logger, job_id=self.job_id).info(
             "retrying %d unresolved track(s)", len(indices)
         )
+        if self._history is not None and self._history_ref is not None:
+            self._history.requeue_tracks(self._history_ref, indices)
         self._thread.start()
         return indices
 
@@ -381,6 +400,7 @@ class ProcessingJob:
                 self._pending = None
                 self._status = "completed"
                 self._completed_at = time.time()
+            self._finish_history("completed", m3u_path=m3u_path)
             track_log.info(
                 "job completed m3u_path=%s successful=%d failed=%d duration_ms=%.1f",
                 m3u_path,
@@ -398,6 +418,7 @@ class ProcessingJob:
                 self._error = message
                 self._status = "failed"
                 self._completed_at = time.time()
+            self._finish_history("failed", error=message)
             # The user-facing message above is what the UI shows; the traceback
             # stays here for debugging.
             track_log.exception("job failed: %s", exc)
@@ -584,6 +605,7 @@ class ProcessingJob:
             )
         log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
         log.debug("stage=%s index=%d", status, index)
+        self._record_track_stage(index)
 
     def _mark_searched(self, index: int, status: TrackProcessingStatus | None = None) -> None:
         with self._lock:
@@ -605,6 +627,8 @@ class ProcessingJob:
         TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).debug(
             "searched index=%d", index
         )
+        if status is not None:
+            self._record_track_stage(index)
 
     def _finalize_track(self, index: int, result: TrackResolution) -> None:
         started = time.perf_counter()
@@ -645,6 +669,78 @@ class ProcessingJob:
                 result.status,
                 result.reason or "no reason given",
             )
+        self._record_final_track(index, result)
+
+    # -- persistent state ---------------------------------------------------
+
+    def _begin_history(self) -> None:
+        """Open this conversion's run in the history store, with its tracks."""
+        if self._history is None:
+            return
+        self._history_ref = self._history.begin_run(
+            RunIdentity(
+                job_id=self.job_id,
+                playlist_id=self.playlist_id,
+                playlist_name=self.playlist_name,
+                total_tracks=len(self.tracks),
+                output_dir=str(self.output_dir),
+                fast_mode=self.fast_mode,
+            ),
+            self.tracks,
+        )
+
+    def _record_track_stage(self, index: int) -> None:
+        """Write a track's stage to the history, but only when the stage moved.
+
+        The stages a track walks through are all ``processing`` once stored, so
+        the state alone would stop recording after the first one. The stage is
+        what says where the track actually was when it stopped, so it is written
+        when it changes instead.
+        """
+        if self._history is None or self._history_ref is None:
+            return
+        with self._lock:
+            stage = self._track_states[index].status
+            if self._history_stages[index] == stage:
+                return
+            self._history_stages[index] = stage
+            status = persisted_track_status(stage)
+            self._history_states[index] = status
+        self._history.set_track_stage(self._history_ref, index, status=status, stage=stage)
+
+    def _record_final_track(self, index: int, result: TrackResolution) -> None:
+        """Write a track's outcome, with what produced it, to the history."""
+        if self._history is None or self._history_ref is None:
+            return
+        status = persisted_track_status(TRACK_STATUS_TERMINAL.get(result.status, "failed"))
+        with self._lock:
+            self._history_states[index] = status
+            # The stage stays the last one the pipeline walked through, so an
+            # unresolved track says where it got to rather than what it became.
+            stage = self._history_stages[index] or result.status
+        self._history.finish_track(
+            self._history_ref,
+            index,
+            status=status,
+            stage=stage,
+            resolution=result.status,
+            source_url=result.source_url,
+            output_path=str(result.local_path) if result.local_path is not None else None,
+            reason=result.reason,
+        )
+
+    def _finish_history(
+        self, status: JobStatus, *, m3u_path: Path | None = None, error: str = ""
+    ) -> None:
+        """Write the run's final state to the history."""
+        if self._history is None or self._history_ref is None:
+            return
+        self._history.finish_run(
+            self._history_ref,
+            status=persisted_run_status(status),
+            m3u_path=m3u_path,
+            error=error,
+        )
 
     def output_missing(self, index: int) -> bool:
         """Return True when a completed track's audio file is no longer on disk."""

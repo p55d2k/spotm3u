@@ -12,7 +12,8 @@ tests/
     lyrics/       lyrics retrieval, parsing, and USLT/SYLT/sidecar writing
     artwork/      album and artist artwork resolution and embedding
     downloads/    yt-dlp downloader, download cache, audio validation, FFmpeg
-    library/      local audio discovery, Exportify parsing, M3U writing
+    library/      local audio discovery, Exportify parsing, M3U writing,
+                  persistent processing history
     media_player/ the platform "Add to Media Player" integration
     uploads/      Exportify ZIP uploads and upload-directory cleanup
     utilities/    models, configuration, and logging
@@ -38,6 +39,11 @@ tests/
   `export_zip`, `NoCandidates`). Pytest puts `tests/` on the path, so this works
   from any subdirectory and keeps tests independent of their nesting depth.
 - **Use `tmp_path`** for files; tests never read or write outside the repository.
+- **The state directory is per test.** The root `conftest.py` points
+  `SPOTM3U_STATE_DIR` at a temporary path for every test, so a test that runs a
+  conversion records its history there instead of in the developer's real user
+  data directory. A test that cares about the location itself sets the variable
+  or takes an explicit `HISTORY_DB`.
 
 ## Running
 

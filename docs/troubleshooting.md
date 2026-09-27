@@ -141,3 +141,14 @@ also hidden when no track resolved, because there would be nothing to import.
 On Windows, a missing M3U file association fails with a message suggesting the
 manual download; install or associate a player that supports M3U and retry.
 The M3U download remains available on every supported platform.
+
+## The download history is empty or missing
+
+**Download history** reads a local file in the application data directory
+(`history.db` beside `preferences.json`). It is created on the first conversion,
+so an empty history on a fresh install is normal. If the page says the history
+is not available, recording is switched off with `[history] enabled = false` in
+`config.toml`, or the application cannot write to that folder - in which case
+conversions still work, they are simply not recorded. A conversion that was
+interrupted by closing the application is recorded as cancelled, and the oldest
+runs are dropped once `history.max_runs` is reached.

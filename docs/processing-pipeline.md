@@ -34,6 +34,11 @@ and artwork lookup happen once per resolved track. Artwork caches and the
 in-flight artwork registry deduplicate repeated album or artist identities, but
 metadata embedding remains per audio file.
 
+Each of those stages is also written down as it happens: the job records the
+track's state and stage in the local processing history, which is what survives
+a restart and what the download history reads (see
+[architecture](architecture.md#processing-history)).
+
 ## Dependencies and bottlenecks
 
 Audio download depends on source search, candidate ranking, and source

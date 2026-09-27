@@ -74,12 +74,23 @@ export type AppRoute =
   | { name: "processing"; jobId: string; playlistId: string }
   | { name: "result"; jobId: string; playlistId: string; fromBatch?: boolean }
   | { name: "batch-processing"; jobId: string }
-  | { name: "batch-result"; jobId: string };
+  | { name: "batch-result"; jobId: string }
+  | { name: "history" }
+  | { name: "history-run"; runId: string };
 
 /** Match the path against the application's routes. Unknown paths land on import. */
 export function parseRoute(route: string): AppRoute {
   const [path, query = ""] = route.split("?");
   const segments = path.split("/").filter(Boolean);
+  // The download history is not part of a conversion, so it sits beside the
+  // workflow rather than under a job.
+  if (segments[0] === "history") {
+    if (segments.length === 1) return { name: "history" };
+    if (segments.length === 2) {
+      return { name: "history-run", runId: decodeURIComponent(segments[1]) };
+    }
+    return { name: "import" };
+  }
   if (segments[0] !== "jobs" || segments.length < 2) {
     return { name: "import" };
   }

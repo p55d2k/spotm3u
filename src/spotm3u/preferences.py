@@ -13,7 +13,7 @@ failed write is reported (``False``) rather than raised, leaving the previously
 stored values in place. Only known keys with known values are ever kept, so a
 hand-edited file cannot push arbitrary state into the application.
 
-Location: ``preferences.json`` under :func:`spotm3u.runtime.user_data_dir`, or
+Location: ``preferences.json`` under :func:`spotm3u.runtime.state_dir`, or
 under ``SPOTM3U_STATE_DIR`` when that is set (used by tests and by a one-off run
 that must not touch the user's real preferences).
 """
@@ -26,14 +26,15 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from .runtime import user_data_dir
+from .runtime import STATE_DIR_ENV, state_dir
 
 logger = logging.getLogger(__name__)
 
 PREFERENCES_FILENAME = "preferences.json"
 
-# Directory override, for tests and for running without touching real state.
-STATE_DIR_ENV = "SPOTM3U_STATE_DIR"
+# The directory override lives in :mod:`spotm3u.runtime` now that the processing
+# history keeps its own state there too. ``STATE_DIR_ENV`` stays importable from
+# here because this is where it has always been documented.
 
 # The theme as the UI can choose it. ``light`` and ``dark`` are explicit
 # choices; "follow the system" is the absence of a stored theme rather than a
@@ -50,9 +51,7 @@ PREFERENCE_KEYS: tuple[str, ...] = tuple(_ALLOWED_VALUES)
 
 def preferences_path() -> Path:
     """The file the UI preferences are stored in."""
-    override = os.environ.get(STATE_DIR_ENV)
-    directory = Path(override).expanduser() if override else user_data_dir()
-    return directory / PREFERENCES_FILENAME
+    return state_dir() / PREFERENCES_FILENAME
 
 
 def is_valid(key: str, value: object) -> bool:

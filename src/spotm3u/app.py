@@ -23,6 +23,7 @@ from .artwork_sources import (
 )
 from .config import load_user_config
 from .frontend import register_frontend
+from .history import HistoryStore
 from .jobs import JobManager
 from .log import PACKAGE_LOGGER, configure_logging
 from .lyrics import set_lyrics_enabled
@@ -58,6 +59,16 @@ def create_app(config: dict | None = None) -> Flask:
         app.config["MUSIC_LIBRARY"] = str(Path.home() / "Music")
     if config:
         app.config.update(config)
+
+    # The backend's own record of processing state (see spotm3u.history). One
+    # store per application, created with its file and schema, and shared by the
+    # jobs it starts and the routes that read it. It survives restarts, so it is
+    # deliberately not part of the per-request configuration above.
+    app.config["HISTORY"] = HistoryStore(
+        app.config.get("HISTORY_DB"),
+        enabled=bool(app.config.get("HISTORY_ENABLED", True)),
+        max_runs=int(app.config.get("HISTORY_MAX_RUNS", 200)),
+    )
 
     set_metadata_enabled(bool(app.config.get("METADATA_ENABLED", True)))
     set_id3_tags_enabled(bool(app.config.get("METADATA_TAGS", True)))

@@ -48,6 +48,9 @@ and answer `413 upload_too_large` as JSON instead of the page.
 | `nothing_to_import` | 409 | The playlist has no resolved tracks to hand over. |
 | `media_player_failed` | 502 | The handoff itself failed. |
 | `preference_invalid` | 400 | The preference body is empty, names an unknown preference, or carries a value that preference does not accept. |
+| `history_invalid` | 400 | A history filter or paging argument names something the history does not support. |
+| `history_not_found` | 404 | No stored run has that id. |
+| `history_unavailable` | 503 | The processing history is off, or its local file cannot be read. |
 | `clear_invalid` | 400 | The clear names nothing to delete, an unknown item, or arrives without the confirmation phrase. |
 | `clear_refused` | 409 | The clear would reach the music library itself, or a conversion is running. |
 | `clear_failed` | 500 | The files could not be deleted. |
@@ -118,6 +121,64 @@ URL serves the playlist anyway. Artwork answers `404 not_found` for a track
 that has no cached image, is out of range, or whose download was deleted by
 hand.
 
+### Download history
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/history` | One page of stored conversions. `?status=`, `?q=`, `?order=recent\|oldest\|name`, `?limit=`, `?offset=`. |
+| `GET` | `/api/history/<int:run_ref>` | One stored conversion with its tracks, annotated with what is still on disk. |
+
+Both routes read the local processing history and never change it; see
+[architecture](architecture.md#processing-history) for the state model and where
+the file lives. `status` takes one of `queued`, `processing`, `completed`,
+`failed`, `cancelled` or `skipped` and selects the runs in that state *and* the
+runs holding a track in it, so a finished conversion with a skipped track is
+still found under `skipped`. `q` matches the playlist name, a track title or a
+track artist; `limit` is clamped to 1-500 and `offset` to 0 or more. An
+unrecognised value answers `400 history_invalid` rather than being ignored, and
+the list sends its own `statuses` along so the filter can only offer states the
+model has.
+
+The list answers with the runs, the `total` that matched the filters (not the
+page), the paging that was applied, and the states:
+
+```json
+{
+  "runs": [
+    {
+      "id": 1,
+      "job_id": "a1b2c3",
+      "playlist_id": "0",
+      "playlist_name": "Road trip",
+      "status": "completed",
+      "total_tracks": 2,
+      "counts": { "queued": 0, "processing": 0, "completed": 1, "failed": 1, "cancelled": 0, "skipped": 0 },
+      "error": "",
+      "m3u_path": "/Users/me/Music/playlist-0.m3u",
+      "output_dir": "/Users/me/Music",
+      "fast_mode": false,
+      "started_at": 1750000000000,
+      "finished_at": 1750000060000
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "order": "recent",
+  "statuses": ["queued", "processing", "completed", "failed", "cancelled", "skipped"]
+}
+```
+
+The detail route answers the same fields plus `tracks`, each in playlist order,
+with its identity, the state, the stage it reached, the resolution, the reason
+and error text, the source, the output path, `retry_count`, its three
+timestamps, and `file_missing` for a completed track whose audio has since been
+deleted. A run the application was closed in the middle of is recorded as
+`cancelled` with an error saying so, rather than claiming to still be running.
+
+With `[history] enabled = false`, or when the local file cannot be read, both
+routes answer `503 history_unavailable`: the record is off, not empty.
+
 ### Developer
 
 | Method | Path | Purpose |
@@ -148,5 +209,6 @@ which is why the action is limited to files this application created.
 ## Not here yet
 
 The application has no settings screen, so `/api/preferences` covers only the
-theme; `/api/meta` covers the read-only defaults the shell needs today. Nothing
-under `/api` renders HTML.
+theme; `/api/meta` covers the read-only defaults the shell needs today. The
+history is read-only over the API - it is written by the processing job, not by
+an endpoint - and nothing under `/api` renders HTML.

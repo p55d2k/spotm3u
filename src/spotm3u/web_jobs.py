@@ -18,7 +18,8 @@ from .audio.resolver import LocalAudioResolver
 from .exportify import ExportifyParseError, parse_exportify
 from .fast import FastSourceSearcher, FastTrackResolver
 from .ffmpeg import locate_ffmpeg_location
-from .jobs import ProcessingJob
+from .history import RUN_STATUSES, HistoryStore, HistoryUnavailableError
+from .jobs import ProcessingJob, _missing_file
 from .maintenance import UnsafeTarget, clear, inventory
 from .media_player import MediaPlayerError, add_to_media_player, library_player_name
 from .metadata import embedded_lyrics_form
@@ -354,6 +355,78 @@ def _valid_playlist_index(playlist_id: str, playlist_count: int) -> int | None:
     return index
 
 
+def history_store(app: Flask) -> HistoryStore | None:
+    """The application's processing-history store, or ``None`` when it is off.
+
+    Recording is optional (``[history] enabled``), so a disabled store answers
+    with nothing rather than with a history that silently never fills.
+    """
+    store = app.config.get("HISTORY")
+    return store if isinstance(store, HistoryStore) and store.available else None
+
+
+def history_page(
+    app: Flask,
+    *,
+    status: str | None = None,
+    query: str | None = None,
+    order: str = "recent",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, object]:
+    """One page of the stored runs, with the states the history knows.
+
+    The counts are per state so the view can describe a run without loading its
+    tracks, and the states are sent along so the filter offers exactly what can
+    be filtered rather than a list hard-coded in the interface.
+    """
+    store = history_store(app)
+    if store is None:
+        raise HistoryUnavailableError
+    return {
+        "runs": store.list_runs(
+            status=status, query=query, order=order, limit=limit, offset=offset
+        ),
+        "total": store.count_runs(status=status, query=query),
+        "limit": limit,
+        "offset": offset,
+        "order": order,
+        "statuses": list(RUN_STATUSES),
+    }
+
+
+def history_run(app: Flask, run_ref: int) -> dict[str, object] | None:
+    """One stored run with its tracks, annotated with what is still on disk.
+
+    A completed track whose audio has since been deleted says so, the same way a
+    finished conversion does: a history that claimed a missing file was still
+    there would send the user looking for something that is gone.
+    """
+    store = history_store(app)
+    if store is None:
+        raise HistoryUnavailableError
+    run = store.get_run(run_ref)
+    if run is not None:
+        _annotate_history_outputs(run)
+    return run
+
+
+def _annotate_history_outputs(run: dict[str, object]) -> None:
+    """Mark each stored track whose output file is no longer on disk."""
+    tracks = run.get("tracks")
+    if not isinstance(tracks, list):
+        return
+    for item in tracks:
+        if not isinstance(item, dict):
+            continue
+        output_path = item.get("output_path")
+        item["file_missing"] = bool(
+            item.get("status") == "completed"
+            and isinstance(output_path, str)
+            and _missing_file(output_path)
+        )
+
+
 def _sweep_old_jobs(app: Flask) -> None:
     """Remove abandoned upload job directories that are past their age limit."""
     try:
@@ -532,4 +605,7 @@ def _build_processing_job(
         m3u_relative=bool(app.config.get("M3U_RELATIVE", False)),
         m3u_filename=m3u_filename,
         fast_mode=fast_mode,
+        # Every state transition is written down as it happens, so the history
+        # outlives the job and the app that ran it.
+        history=app.config.get("HISTORY"),
     )

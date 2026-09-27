@@ -152,6 +152,7 @@ src/spotm3u/
   dev.py                 ``uv run dev`` supervisor for the Flask and Vite servers
   build.py               ``uv run build`` PyInstaller shortcut
   jobs.py                upload/job lifecycle
+  history.py             persistent per-track processing state (local SQLite)
   resolution.py          track resolution orchestration
   audio/                 local audio discovery and matching
   exportify/             Exportify ZIP parsing

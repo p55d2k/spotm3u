@@ -174,6 +174,10 @@ No Spotify account credentials or API key are needed by SpotM3U.
 4. Review local matches and any online resolution results.
 5. Download the generated M3U.
 
+Past conversions stay visible in **Download history** in the sidebar: what each
+run downloaded, when it ran, where the files went, and why a track failed. The
+record is kept locally by the application, so it survives restarts.
+
 ![SpotM3U playlist selection](docs/images/playlist-selection.png)
 
 The M3U references existing files and successfully downloaded MP3s. The
@@ -195,7 +199,7 @@ documented in [troubleshooting](docs/troubleshooting.md).
 
 - [Installation and usage](README.md) — getting started, platforms, and config
 - [Downloads](docs/downloads.md) — how tracks are downloaded, embedded metadata, lyrics
-- [Web application](docs/web.md) — upload, processing, result pages, media player
+- [Web application](docs/web.md) — upload, processing, result pages, download history, media player
 - [Artwork](docs/artwork.md) — album covers and artist images
 - [Exportify format](docs/exportify.md) — how your exported playlists are parsed
 - [Matching and source selection](docs/matching.md) — local and online matching

@@ -47,6 +47,23 @@ def user_data_dir() -> Path:
     return Path(data) / "spotm3u"
 
 
+# Directory override for everything the application keeps for the user, used by
+# the tests and by a one-off run that must not touch real state.
+STATE_DIR_ENV = "SPOTM3U_STATE_DIR"
+
+
+def state_dir() -> Path:
+    """The per-user directory the application's own state lives in.
+
+    :func:`user_data_dir` unless ``SPOTM3U_STATE_DIR`` names another one. The
+    stored UI preferences and the processing history both live here, so one
+    override moves every piece of application state out of the way. The
+    directory is created by whoever writes into it, never here.
+    """
+    override = os.environ.get(STATE_DIR_ENV)
+    return Path(override).expanduser() if override else user_data_dir()
+
+
 def bundle_root() -> Path:
     """Directory holding the packaged application and its sibling binaries.
 

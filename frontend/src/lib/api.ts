@@ -257,6 +257,78 @@ export type Preferences = {
 };
 
 /**
+ * The stored state of a conversion or of one of its tracks. The backend owns
+ * these names (``spotm3u/history.py``), and it sends the list it knows alongside
+ * the runs so the filter cannot offer a state the model does not have.
+ */
+export type HistoryStatus =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "skipped";
+
+/** How the stored runs are ordered. */
+export type HistoryOrder = "recent" | "oldest" | "name";
+
+/** How many tracks of a stored run are in each state. */
+export type HistoryCounts = Record<HistoryStatus, number>;
+
+/** One stored conversion, without its tracks. */
+export type HistoryRunSummary = {
+  id: number;
+  job_id: string;
+  playlist_id: string;
+  playlist_name: string;
+  status: HistoryStatus;
+  total_tracks: number;
+  counts: HistoryCounts;
+  error: string;
+  m3u_path: string | null;
+  output_dir: string;
+  fast_mode: boolean;
+  started_at: number | null;
+  finished_at: number | null;
+};
+
+/** One track of a stored conversion, as it was left behind. */
+export type HistoryTrack = {
+  position: number;
+  title: string;
+  artists: string;
+  album: string | null;
+  spotify_id: string | null;
+  status: HistoryStatus;
+  stage: string;
+  resolution: string;
+  reason: string;
+  error: string;
+  source_url: string | null;
+  output_path: string | null;
+  retry_count: number;
+  cancelled: boolean;
+  queued_at: number | null;
+  started_at: number | null;
+  finished_at: number | null;
+  /** A completed track whose audio file was deleted by hand. */
+  file_missing?: boolean;
+};
+
+/** One stored conversion with its tracks, in playlist order. */
+export type HistoryRun = HistoryRunSummary & { tracks: HistoryTrack[] };
+
+/** One page of the stored conversions, with the states that can be filtered. */
+export type HistoryPage = {
+  runs: HistoryRunSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  order: HistoryOrder;
+  statuses: HistoryStatus[];
+};
+
+/**
  * The parts of the stored library the developer panel can delete, each on its
  * own. The names are the API's own (``docs/api.md``); the panel adds the labels.
  */
@@ -393,11 +465,33 @@ export function artworkUrl(jobId: string, playlistId: string, index: number): st
   return apiUrl(`/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/artwork/${index}`);
 }
 
+/** One page of the stored conversions, filtered and ordered by the backend. */
+export function getHistory(filters: {
+  status?: HistoryStatus | "";
+  q?: string;
+  order?: HistoryOrder;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<HistoryPage> {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.order) params.set("order", filters.order);
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset) params.set("offset", String(filters.offset));
+  const query = params.toString();
+  return request(`/history${query ? `?${query}` : ""}`);
+}
+
+/** One stored conversion with its tracks, annotated with what is on disk. */
+export function getHistoryRun(runId: string): Promise<HistoryRun> {
+  return request(`/history/${encodeURIComponent(runId)}`);
+}
+
 /** What a developer clear would remove right now, per selectable item. */
 export function getStorageInventory(): Promise<StorageInventory> {
   return request("/developer/inventory");
 }
-
 /**
  * Delete the selected items from disk. ``confirm`` must carry the phrase the
  * inventory reported; the deletion is permanent, so the API requires it of every

@@ -7,7 +7,7 @@ from zipfile import ZipFile
 import pytest
 import requests
 
-from spotm3u import artwork
+from spotm3u import artwork, preferences
 
 # The repository root, for the tests that inspect files outside ``tests/``
 # (packaging scripts, ``config.toml``, ``assets/``). Deriving it here keeps the
@@ -44,6 +44,19 @@ def no_network_lyrics(monkeypatch):
         raise requests.ConnectionError("network disabled in tests")
 
     monkeypatch.setattr("spotm3u.lyrics.syncedlyrics.search", unreachable)
+
+
+@pytest.fixture(autouse=True)
+def isolated_state_dir(tmp_path, monkeypatch):
+    """Keep the state the application keeps for the user inside ``tmp_path``.
+
+    Both the stored UI preferences and the processing history live in the
+    per-user data directory. A test that runs a conversion would otherwise write
+    its history into the developer's real data folder, so every test points that
+    directory at its own temporary path. Tests that care about a specific
+    location set the variable themselves.
+    """
+    monkeypatch.setenv(preferences.STATE_DIR_ENV, str(tmp_path / "state"))
 
 
 @pytest.fixture
