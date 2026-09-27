@@ -19,6 +19,7 @@ from .exportify import ExportifyParseError, parse_exportify
 from .fast import FastSourceSearcher, FastTrackResolver
 from .ffmpeg import locate_ffmpeg_location
 from .jobs import ProcessingJob
+from .maintenance import UnsafeTarget, clear, inventory
 from .media_player import MediaPlayerError, add_to_media_player, library_player_name
 from .metadata import embedded_lyrics_form
 from .models import Playlist
@@ -26,7 +27,13 @@ from .online import OnlineSourceSearcher, download_track
 from .online.cache import DownloadCache
 from .resolution import TrackResolver
 from .update import check_for_updates
-from .uploads import UploadError, UploadJob, cleanup_jobs, store_upload
+from .uploads import (
+    JOB_DIR_PREFIX,
+    UploadError,
+    UploadJob,
+    cleanup_jobs,
+    store_upload,
+)
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -42,7 +49,7 @@ def _job_directory(upload_root: Path | str, job_id: str) -> Path | None:
     if not JOB_ID_PATTERN.fullmatch(job_id):
         return None
     root = Path(upload_root).resolve()
-    directory = (root / f"job-{job_id}").resolve()
+    directory = (root / f"{JOB_DIR_PREFIX}{job_id}").resolve()
     if root not in directory.parents or not directory.is_dir():
         return None
     if not (
@@ -401,6 +408,49 @@ def _download_dir(app: Flask) -> Path:
     if configured:
         return Path(configured).expanduser()
     return _migrate_legacy_download_dir(app, Path(app.config["MUSIC_LIBRARY"]).expanduser())
+
+
+def storage_inventory(app: Flask) -> dict[str, object]:
+    """What a developer clear would remove right now, per selectable item.
+
+    The paths are the same ones conversions use, so the panel counts the real
+    contents of the download folder and the upload root rather than a guess.
+    """
+    return inventory(_download_dir(app), app.config["UPLOAD_ROOT"])
+
+
+def clear_downloaded_data(
+    app: Flask, items: list[str]
+) -> tuple[dict[str, object] | None, str | None, int]:
+    """Delete the selected items from disk: ``(report, error, status)``.
+
+    Nothing is deleted while a conversion is running, because that job is
+    writing into one of these very folders. A download folder that would put the
+    music library in reach is refused by :mod:`spotm3u.maintenance` rather than
+    emptied. The item names are validated by the HTTP layer, which is the only
+    caller.
+    """
+    if app.config["JOB_MANAGER"].active_job_ids():
+        return None, "Wait for the running conversions to finish, then try again.", 409
+    try:
+        report = clear(
+            _download_dir(app),
+            app.config["UPLOAD_ROOT"],
+            items,
+            music_library=app.config.get("MUSIC_LIBRARY"),
+        )
+    except UnsafeTarget as error:
+        app.logger.warning("Refused a clear of the download folder: %s", error)
+        return None, str(error), 409
+    except OSError:
+        app.logger.exception("Unable to clear stored data")
+        return None, "Those files could not be deleted. Please try again.", 500
+    app.logger.info(
+        "Cleared %s, freed %d bytes",
+        json.dumps(report["removed"], sort_keys=True),
+        report["bytes_freed"],
+    )
+    return report, None, 200
 
 
 def _build_processing_job(

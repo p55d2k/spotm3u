@@ -40,6 +40,7 @@ from . import preferences
 from .artwork import cached_artwork_path
 from .exportify import ExportifyParseError, parse_exportify
 from .m3u import check_playlist
+from .maintenance import CLEAR_ITEMS, CONFIRM_PHRASE, unknown_items
 from .media_player import (
     MediaPlayerError,
     add_to_media_player,
@@ -63,6 +64,8 @@ from .web_jobs import (
     _selected_playlist_ids,
     _selection_matches,
     _valid_playlist_index,
+    clear_downloaded_data,
+    storage_inventory,
     store_and_parse,
     update_payload,
 )
@@ -88,6 +91,12 @@ ERROR_JOB_RUNNING = "job_running"
 ERROR_PLAYLIST_INCOMPLETE = "playlist_incomplete"
 # A UI preference was sent with a value the application does not accept.
 ERROR_PREFERENCE_INVALID = "preference_invalid"
+# The developer clear names nothing to delete, something unknown, or was not confirmed.
+ERROR_CLEAR_INVALID = "clear_invalid"
+# The developer clear would reach outside the download folder, or is refused.
+ERROR_CLEAR_REFUSED = "clear_refused"
+# The developer clear could not delete what it was asked to.
+ERROR_CLEAR_FAILED = "clear_failed"
 # Media library handoff.
 ERROR_MEDIA_PLAYER_UNAVAILABLE = "media_player_unavailable"
 ERROR_NOTHING_TO_IMPORT = "nothing_to_import"
@@ -336,6 +345,61 @@ def app_icon():
     if icon is None:
         return _error("The application icon is not available.", ERROR_NOT_FOUND, 404)
     return send_file(icon, mimetype="image/png", max_age=3600)
+
+
+@api.get("/developer/inventory")
+def developer_inventory():
+    """What a clear would remove right now, per selectable item.
+
+    The developer panel lists this beside its checkboxes so a choice is made
+    with the real counts and sizes in view instead of from memory. The
+    confirmation phrase is part of the answer so the panel never hard-codes it.
+    """
+    return jsonify(storage_inventory(current_app))
+
+
+@api.post("/developer/clear")
+def clear_stored_data():
+    """Delete the selected items: ``{"items": ["songs"], "confirm": "delete"}``.
+
+    Every item is removable on its own, and only the files SpotM3U wrote are
+    touched (see :mod:`spotm3u.maintenance`). Three things are checked before
+    anything is deleted: the body names at least one known item, ``confirm``
+    carries the phrase, and no conversion is running. Deletion cannot be
+    undone, so the phrase is required of API callers too, not only the panel.
+    """
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    items = payload.get("items")
+    if not isinstance(items, list) or not items or not all(isinstance(i, str) for i in items):
+        return _error(
+            f"Name at least one of {', '.join(CLEAR_ITEMS)} to delete, "
+            'for example {"items": ["songs"]}.',
+            ERROR_CLEAR_INVALID,
+            400,
+        )
+    unknown = unknown_items(items)
+    if unknown:
+        return _error(
+            f"Cannot delete: {', '.join(unknown)}.",
+            ERROR_CLEAR_INVALID,
+            400,
+        )
+    if payload.get("confirm") != CONFIRM_PHRASE:
+        return _error(
+            f'Type "{CONFIRM_PHRASE}" as "confirm" to delete anything.',
+            ERROR_CLEAR_INVALID,
+            400,
+        )
+    report, error, status = clear_downloaded_data(current_app, items)
+    if error is not None:
+        code = {
+            409: ERROR_CLEAR_REFUSED,
+            500: ERROR_CLEAR_FAILED,
+        }.get(status, ERROR_CLEAR_FAILED)
+        return _error(error, code, status)
+    return jsonify(report)
 
 
 @api.post("/upload")

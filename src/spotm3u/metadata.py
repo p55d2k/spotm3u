@@ -385,6 +385,15 @@ def _embed_lyrics(path: Path, lyrics: Lyrics) -> tuple[str, ...]:
         return ()
 
 
+def lyrics_cache_dir(download_dir: str | Path) -> Path:
+    """Return the lyrics sidecar directory of one download folder, without creating it.
+
+    The directory is SpotM3U's own, so this is also what a caller that clears
+    the lyrics cache wholesale (see :mod:`spotm3u.maintenance`) targets.
+    """
+    return Path(download_dir) / _LYRICS_SIDECAR_DIR
+
+
 def lyrics_sidecar_path(download_dir: Path, audio_path: Path) -> Path:
     """Where one audio file's ``.lrc`` sidecar lives.
 
@@ -394,7 +403,7 @@ def lyrics_sidecar_path(download_dir: Path, audio_path: Path) -> Path:
     is far easier to browse without one ``.lrc`` beside every song. The file
     still carries the audio file's own name, so it stays identifiable.
     """
-    return download_dir / _LYRICS_SIDECAR_DIR / f"{audio_path.stem}{_LYRICS_SIDECAR_SUFFIX}"
+    return lyrics_cache_dir(download_dir) / f"{audio_path.stem}{_LYRICS_SIDECAR_SUFFIX}"
 
 
 def _write_lyrics_sidecar(path: Path, lyrics: str, download_dir: Path) -> bool:
@@ -717,6 +726,7 @@ __all__ = [
     "MetadataResult",
     "embedded_lyrics_form",
     "enrich_metadata",
+    "lyrics_cache_dir",
     "lyrics_sidecar_path",
     "id3_tags_enabled",
     "metadata_enabled",

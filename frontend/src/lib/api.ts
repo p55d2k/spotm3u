@@ -256,6 +256,39 @@ export type Preferences = {
   theme?: "light" | "dark";
 };
 
+/**
+ * The parts of the stored library the developer panel can delete, each on its
+ * own. The names are the API's own (``docs/api.md``); the panel adds the labels.
+ */
+export type StorageItemName =
+  | "songs"
+  | "playlists"
+  | "manifest"
+  | "artwork"
+  | "lyrics"
+  | "uploads";
+
+/** What one deletable part holds right now. */
+export type StorageItem = {
+  name: StorageItemName;
+  files: number;
+  bytes: number;
+};
+
+/** The inventory the developer panel draws its checkboxes from. */
+export type StorageInventory = {
+  download_dir: string;
+  confirm_phrase: string;
+  items: StorageItem[];
+};
+
+/** What a clear actually deleted, per item. */
+export type ClearReport = {
+  download_dir: string;
+  removed: Partial<Record<StorageItemName, number>>;
+  bytes_freed: number;
+};
+
 export function getMeta(): Promise<MetaResponse> {
   return request("/meta");
 }
@@ -358,4 +391,25 @@ export function addBatchToMediaPlayer(jobId: string): Promise<BatchImportRespons
 
 export function artworkUrl(jobId: string, playlistId: string, index: number): string {
   return apiUrl(`/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/artwork/${index}`);
+}
+
+/** What a developer clear would remove right now, per selectable item. */
+export function getStorageInventory(): Promise<StorageInventory> {
+  return request("/developer/inventory");
+}
+
+/**
+ * Delete the selected items from disk. ``confirm`` must carry the phrase the
+ * inventory reported; the deletion is permanent, so the API requires it of every
+ * caller and not only of the panel.
+ */
+export function clearStoredData(
+  items: StorageItemName[],
+  confirm: string,
+): Promise<ClearReport> {
+  return request("/developer/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items, confirm }),
+  });
 }

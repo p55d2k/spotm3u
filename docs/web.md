@@ -61,6 +61,26 @@ page's own `localStorage` copy is only a cache for the current session. A
 theme that cannot be saved still applies for the session, and a corrupt or
 hand-edited `preferences.json` simply reads as "no choice stored".
 
+## Developer tools
+
+**Developer** in the sidebar footer opens a **Clear downloaded data** dialog,
+shaped like a browser's "clear browsing data" one: a checkbox per part of the
+library, each labelled with what it currently holds, and one action at the
+bottom. The parts are the downloaded songs, the generated playlists, the
+download record, the artwork cache, the lyrics cache, and the temporary upload
+folders. This is how a library is reset without hunting folders by hand - for
+instance after a damaged download, where the songs have to be fetched again.
+
+Only files SpotM3U created are in reach: the MP3s, playlists, and download
+record inside the download folder (`~/Music/SpotM3U` by default) and the two
+cache folders inside it. Files you put there yourself, and the rest of your
+music library, are never offered and never deleted. Deleting is permanent, so
+the dialog's action stays disabled until the confirmation phrase is typed; the
+dialog stays open while the deletion runs and closes when it is done. The API
+requires the same phrase, refuses while a conversion is running, and refuses a
+download folder that would take the music library with it. See
+[api.md](api.md#developer).
+
 ## Client-side routes
 
 The client-side routes are history-based, so Flask returns the React shell for

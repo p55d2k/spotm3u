@@ -17,6 +17,10 @@ from .config import (
     DEFAULT_MAX_DECOMPRESSED_SIZE,
 )
 
+# Every upload gets a directory named after this prefix, so the cleanup sweeps
+# and the developer panel can recognise the temporary folders as ours.
+JOB_DIR_PREFIX = "job-"
+
 
 class UploadError(ValueError):
     """An upload could not be accepted safely."""
@@ -70,7 +74,7 @@ def store_upload(
     upload_root = Path(upload_root)
     upload_root.mkdir(parents=True, exist_ok=True)
     job_id = secrets.token_urlsafe(16)
-    job_directory = upload_root / f"job-{job_id}"
+    job_directory = upload_root / f"{JOB_DIR_PREFIX}{job_id}"
     archive_path = job_directory / "export.zip"
     extracted_directory = job_directory / "extracted"
     state_path = job_directory / "state.json"
@@ -267,9 +271,9 @@ def cleanup_jobs(
     active = set(active_job_ids or ())
     removed = 0
     for directory in root.iterdir():
-        if not directory.is_dir() or not directory.name.startswith("job-"):
+        if not directory.is_dir() or not directory.name.startswith(JOB_DIR_PREFIX):
             continue
-        job_id = directory.name[len("job-") :]
+        job_id = directory.name[len(JOB_DIR_PREFIX) :]
         if job_id in active:
             continue
         try:

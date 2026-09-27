@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import type { ReactNode } from "react";
 
 /**
  * The modal pattern, migrated from ``_save_m3u.html`` and the ``.app-dialog``
@@ -8,6 +9,14 @@ import { useEffect, useId, useRef } from "react";
  * primary action is focused on open, and the backdrop is the scrim. The
  * grouped detail is the part that gives way in a short window, so the actions
  * below it are always reachable.
+ *
+ * ``children`` is the body of a dialog that needs more than a summary and a
+ * list (a form, a set of checkboxes). A dialog whose action is asynchronous
+ * passes ``confirmPersistent``: its primary button then reports through
+ * ``onConfirm`` and the dialog is closed by whoever opened it once the work is
+ * done, so a failure can be reported without the dialog vanishing first.
+ * ``confirmDisabled`` holds the primary back until the content's own
+ * precondition is met.
  */
 
 export type DialogResult = "confirm" | "cancel";
@@ -21,7 +30,17 @@ type AppDialogProps = {
   items?: string[];
   confirmLabel?: string;
   cancelLabel?: string;
+  children?: ReactNode;
+  confirmDisabled?: boolean;
+  confirmPersistent?: boolean;
+  onConfirm?: () => void;
 };
+
+const CANCEL_CLASSES =
+  "inline-flex min-h-[2.375rem] items-center justify-center gap-2 rounded-[0.375rem] border border-line bg-muted-button px-4 py-3 text-md font-medium leading-none text-ink transition-colors hover:border-line-strong hover:bg-state-hover active:bg-state-active";
+
+const CONFIRM_CLASSES =
+  "inline-flex min-h-[2.375rem] items-center justify-center gap-2 rounded-[0.375rem] bg-accent px-4 py-3 text-md font-semibold leading-none text-on-accent transition-colors hover:bg-accent-hover active:bg-accent-active";
 
 export function AppDialog({
   open,
@@ -32,6 +51,10 @@ export function AppDialog({
   items,
   confirmLabel = "Save anyway",
   cancelLabel = "Cancel",
+  children,
+  confirmDisabled = false,
+  confirmPersistent = false,
+  onConfirm,
 }: AppDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -91,22 +114,32 @@ export function AppDialog({
             </ul>
           </div>
         )}
+        {children}
         <div className="flex flex-none justify-end gap-2">
-          <button
-            type="submit"
-            value="cancel"
-            className="inline-flex min-h-[2.375rem] items-center justify-center gap-2 rounded-[0.375rem] border border-line bg-muted-button px-4 py-3 text-md font-medium leading-none text-ink transition-colors hover:border-line-strong hover:bg-state-hover active:bg-state-active"
-          >
+          <button type="submit" value="cancel" className={CANCEL_CLASSES}>
             {cancelLabel}
           </button>
-          <button
-            type="submit"
-            value="confirm"
-            autoFocus={open}
-            className="inline-flex min-h-[2.375rem] items-center justify-center gap-2 rounded-[0.375rem] bg-accent px-4 py-3 text-md font-semibold leading-none text-on-accent transition-colors hover:bg-accent-hover active:bg-accent-active"
-          >
-            {confirmLabel}
-          </button>
+          {confirmPersistent ? (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={confirmDisabled}
+              aria-disabled={confirmDisabled ? "true" : undefined}
+              className={`${CONFIRM_CLASSES} disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-accent`}
+            >
+              {confirmLabel}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              value="confirm"
+              autoFocus={open}
+              disabled={confirmDisabled}
+              className={`${CONFIRM_CLASSES} disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-accent`}
+            >
+              {confirmLabel}
+            </button>
+          )}
         </div>
       </form>
     </dialog>

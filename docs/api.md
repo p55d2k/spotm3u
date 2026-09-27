@@ -48,6 +48,9 @@ and answer `413 upload_too_large` as JSON instead of the page.
 | `nothing_to_import` | 409 | The playlist has no resolved tracks to hand over. |
 | `media_player_failed` | 502 | The handoff itself failed. |
 | `preference_invalid` | 400 | The preference body is empty, names an unknown preference, or carries a value that preference does not accept. |
+| `clear_invalid` | 400 | The clear names nothing to delete, an unknown item, or arrives without the confirmation phrase. |
+| `clear_refused` | 409 | The clear would reach the music library itself, or a conversion is running. |
+| `clear_failed` | 500 | The files could not be deleted. |
 | `not_found` | 404 | No such API endpoint (or track, or cached image). |
 | `method_not_allowed` | 405 | Wrong HTTP method for an endpoint. |
 
@@ -114,6 +117,33 @@ converting a batch never overwrites another playlist's file.
 URL serves the playlist anyway. Artwork answers `404 not_found` for a track
 that has no cached image, is out of range, or whose download was deleted by
 hand.
+
+### Developer
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/developer/inventory` | What a clear would remove right now, per item, with sizes and the confirmation phrase. |
+| `POST` | `/api/developer/clear` | Delete the chosen items: `{"items": ["songs"], "confirm": "delete"}`. |
+
+The items are `songs` (the MP3s in the download folder), `playlists` (the `.m3u`
+files beside them), `manifest` (the download record, so those songs are fetched
+again), `artwork` (the artwork cache), `lyrics` (the `.lrc` sidecars) and
+`uploads` (the temporary import folders). Each is independent; the answer lists
+what each one removed plus `bytes_freed`. The developer panel shows this
+inventory in a **Clear downloaded data** dialog, one checkbox per item with its
+current size.
+
+Only files SpotM3U wrote are deleted: the songs, playlists and manifest directly
+inside the download folder, and the two cache folders inside that same folder.
+Nothing recurses out of them, no symlink is followed, and a download folder that
+resolves to the music library itself (or to a folder above it) answers
+`409 clear_refused` instead of being emptied. A conversion that is still running
+answers `409 clear_refused` too, because that job is writing into the same
+folders.
+
+Deletion is permanent, so the API requires the phrase the inventory reported -
+not only the panel. Like the rest of `/api` it has no authentication of its own,
+which is why the action is limited to files this application created.
 
 ## Not here yet
 

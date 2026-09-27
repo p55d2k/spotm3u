@@ -1,6 +1,7 @@
 import { ArrowLeftRight, Check, CircleCheck, ListMusic, Moon, Sun, Upload } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { appUrl } from "../lib/router";
+import { DeveloperTools } from "./DeveloperTools";
 import { useShell } from "./Shell";
 import { UpdateNotice } from "./UpdateNotice";
 import { useTheme } from "../hooks/useTheme";
@@ -9,8 +10,8 @@ import { useTheme } from "../hooks/useTheme";
  * The application navigation, migrated from ``_sidebar.html``: the brand, the
  * four conversion steps with one leading icon and a dot that carries workflow
  * state (position, or a check once the step is done), and a footer holding the
- * update notice and the theme toggle. On macOS the native traffic lights float
- * over the sidebar, so the brand is kept clear of them.
+ * update notice, the developer tools, and the theme toggle. On macOS the native
+ * traffic lights float over the sidebar, so the brand is kept clear of them.
  */
 
 export type WorkflowStage = 1 | 2 | 3 | 4;
@@ -112,6 +113,7 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
 
       <div className="flex flex-col gap-1 border-t border-line p-3">
         <UpdateNotice />
+        <DeveloperTools />
         <button
           type="button"
           data-theme-toggle

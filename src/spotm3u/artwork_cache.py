@@ -42,8 +42,17 @@ def set_artwork_memory_limit(size: int) -> None:
 _ARTIST_ARTWORK_SUBDIR = "artists"
 
 
+def artwork_cache_dir(download_dir: str | Path) -> Path:
+    """Return one download directory's artwork cache path, without creating it.
+
+    The cache directory is SpotM3U's own, so this is also what a caller that
+    removes the cache wholesale (see :mod:`spotm3u.maintenance`) targets.
+    """
+    return Path(download_dir) / _ARTWORK_CACHE_DIR
+
+
 def _cache_dir(download_dir: Path) -> Path:
-    cache_path = download_dir / _ARTWORK_CACHE_DIR
+    cache_path = artwork_cache_dir(download_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
     return cache_path
 
@@ -167,6 +176,19 @@ def _forget_memory_entry(download_dir: Path, cache_key: str) -> None:
         _ARTWORK_MEMORY.pop(memory_key, None)
 
 
+def forget_artwork_memory(download_dir: str | Path) -> None:
+    """Drop every memo entry belonging to one download directory.
+
+    Used when the artwork cache of that directory is deleted as a whole: the
+    memo holds image bytes, so without this the process would keep answering
+    with artwork that no longer exists anywhere on disk.
+    """
+    prefix = f"{artwork_cache_dir(download_dir)}::"
+    with _ARTWORK_LOCK:
+        for key in [key for key in _ARTWORK_MEMORY if key.startswith(prefix)]:
+            _ARTWORK_MEMORY.pop(key, None)
+
+
 def _write_artwork_source(download_dir: Path, cache_key: str, source: str) -> None:
     """Record where a cached artwork entry came from.
 
@@ -200,4 +222,6 @@ __all__ = [
     "_write_artwork_source",
     "_write_cached_image",
     "_write_cached_source",
+    "artwork_cache_dir",
+    "forget_artwork_memory",
 ]

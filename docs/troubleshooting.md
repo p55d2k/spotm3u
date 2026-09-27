@@ -124,6 +124,15 @@ conservative about wrong artists, covers, and non-music audio, while incomplete
 metadata can remain uncertain. Retry unresolved tracks after correcting the
 local library or online configuration.
 
+## A downloaded song is damaged or wrong
+
+Delete the affected downloads with **Developer** in the sidebar footer, ticking
+*songs* and the *download record* so they are fetched again rather than reused,
+then re-run the conversion. Ticking only *songs* is enough for a single bad
+file: the download record is pruned on its own once its file is gone, but
+clearing it too is the honest reset when the source itself is in doubt. See
+[web.md](web.md#developer-tools).
+
 ## Add to Media Player is unavailable
 
 **Add to Media Player** is shown only on macOS (Apple Music) and Windows (the
