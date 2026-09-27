@@ -101,7 +101,9 @@ def test_configured_download_dir_is_never_migrated(tmp_path) -> None:
 def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     music = tmp_path / "music"
     music.mkdir()
-    (music / "Artist - First.mp3").write_bytes(b"audio")
+    # Playlist "1" is the export's "Second" track; a file for a different song
+    # by the same artist must not satisfy it.
+    (music / "Artist - Second.mp3").write_bytes(b"audio")
     monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = _client(tmp_path, music)
     job_id = _upload(tmp_path, client)
@@ -114,7 +116,7 @@ def test_processing_job_resolves_local_matches(tmp_path, monkeypatch) -> None:
     assert final["successful"] == 1
     assert final["failed"] == 0
     m3u_path = music / "SpotM3U" / "playlist-1.m3u"
-    assert str(music / "Artist - First.mp3") in m3u_path.read_text(encoding="utf-8")
+    assert str(music / "Artist - Second.mp3") in m3u_path.read_text(encoding="utf-8")
 
 
 def test_local_matching_scans_the_configured_library_extensions(tmp_path, monkeypatch) -> None:
@@ -123,7 +125,7 @@ def test_local_matching_scans_the_configured_library_extensions(tmp_path, monkey
     music.mkdir()
     # A format the built-in list does not cover, so only the configured
     # extension can make this track resolvable.
-    (music / "Artist - First.ape").write_bytes(b"audio")
+    (music / "Artist - Second.ape").write_bytes(b"audio")
     monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = _client(tmp_path, music, LIBRARY_EXTENSIONS=frozenset({".ape"}))
     job_id = _upload(tmp_path, client)
@@ -134,7 +136,7 @@ def test_local_matching_scans_the_configured_library_extensions(tmp_path, monkey
 
     assert final["successful"] == 1
     m3u = (music / "SpotM3U" / "playlist-1.m3u").read_text(encoding="utf-8")
-    assert str(music / "Artist - First.ape") in m3u
+    assert str(music / "Artist - Second.ape") in m3u
 
 
 def test_download_dir_override_respected(tmp_path, monkeypatch) -> None:
@@ -158,7 +160,7 @@ def test_start_processing_honours_fast_mode(tmp_path, monkeypatch) -> None:
     """Fast mode must not enrich metadata, and the fast resolver is the one that runs."""
     music = tmp_path / "music"
     music.mkdir()
-    (music / "Artist - First.mp3").write_bytes(b"audio")
+    (music / "Artist - Second.mp3").write_bytes(b"audio")
     monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
 
     def forbidden(*_args, **_kwargs):
@@ -192,7 +194,7 @@ def test_status_reports_no_artwork_for_a_deleted_download(tmp_path, monkeypatch)
 
     music = tmp_path / "music"
     music.mkdir()
-    (music / "Artist - First.mp3").write_bytes(b"audio")
+    (music / "Artist - Second.mp3").write_bytes(b"audio")
     monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
     client = _client(tmp_path, music)
     job_id = _upload(tmp_path, client)

@@ -145,6 +145,7 @@ src/spotm3u/
   artwork_cache.py       artwork cache layout, cache keys, and the in-process memo
   apple_music.py         experimental, opt-in Apple Music catalog id matching
   metadata.py            ID3 metadata read/write and enrichment
+  file_lock.py           process-wide per-file locks shared by writing stages
   config.py              optional TOML and environment configuration
   desktop.py             native WebView shell used by the packaged application
   dev.py                 ``uv run dev`` supervisor for the Flask and Vite servers

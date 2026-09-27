@@ -23,6 +23,14 @@ and matches them against the exported track metadata. It is a separate,
 independent strategy from online source selection — a track found locally never
 goes through the online pipeline.
 
+A local file is only a match when the **title** matches it; the artist alone is
+never enough. A filename that merely contains the artist's name (for example the
+only song by that artist in the library) is not evidence that it is the
+requested track, so a second song by the same artist is not resolved to it. The
+artist still supports the match — it is part of the combined title-and-artist
+lookup and of the fuzzy score, and it is stripped from the filename before a
+close title comparison so a decorated `Artist - Title` name still matches.
+
 The scanned extensions are configurable: `[library] extensions` in
 `config.toml` lists them (comma-separated, case-insensitive, dot optional), and
 an empty value keeps the built-in list. Widen it when a track is reported

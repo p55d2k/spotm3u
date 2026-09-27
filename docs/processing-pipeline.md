@@ -46,9 +46,15 @@ audio validation and ID3 embedding are primarily disk/CPU-bound. M3U writing is
 small, ordered, and playlist-scoped.
 
 Safe independent work after audio validation includes lyrics, album artwork,
-artist artwork, and the separate ID3 writes, provided writes to the same audio
-file are serialized. Candidate attempts must remain ordered by ranking, and
-M3U output must remain in playlist order.
+artist artwork, and the separate ID3 writes. Every stage that writes one audio
+file — the download itself, audio validation and metadata enrichment — takes a
+single process-wide lock for that file (`spotm3u.file_lock`), so a download
+that removes and rewrites a file can never overlap another stage reading or
+retagging it. Without it, two jobs that share a file (a playlist that lists the
+same song twice, or the same song converted in two playlists of one batch)
+would splice their writes together and corrupt the audio. Distinct files still
+run concurrently. Candidate attempts must remain ordered by ranking, and M3U
+output must remain in playlist order.
 
 `spotm3u.metadata_jobs.MetadataJob` is the explicit handoff between these
 pipelines. It contains the track and metadata destination before audio exists;

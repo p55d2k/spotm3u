@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
+from ..file_lock import file_lock
 from ..log import track_identifier
 from ..metadata import MetadataError, enrich_metadata
 from ..models import Track
@@ -98,10 +99,9 @@ _CONTENT_UNAVAILABLE_MARKERS = (
 )
 
 
-# Per-output-path lock so concurrent downloads targeting the same local file
-# (same track duplicate or explicit overwrite) serialize rather than corrupt.
-_OUTPUT_LOCKS: dict[str, threading.Lock] = {}
-_OUTPUT_LOCKS_GUARD = threading.Lock()
+# The per-output-path lock is process-wide and shared with metadata enrichment
+# (see ``spotm3u.file_lock``): a download rewrites the whole file, so it must not
+# run while another stage is reading or retagging the same file.
 
 
 class _InFlightDownload:
@@ -382,8 +382,8 @@ def _download_guarded(
     ffmpeg_location: str | None,
     verify: bool,
 ) -> Path:
-    """Run :func:`_download_to` under the per-output-path lock."""
-    with _output_lock(output_path):
+    """Run :func:`_download_to` under the process-wide per-file lock."""
+    with file_lock(output_path):
         return _download_to(
             track,
             source_url,
@@ -443,17 +443,6 @@ def _prune_partial(output_path: Path) -> None:
         output_path.unlink(missing_ok=True)
     except OSError:
         pass
-
-
-def _output_lock(path: Path) -> threading.Lock:
-    """Return a lock shared by all callers writing to the same output file."""
-    key = str(path.resolve())
-    with _OUTPUT_LOCKS_GUARD:
-        lock = _OUTPUT_LOCKS.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            _OUTPUT_LOCKS[key] = lock
-        return lock
 
 
 def _download_to(

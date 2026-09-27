@@ -4,6 +4,35 @@ from spotm3u.audio import LocalAudioResolver
 from spotm3u.models import Track
 
 
+def test_resolver_does_not_match_another_song_by_the_same_artist(tmp_path: Path) -> None:
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "Let Down - Radiohead.mp3").write_bytes(b"audio")
+
+    result = LocalAudioResolver(music_dir).resolve(
+        Track(title="Paranoid Android", artists=["Radiohead"])
+    )
+
+    assert result.status == "missing"
+    assert result.resolved is None
+
+
+def test_resolver_matches_the_right_song_among_one_artist_files(tmp_path: Path) -> None:
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    expected = music_dir / "Paranoid Android - Radiohead.mp3"
+    expected.write_bytes(b"audio")
+    (music_dir / "Let Down - Radiohead.mp3").write_bytes(b"audio")
+
+    result = LocalAudioResolver(music_dir).resolve(
+        Track(title="Paranoid Android", artists=["Radiohead"])
+    )
+
+    assert result.status == "matched"
+    assert result.resolved is not None
+    assert result.resolved.local_path == expected
+
+
 def test_resolver_matches_exact_normalized_filename(tmp_path: Path) -> None:
     music_dir = tmp_path / "music"
     music_dir.mkdir()

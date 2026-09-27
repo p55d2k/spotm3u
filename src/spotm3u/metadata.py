@@ -23,6 +23,7 @@ from .artwork import (
     artist_artwork_enabled,
 )
 from .artwork_sources import _image_mime
+from .file_lock import file_lock
 from .lyrics import Lyrics, fetch_lyrics, is_synced_lyrics, lyrics_enabled, parse_lyrics
 from .models import Track
 
@@ -597,6 +598,20 @@ def enrich_metadata(
             errors=(f"audio file not found: {audio_path}",),
         )
 
+    # Enrichment takes the process-wide per-file lock shared with the downloader
+    # (see ``spotm3u.file_lock``). Without it, a concurrent download of the same
+    # song -- a playlist that lists it twice, or another job in the batch -- can
+    # rewrite the file while its ID3 tag is being written, splicing the audio.
+    with file_lock(audio_path):
+        return _enrich_file(audio_path, track, download_path)
+
+
+def _enrich_file(audio_path: Path, track: Track, download_path: Path) -> MetadataResult:
+    """Write tags, artwork, lyrics and the catalog id for one audio file.
+
+    Runs under the per-file lock acquired by :func:`enrich_metadata`; see there
+    for why concurrent enrichment of one file is serialized.
+    """
     errors: list[str] = []
     fields_written: list[str] = []
     artwork_embedded = False

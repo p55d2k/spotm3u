@@ -189,13 +189,18 @@ class LocalAudioResolver:
                     seen.add(index)
                     candidates.append(index)
 
+        # Only the title decides an exact hit. A filename that merely contains
+        # the artist name is not evidence that it is *this* song: a library with
+        # one file by an artist would otherwise match every track credited to
+        # that artist to that single file. The artist stays part of the lookup
+        # above (title+artist, artist+title) and of the fuzzy score, where it is
+        # supporting context for a title match rather than a match on its own.
         for index, stem in enumerate(self._stems):
             if index in seen:
                 continue
-            if (title_key in stem) or (artist_key and artist_key in stem):
-                if index not in seen:
-                    seen.add(index)
-                    candidates.append(index)
+            if title_key in stem:
+                seen.add(index)
+                candidates.append(index)
         return tuple(self._files[index] for index in candidates)
 
     def _fuzzy_candidates(self, title_key: str, artist_key: str) -> frozenset[int]:
@@ -239,12 +244,24 @@ class LocalAudioResolver:
                 score = max(score, 0.95)
         if title_key and title_key in stem:
             score = max(score, 0.9)
-        if artist_key and artist_key in stem:
-            score = max(score, 0.8)
+        # The artist is never scored on its own: a filename that only shares the
+        # artist with the track is a different song, not a match. It enters the
+        # score through ``query`` (title + artist) so it can support a title
+        # match without creating one.
         if stem:
-            for target in (query, title_key, artist_key):
+            for target in (query, title_key):
                 if target and _length_compatible(target, stem):
                     score = max(score, _fuzzy_ratio(target, stem))
+        # Filenames are usually ``<artist> - <title>`` (or the reverse), so a
+        # close title match is easier to see with the artist removed from the
+        # stem. This only strips the artist; the title still has to match.
+        if artist_key and title_key and artist_key in stem:
+            remainder = " ".join(stem.replace(artist_key, " ").split())
+            if remainder:
+                if title_key in remainder:
+                    score = max(score, 0.9)
+                elif _length_compatible(title_key, remainder):
+                    score = max(score, _fuzzy_ratio(title_key, remainder))
         return score
 
     def resolve(self, track: Track) -> Resolution:

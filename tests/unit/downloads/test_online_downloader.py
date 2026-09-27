@@ -333,6 +333,77 @@ def test_peer_result_is_not_reused_when_it_is_invalid_for_the_waiting_track(tmp_
     assert len(results) == 2
 
 
+def test_downloads_and_metadata_share_one_per_file_lock(tmp_path):
+    """Every stage writing one file must take the same lock.
+
+    A download removes and rewrites the whole file, so it has to exclude
+    metadata enrichment; separate lock registries would let the two overlap and
+    splice the audio.
+    """
+    from spotm3u import metadata
+    from spotm3u.file_lock import file_lock
+
+    path = tmp_path / "Song - Artist.mp3"
+
+    assert downloader.file_lock(path) is metadata.file_lock(path) is file_lock(path)
+
+
+def test_download_and_enrichment_do_not_write_one_file_at_once(tmp_path, monkeypatch):
+    """A download and an enrichment of the same file must not overlap."""
+    import threading
+
+    from spotm3u import metadata
+    from spotm3u.file_lock import file_lock
+
+    path = tmp_path / "Song - Artist.mp3"
+    path.write_bytes(b"seed")
+    monkeypatch.setattr(metadata, "album_artwork_enabled", lambda: False)
+    monkeypatch.setattr(metadata, "artist_artwork_enabled", lambda: False)
+    monkeypatch.setattr(metadata, "lyrics_enabled", lambda: False)
+    monkeypatch.setattr(metadata, "apple_catalog_id_enabled", lambda: False)
+
+    depth = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def hold():
+        nonlocal depth, peak
+        with guard:
+            depth += 1
+            peak = max(peak, depth)
+        time.sleep(0.2)
+        with guard:
+            depth -= 1
+
+    def slow_write(_path, _track):
+        hold()
+        return ("TIT2",)
+
+    monkeypatch.setattr(metadata, "_write_all_metadata", slow_write)
+
+    start = threading.Barrier(2, timeout=5)
+
+    def enrich():
+        start.wait()
+        metadata.enrich_metadata(path, Track(title="Song", artists=["Artist"]), tmp_path)
+
+    def download():
+        start.wait()
+        # Stands in for ``_download_to``: it rewrites the whole file under the
+        # same per-file lock.
+        with file_lock(path):
+            hold()
+            path.write_bytes(b"downloaded")
+
+    threads = [threading.Thread(target=enrich), threading.Thread(target=download)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert peak == 1, "a download and an enrichment wrote the same file at once"
+
+
 # --- YouTube configuration --------------------------------------------------
 
 

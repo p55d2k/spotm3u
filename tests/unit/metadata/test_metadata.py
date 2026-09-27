@@ -1,10 +1,12 @@
 """Tests for album artwork lookup, caching, and ID3 metadata enrichment."""
 
+import threading
+import time
 from pathlib import Path
 
 import requests
 
-from spotm3u import artwork, artwork_cache, artwork_sources
+from spotm3u import artwork, artwork_cache, artwork_sources, metadata
 from spotm3u.artwork import (
     _find_album_artwork,
     artwork_artist,
@@ -13,6 +15,7 @@ from spotm3u.artwork import (
 )
 from spotm3u.artwork_cache import _cache_key
 from spotm3u.artwork_sources import _artist_album_match, _normalize_album_for_search
+from spotm3u.file_lock import file_lock
 from spotm3u.metadata import (
     MetadataResult,
     _embed_artwork,
@@ -955,3 +958,66 @@ def test_verify_local_disabled_uses_embedded_art_without_network(
     assert data == b"local-cover"
     assert source == "embedded:image/jpeg"
     assert calls == []
+
+
+def test_file_lock_is_per_file(tmp_path) -> None:
+    """The shared lock is per resolved file and not global."""
+    first = tmp_path / "Artist - Song.mp3"
+    second = tmp_path / "Artist - Other.mp3"
+
+    assert file_lock(first) is file_lock(first)
+    assert file_lock(first) is not file_lock(second)
+
+
+def test_enrichment_of_one_file_is_serialized_across_threads(tmp_path, monkeypatch) -> None:
+    """Two workers never enrich the same audio file at the same time.
+
+    A playlist can list the same song twice, so both tracks resolve to one file
+    and their metadata jobs run on the pool concurrently. Without the per-file
+    lock the two ID3 rewrites interleave and corrupt the file; the lock keeps
+    them one at a time.
+    """
+    mp3_path = tmp_path / "Song - Artist.mp3"
+    mp3_path.write_bytes(b"fake-mp3-data")
+
+    # Isolate the watched write: the other enrichment steps would reach the
+    # network, and this test is only about the lock.
+    monkeypatch.setattr(metadata, "album_artwork_enabled", lambda: False)
+    monkeypatch.setattr(metadata, "artist_artwork_enabled", lambda: False)
+    monkeypatch.setattr(metadata, "lyrics_enabled", lambda: False)
+    monkeypatch.setattr(metadata, "apple_catalog_id_enabled", lambda: False)
+
+    active = 0
+    peak = 0
+    counter_lock = threading.Lock()
+
+    def slow_write(_path, _track):
+        nonlocal active, peak
+        with counter_lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.2)  # widen the window an unserialized write could overlap in
+        with counter_lock:
+            active -= 1
+        return ("TIT2",)
+
+    monkeypatch.setattr(metadata, "_write_all_metadata", slow_write)
+
+    start = threading.Barrier(2, timeout=5)
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        start.wait()
+        try:
+            metadata.enrich_metadata(mp3_path, Track(title="Song", artists=["Artist"]), tmp_path)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert not errors
+    assert peak == 1, "the same audio file was enriched by two workers at once"
