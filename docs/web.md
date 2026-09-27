@@ -42,6 +42,23 @@ through the native save panel in the desktop shell, and can import a completed
 playlist into the platform media player. Batch results expose the same actions
 for each playlist.
 
+Tracks that have nothing usable are the ones worth another go, so a track that
+did not resolve offers a **Retry** of its own, and a track that downloaded audio
+which has since been deleted is offered too - that one is finished rather than
+failed, but the file it produced is gone. Ticking several tracks and retrying
+them together is there for the common case of a batch that mostly worked, and
+**Retry N unresolved tracks** covers everything at once. Tracks that already
+downloaded their audio are not offered, so nothing gets downloaded twice.
+
+The page stays where it is while a retry runs: it follows the same result and the
+rows change as each track finishes, instead of the retry sending you back to the
+progress screen. A track keeps the reason it failed with while it waits, and
+shows "Retried 1×" once it has been through the pipeline again.
+
+The batch results screen retries a whole playlist at a time, since that is the
+unit the backend converts in. Choosing individual tracks is on the playlist's own
+result page, which each card links to.
+
 ## Download history
 
 **Download history** in the sidebar footer opens what this machine has converted.
@@ -64,6 +81,15 @@ reached, the source it used, the file it wrote, how many times it was retried,
 and - for a track that did not make it - the reason the pipeline recorded. A
 file that has since been deleted from the download folder is called out, so the
 history never sends you looking for something that is gone.
+
+A track that was retried keeps every attempt, so its row can open the list of
+them: what each one decided and why it gave up. Without that, a track that works
+on the third try would show only the third try, and the first two would be
+gone - which is the part worth knowing. The same rows can be ticked and retried
+from here, so the history is somewhere the work can be picked up as well as a
+record of it. A retry needs the ZIP the conversion came from, so once that has
+been cleaned up the page says the upload has expired and to import the ZIP again
+rather than failing obscurely.
 
 The record lives in a small SQLite file next to `preferences.json` in the user
 data directory, on this machine only, and it is created automatically on the

@@ -173,8 +173,7 @@ still in flight is always kept.
 `ProcessingJob` writes the record as it works rather than at the end: the run is
 opened when processing starts, each track's stage is stored as it changes, the
 outcome and output are stored when the track resolves, and the run is closed
-when the playlist finishes, fails, or is retried (a retry requeues only the
-unresolved tracks and counts the attempt on the same rows). The interface the
+when the playlist finishes, fails, or is retried. The interface the
 pages read is `GET /api/history` and `GET /api/history/<id>`; the React pages
 observe that state and never own it. History is best-effort: a history that
 cannot be written or read is reported as unavailable, and never fails a
@@ -185,6 +184,36 @@ only be one the previous session left behind, so it is closed as `cancelled`
 with an error saying the application went away mid-conversion, and the tracks it
 had not finished are cancelled with it. A track that had already finished keeps
 its recorded outcome.
+
+## Retrying a track
+
+A retry is a fresh pass through the pipeline for a track, so it gets its own row
+rather than overwriting the last one. The track row is the attempt that is
+current, and an `attempts` table holds every attempt from the first onwards, so
+the record of what went wrong the first time survives a later success. An
+attempt is opened when the track is queued, written as its stage changes, and
+closed with its outcome when it decides — which includes the cases where it
+never gets the chance: a retry abandons the previous attempt if it was still
+open, a crash does the same through the reconciliation above, and a job that
+dies outright records its unfinished tracks as `failed` with the job's own
+reason, because a track left `queued` would never be retried and would read as
+still in progress until the next start.
+
+Attempt count and retry count are stored separately on purpose. A history written
+before attempts were kept is backfilled on first open by giving each stored track
+the one attempt that is still known, numbered with the retry count it reached,
+so `retry_count` says how many retries happened while the attempt list can be
+shorter than that count. Deriving one from the other would either invent
+attempts that were never recorded or lose the retries that did happen.
+
+A retry also carries forward what the last attempt learned: the failure reason
+stays on the track while it waits, so the interface can say why it is queued
+again, and the sources that attempt refused to validate are withheld from the
+next one. Withholding is deliberate rather than a cache: a source that failed
+source validation is the wrong recording, and re-running it would spend another
+attempt reaching the same conclusion. A download that failed is a different
+matter — that is usually the network, not the source — so those are not treated
+as refused and are not withheld.
 
 ## Diagnostics
 

@@ -1,7 +1,8 @@
-import { Music } from "lucide-react";
+import { Music, RotateCcw } from "lucide-react";
 import type { SnapshotTrack } from "../lib/api";
 import { artworkUrl } from "../lib/api";
 import { statusLabel, TrackStatusIcon } from "../lib/status";
+import { Button } from "./Button";
 
 /**
  * One track row of the live progress lists and the result pages, migrated
@@ -9,6 +10,10 @@ import { statusLabel, TrackStatusIcon } from "../lib/status";
  * placeholder), title with the optional lyrics badge, artists, an outcome
  * reason, and the coloured status icon. Tracks keep their playlist order, so
  * the pages render them by index and only re-read the rows they care about.
+ *
+ * The result pages pass ``retryable`` to offer a retry: either as a checkbox
+ * the user can tick for a batch, or as a single button. The row only asks for
+ * it, so a track that is already downloaded stays out of the way.
  */
 export function TrackRow({
   track,
@@ -16,6 +21,11 @@ export function TrackRow({
   playlistId,
   lyricsBadge = false,
   fileMissingReason = false,
+  retryable = false,
+  selected = false,
+  onToggle = undefined,
+  onRetry = undefined,
+  retryBusy = false,
 }: {
   track: SnapshotTrack;
   jobId: string;
@@ -24,6 +34,16 @@ export function TrackRow({
   lyricsBadge?: boolean;
   /** Replace the generic reason with the "file missing" wording. */
   fileMissingReason?: boolean;
+  /** Offer a retry for this track, because it has nothing usable on disk. */
+  retryable?: boolean;
+  /** Whether the track is ticked for a batch retry. */
+  selected?: boolean;
+  /** Tick or untick the track for a batch retry. */
+  onToggle?: (index: number) => void;
+  /** Retry just this track. */
+  onRetry?: (index: number) => void;
+  /** Whether a retry is running, which only disables the buttons. */
+  retryBusy?: boolean;
 }) {
   const artists = track.artists.length ? track.artists.join(", ") : "";
   const reason = fileMissingReason && track.file_missing
@@ -39,6 +59,15 @@ export function TrackRow({
 
   return (
     <li className="flex items-center gap-3 border-b border-line p-2 last:border-b-0">
+      {retryable && onToggle && (
+        <input
+          type="checkbox"
+          className="size-4 flex-none"
+          checked={selected}
+          onChange={() => onToggle(track.index)}
+          aria-label={`Retry ${track.title}`}
+        />
+      )}
       <span aria-hidden="true" className="w-6 flex-none text-right text-sm text-ink-faint tabular-nums">
         {track.index + 1}
       </span>
@@ -112,6 +141,18 @@ export function TrackRow({
         </div>
       </div>
       <TrackStatusIcon status={track.resolution || track.status} />
+      {retryable && onRetry && (
+        <Button
+          variant="ghost"
+          size="small"
+          busy={retryBusy}
+          onClick={() => onRetry(track.index)}
+          aria-label={`Retry ${track.title}`}
+        >
+          <RotateCcw className="size-4" aria-hidden="true" />
+          Retry
+        </Button>
+      )}
     </li>
   );
 }

@@ -199,12 +199,110 @@ def test_a_retry_requeues_only_its_tracks_and_counts_the_attempt(tmp_path) -> No
     assert kept["output_path"] == "/a.mp3"
     assert retried["status"] == "queued"
     assert retried["retry_count"] == 1
-    assert retried["reason"] == ""
+    # The failure that sent it back to queued is kept, not erased: it is why the
+    # track is queued again, and the attempt row holds the full record.
+    assert retried["reason"] == "no source"
     assert retried["output_path"] is None
     assert retried["finished_at"] is None
     # The run is in flight again while the retry runs.
     assert store.get_run(reference)["status"] == "processing"
     assert store.get_run(reference)["finished_at"] is None
+
+
+def test_a_retry_keeps_the_finished_attempt_of_the_track_it_replaces(tmp_path) -> None:
+    store = store_at(tmp_path)
+    reference = run_ref(store)
+    store.finish_track(
+        reference,
+        0,
+        status="failed",
+        resolution="rejected",
+        source_url="https://example.invalid/a",
+        reason="no candidate passed source validation",
+    )
+    store.finish_run(reference, status="completed")
+
+    store.requeue_tracks(reference, [0])
+    store.finish_track(
+        reference, 0, status="completed", resolution="downloaded", output_path="/a.mp3"
+    )
+
+    track = store.get_run(reference)["tracks"][0]
+    first, second = track["attempts"]
+    assert (first["attempt"], first["status"]) == (1, "failed")
+    assert first["reason"] == "no candidate passed source validation"
+    assert first["source_url"] == "https://example.invalid/a"
+    assert first["finished_at"] is not None
+    assert (second["attempt"], second["status"]) == (2, "completed")
+    assert second["output_path"] == "/a.mp3"
+    # The track row itself reports the attempt that is current.
+    assert track["status"] == "completed"
+    assert track["retry_count"] == 1
+
+
+def test_a_retry_of_a_track_that_never_finished_closes_its_open_attempt(tmp_path) -> None:
+    store = store_at(tmp_path)
+    reference = run_ref(store)
+    store.set_track_stage(reference, 0, status="processing", stage="downloading")
+
+    store.requeue_tracks(reference, [0])
+
+    attempts = store.get_run(reference)["tracks"][0]["attempts"]
+    assert [attempt["attempt"] for attempt in attempts] == [1, 2]
+    assert attempts[0]["status"] == "cancelled"
+    assert attempts[0]["error"] == INTERRUPTED_ERROR
+    assert attempts[0]["finished_at"] is not None
+    assert attempts[1]["status"] == "queued"
+
+
+def test_a_history_written_before_attempts_gets_its_state_backfilled(tmp_path) -> None:
+    """An older database has tracks that were retried with nothing to show for it.
+
+    The attempts it lost cannot be recovered, so the track is given the one
+    attempt that is still known, numbered with the retry count it reached. This
+    is why the two are reported separately rather than derived from each other.
+    """
+    path = tmp_path / "state" / "history.db"
+    store = store_at(tmp_path)
+    reference = run_ref(store)
+    store.finish_track(reference, 0, status="failed", resolution="missing", reason="no source")
+    store.finish_run(reference, status="completed")
+    store.close()
+
+    # Stand in for a database written before the attempts table existed.
+    legacy = sqlite3.connect(path)
+    legacy.execute("DROP TABLE attempts")
+    legacy.execute("UPDATE tracks SET retry_count = 2")
+    legacy.commit()
+    legacy.close()
+
+    reopened = HistoryStore(path)
+    attempts = reopened.get_run(reference)["tracks"][0]["attempts"]
+
+    assert [attempt["attempt"] for attempt in attempts] == [3]
+    assert attempts[0]["status"] == "failed"
+    assert attempts[0]["reason"] == "no source"
+    assert reopened.get_run(reference)["tracks"][0]["retry_count"] == 2
+    reopened.close()
+
+
+def test_attempts_are_dropped_with_the_run_that_keeps_them(tmp_path) -> None:
+    store = store_at(tmp_path, max_runs=1)
+    first = run_ref(store)
+    store.finish_track(first, 0, status="failed", reason="no source")
+    store.finish_run(first, status="completed")
+    store.requeue_tracks(first, [0])
+    store.finish_track(first, 0, status="completed", output_path="/a.mp3")
+    store.finish_run(first, status="completed")
+
+    store.begin_run(RunIdentity("job-2", "0", "Other", 1), [track("Second")])
+    store.finish_run(store.list_runs(limit=1)[0]["id"], status="completed")
+
+    # Retention drops the oldest run, and the attempt rows go with their track
+    # rather than being left behind as orphans.
+    assert store.get_run(first) is None
+    remaining = store.get_run(store.list_runs(limit=1)[0]["id"])
+    assert [entry["attempt"] for entry in remaining["tracks"][0]["attempts"]] == [1]
 
 
 def test_a_finished_run_records_its_playlist_and_its_error(tmp_path) -> None:

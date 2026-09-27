@@ -109,6 +109,22 @@ class JobTimeoutError(RuntimeError):
     """The overall wall-clock time budget for a job was exceeded."""
 
 
+class TrackNotRetryableError(ValueError):
+    """A retry asked for tracks that have nothing left to redo.
+
+    A track whose audio is still on disk is finished, not retryable: sending it
+    through the pipeline again would download it a second time, which is a
+    different operation from retrying a failure.
+    """
+
+    def __init__(self, indices: Sequence[int]) -> None:
+        self.indices = tuple(indices)
+        listed = ", ".join(str(index) for index in self.indices)
+        super().__init__(
+            f"these tracks are already complete and their files are still there: {listed}"
+        )
+
+
 @dataclass(frozen=True)
 class TrackJobState:
     """The observable processing state of a single playlist track."""
@@ -121,6 +137,8 @@ class TrackJobState:
     local_path: str | None = None
     source_url: str | None = None
     resolution: str = ""
+    # How many times this track has been retried; 0 is a first, un-retried try.
+    attempts: int = 0
     # Monotonic-epoch time (seconds) the current status began; lets the UI
     # estimate how long the in-flight track has been stuck in this stage.
     stage_started_at: float | None = None
@@ -135,6 +153,7 @@ class TrackJobState:
             "local_path": self.local_path,
             "source_url": self.source_url,
             "resolution": self.resolution,
+            "attempts": self.attempts,
             "stage_started_at": (
                 int(self.stage_started_at * 1000) if self.stage_started_at is not None else None
             ),
@@ -209,6 +228,9 @@ class ProcessingJob:
         self._history_stages: list[str] = [""] * len(self.tracks)
         # Set while a retry is running: the tracks the progress belongs to.
         self._pending: tuple[int, ...] | None = None
+        # Sources a previous attempt turned down, per track, so a retry lets the
+        # search pipeline find an alternative instead of repeating the rejection.
+        self._excluded_sources: dict[int, frozenset[str]] = {}
         # The in-flight playlist-level artist-artwork prefetch, if any.
         self._prefetch_thread: threading.Thread | None = None
 
@@ -281,26 +303,36 @@ class ProcessingJob:
         if thread is not None:
             thread.join(timeout)
 
-    def retry(self) -> tuple[int, ...]:
-        """Re-resolve every track that has no usable audio file on disk.
+    def retry(self, indices: Sequence[int] | None = None) -> tuple[int, ...]:
+        """Re-resolve tracks that have no usable audio file on disk.
 
-        Tracks that still have their resolved file keep their result and are
-        never processed again, so a retry costs only the unresolved tracks. A
-        track whose file was deleted by hand counts as unresolved too, so
-        deleting the download folder and retrying re-downloads the playlist
-        instead of quietly reporting it as complete. The M3U is rewritten from
-        the merged results once the retry settles.
+        With no ``indices`` this picks every track that needs it: a track whose
+        resolved file is still there keeps its result and is never processed
+        again, and a track whose file was deleted by hand counts as needing it,
+        so deleting the download folder and retrying re-downloads the playlist
+        instead of quietly reporting it as complete. Passing ``indices`` retries
+        exactly those tracks, which is what a single-track or selected-set retry
+        uses; a requested track that is already finished with its file in place
+        raises :class:`TrackNotRetryableError` rather than downloading it twice.
+
+        Either way the retried tracks go back to queued with their attempt
+        count raised and their previous failure reason kept, the sources an
+        earlier attempt rejected are withheld from the next one, and the M3U is
+        rewritten from the merged results once the retry settles.
         """
         with self._lock:
             if self._status in {"queued", "running"}:
                 raise JobStartError("job is still running")
             self._started_at = self._started_at or time.time()
-            indices = tuple(
-                index
-                for index, result in enumerate(self._results)
-                if result is None or not result.successful or _missing_output(result)
-            )
-            if not indices:
+            if indices is None:
+                selected = tuple(
+                    index
+                    for index, result in enumerate(self._results)
+                    if result is None or not result.successful or _missing_output(result)
+                )
+            else:
+                selected = self._validated_retry_indices(indices)
+            if not selected:
                 return ()
             # A track that is about to be downloaded again must not keep the
             # artwork of the file the user deleted: the release entry is dropped
@@ -308,16 +340,30 @@ class ProcessingJob:
             # track on disk (or another track in this retry) keep their shared
             # profile image.
             self._forget_artwork_for_missing_outputs()
-            self._pending = indices
+            self._pending = selected
             self._searched = 0
             self._resolved = 0
             self._error = None
             self._status = "running"
             self._deadline = time.monotonic() + self.timeout if self.timeout is not None else None
-            for index in indices:
+            self._excluded_sources = {
+                index: self._rejected_sources(self._results[index])
+                for index in selected
+                if self._results[index] is not None
+            }
+            for index in selected:
                 current = self._track_states[index]
                 self._track_states[index] = TrackJobState(
-                    current.index, current.title, current.artists, "queued"
+                    current.index,
+                    current.title,
+                    current.artists,
+                    "queued",
+                    # The reason the last attempt failed is kept while the track
+                    # waits: it is why this track is queued again.
+                    reason=current.reason,
+                    source_url=current.source_url,
+                    resolution=current.resolution,
+                    attempts=current.attempts + 1,
                 )
                 # The retried tracks are recorded as waiting again, so the
                 # attempt that is about to start is written to the history.
@@ -325,17 +371,53 @@ class ProcessingJob:
                 self._history_stages[index] = ""
             self._thread = threading.Thread(
                 target=self._process,
-                args=(indices,),
+                args=(selected,),
                 name=f"spotm3u-job-{self.job_id}-retry",
                 daemon=True,
             )
         TrackLogger(logger, job_id=self.job_id).info(
-            "retrying %d unresolved track(s)", len(indices)
+            "retrying %d track(s): %s",
+            len(selected),
+            ", ".join(str(index) for index in selected) or "none",
         )
         if self._history is not None and self._history_ref is not None:
-            self._history.requeue_tracks(self._history_ref, indices)
+            self._history.requeue_tracks(self._history_ref, selected)
         self._thread.start()
-        return indices
+        return selected
+
+    def _validated_retry_indices(self, indices: Sequence[int]) -> tuple[int, ...]:
+        """The requested tracks to retry, refusing the ones that are finished.
+
+        Callers pass a selection from the interface, so an index that is out of
+        range, repeated, or already complete is refused here rather than
+        producing a confusing partial retry. Must be called under the lock.
+        """
+        total = len(self.tracks)
+        chosen: list[int] = []
+        seen: set[int] = set()
+        finished: list[int] = []
+        for raw in indices:
+            index = int(raw)
+            if not 0 <= index < total:
+                raise IndexError(f"track index out of range: {index}")
+            if index in seen:
+                raise ValueError(f"duplicate track index in one retry: {index}")
+            seen.add(index)
+            result = self._results[index]
+            if result is not None and result.successful and not _missing_output(result):
+                finished.append(index)
+                continue
+            chosen.append(index)
+        if finished:
+            raise TrackNotRetryableError(sorted(finished))
+        return tuple(chosen)
+
+    @staticmethod
+    def _rejected_sources(result: TrackResolution | None) -> frozenset[str]:
+        """The sources a finished attempt turned down, for the next one to skip."""
+        if result is None:
+            return frozenset()
+        return frozenset(result.rejected_urls)
 
     def _forget_artwork_for_missing_outputs(self) -> None:
         """Prune cached artwork for deleted downloads, never for live ones."""
@@ -418,6 +500,12 @@ class ProcessingJob:
                 self._error = message
                 self._status = "failed"
                 self._completed_at = time.time()
+            # Whatever was still in flight when the job gave up has to reach a
+            # decision here: a track left mid-stage would never be retried,
+            # because the job has stopped, and the history would keep it as
+            # processing until the next start. It failed, so it is recorded as
+            # failed, with the same reason the job reports.
+            self._abandon_tracks(indices, message)
             self._finish_history("failed", error=message)
             # The user-facing message above is what the UI shows; the traceback
             # stays here for debugging.
@@ -426,6 +514,50 @@ class ProcessingJob:
             # The artist prefetch shares this run's cache and must not outlive
             # it, or a later job (or test) could see requests it did not make.
             self._join_prefetch()
+            self._excluded_sources = {}
+
+    def _abandon_tracks(self, indices: tuple[int, ...] | None, message: str) -> None:
+        """Give every track without a decision the job's failure, so none is stuck.
+
+        This covers the tracks the pipeline never reached and the ones a crashed
+        run left in flight, including the parallel case where a sibling raised
+        and its own results were never read. They all get one recorded outcome,
+        which is what makes them retryable and keeps the history honest.
+
+        A track is unfinished when its state is still waiting or in progress,
+        which is the only thing that says this run has not decided it. A retried
+        track still holds the result of the attempt before it, so that result
+        cannot be used to tell the two apart: the state can, and it is the state
+        that the interface reads.
+        """
+        total = len(self.tracks)
+        selected = tuple(range(total)) if indices is None else indices
+        TrackLogger(logger, job_id=self.job_id).info(
+            "recording %d unfinished track(s) as failed", len(selected)
+        )
+        for index in selected:
+            with self._lock:
+                if self._track_states[index].status not in {"queued", "processing"}:
+                    continue
+                current = self._track_states[index]
+                self._results[index] = self._abandoned_resolution(index, message)
+                self._track_states[index] = TrackJobState(
+                    current.index,
+                    current.title,
+                    current.artists,
+                    "failed",
+                    message,
+                    current.local_path,
+                    current.source_url,
+                    "failed",
+                    current.attempts,
+                    current.stage_started_at,
+                )
+            self._record_final_track(index, self._results[index])
+
+    def _abandoned_resolution(self, index: int, message: str) -> TrackResolution:
+        """A failed resolution standing in for a track that never produced one."""
+        return TrackResolution(self.tracks[index], "failed", reasons=(message,))
 
     def _resolve_all(
         self,
@@ -506,7 +638,11 @@ class ProcessingJob:
                 with self._lock:
                     self._current_index = index
                 self._check_deadline()
-                result = resolver.resolve(tracks[index], stage_callback=self._stage_reporter(index))
+                result = resolver.resolve(
+                    tracks[index],
+                    stage_callback=self._stage_reporter(index),
+                    exclude_urls=self._excluded_sources.get(index, frozenset()),
+                )
                 submit_metadata(index, result)
                 self._mark_searched(index)
             join_prefetch()
@@ -549,7 +685,9 @@ class ProcessingJob:
 
             def phase_two(index_plan):
                 return resolver.complete(
-                    index_plan[1], stage_callback=self._stage_reporter(index_plan[0])
+                    index_plan[1],
+                    stage_callback=self._stage_reporter(index_plan[0]),
+                    exclude_urls=self._excluded_sources.get(index_plan[0], frozenset()),
                 )
 
             with ThreadPoolExecutor(
@@ -601,6 +739,7 @@ class ProcessingJob:
                 current.local_path,
                 current.source_url,
                 current.resolution,
+                current.attempts,
                 time.time(),
             )
         log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])
@@ -622,6 +761,7 @@ class ProcessingJob:
                     current.local_path,
                     current.source_url,
                     current.resolution,
+                    current.attempts,
                     time.time(),
                 )
         TrackLogger(logger, job_id=self.job_id, track=self.tracks[index]).debug(
@@ -646,6 +786,7 @@ class ProcessingJob:
                 str(result.local_path) if result.local_path is not None else None,
                 result.source_url,
                 result.status,
+                current.attempts,
                 current.stage_started_at,
             )
         log = TrackLogger(logger, job_id=self.job_id, track=self.tracks[index])

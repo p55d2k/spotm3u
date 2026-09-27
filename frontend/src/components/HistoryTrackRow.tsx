@@ -1,4 +1,5 @@
-import { Music } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Music } from "lucide-react";
 import type { HistoryTrack } from "../lib/api";
 import { RunStatusIcon, statusLabel } from "../lib/status";
 import { formatWhen } from "../lib/history";
@@ -9,17 +10,47 @@ import { formatWhen } from "../lib/history";
  * and why it failed if it did. The stored stage and timestamps are shown as the
  * record they are, so a track that stopped mid-download reads as one that never
  * finished rather than as a silent gap.
+ *
+ * A track that was retried keeps every attempt, so the row can open the list of
+ * them: what each attempt decided and why it gave up. Without that, a retry
+ * would erase the record of what went wrong the first time.
  */
-export function HistoryTrackRow({ track }: { track: HistoryTrack }) {
+export function HistoryTrackRow({
+  track,
+  retryable = false,
+  selected = false,
+  onToggle = undefined,
+}: {
+  track: HistoryTrack;
+  /** Offer a retry, for a track that has nothing usable left. */
+  retryable?: boolean;
+  /** Whether the track is ticked for a retry. */
+  selected?: boolean;
+  /** Tick or untick the track for a retry. */
+  onToggle?: (position: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
   const resolutionTag = track.resolution ? statusLabel(track.resolution) : "";
   const reasons = [track.reason, track.error].filter((text) => text && text !== track.resolution);
   // The stage a track was last seen at only says something about a track that
   // never finished; for a resolved one the resolution is the outcome.
   const stage = track.status === "completed" ? "" : track.stage;
   const when = formatWhen(track.finished_at ?? track.started_at ?? track.queued_at);
+  // The last attempt is the track as it is now, which the row already shows, so
+  // the list is only worth opening when there is something before it.
+  const earlier = track.attempts.slice(0, -1);
 
   return (
     <li className="flex items-start gap-3 border-b border-line p-3 last:border-b-0">
+      {retryable && onToggle && (
+        <input
+          type="checkbox"
+          className="mt-1 size-4 flex-none"
+          checked={selected}
+          onChange={() => onToggle(track.position)}
+          aria-label={`Retry ${track.title}`}
+        />
+      )}
       <span aria-hidden="true" className="mt-0.5 w-6 flex-none text-right text-sm text-ink-faint tabular-nums">
         {track.position + 1}
       </span>
@@ -84,6 +115,40 @@ export function HistoryTrackRow({ track }: { track: HistoryTrack }) {
             </span>
           ) : null}
         </div>
+        {earlier.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="mt-1 inline-flex items-center gap-1 rounded-sm border border-line bg-surface-subtle px-1.5 py-px text-[0.6875rem] leading-4 font-medium text-ink-muted"
+              aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+            >
+              {open ? (
+                <ChevronDown className="size-3" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="size-3" aria-hidden="true" />
+              )}
+              {open ? "Hide" : "Show"} {earlier.length} earlier attempt
+              {earlier.length === 1 ? "" : "s"}
+            </button>
+            {open && (
+              <ol className="m-0 mt-1 list-none border-l-2 border-line pl-3">
+                {earlier.map((attempt) => (
+                  <li key={attempt.attempt} className="mb-1 text-xs text-ink-muted last:mb-0">
+                    <span className="font-medium text-ink">
+                      Attempt {attempt.attempt}: {statusLabel(attempt.status)}
+                    </span>
+                    {attempt.reason ? ` — ${attempt.reason}` : ""}
+                    {attempt.error ? ` (${attempt.error})` : ""}
+                    {attempt.source_url ? (
+                      <span className="block break-all text-ink-faint">{attempt.source_url}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </>
+        )}
       </div>
       <RunStatusIcon status={track.status} />
     </li>

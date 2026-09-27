@@ -16,6 +16,7 @@ models, search primitives, downloader and M3U writer.
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from pathlib import Path
 
 from .audio.resolver import LocalAudioResolver
@@ -157,6 +158,7 @@ class FastTrackResolver(TrackResolver):
         prepared: PreparedTrack,
         *,
         stage_callback: TrackStageCallback | None = None,
+        exclude_urls: Collection[str] = (),
     ) -> TrackResolution:
         """Download the first candidate that produces a complete file.
 
@@ -164,6 +166,8 @@ class FastTrackResolver(TrackResolver):
         further searches and no source/audio validation. A download that fails
         moves on to the next candidate from the same result set, and if none
         succeeds the track fails without entering the normal pipeline.
+        ``exclude_urls`` names candidates a previous attempt already turned
+        down, so a retry downloads something else.
         """
 
         def report(stage: TrackStage) -> None:
@@ -174,6 +178,12 @@ class FastTrackResolver(TrackResolver):
         log = self._log.with_track(track)
         download_failures = 0
         for ranking in prepared.rankings:
+            if exclude_urls and ranking.candidate.url in exclude_urls:
+                log.info(
+                    "candidate skipped url=%s mode=fast reason=rejected by an earlier attempt",
+                    ranking.candidate.url,
+                )
+                continue
             report("downloading")
             log.info("stage=downloading url=%s mode=fast", ranking.candidate.url)
             try:
@@ -207,6 +217,10 @@ class FastTrackResolver(TrackResolver):
                 ranking=prepared.rankings,
             )
 
+        # No source is recorded as rejected here: fast mode never validates a
+        # source, so a failed download says the fetch failed, not that the URL
+        # is unusable. A retry therefore re-proposes it, which is what lets a
+        # transient download failure succeed the second time.
         if download_failures:
             log.error(
                 "resolution status=failed mode=fast reasons=%d download attempt(s) failed",

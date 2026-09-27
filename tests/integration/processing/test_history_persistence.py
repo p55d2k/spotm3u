@@ -9,7 +9,7 @@ as it did before.
 from pathlib import Path
 
 from spotm3u.history import HistoryStore
-from spotm3u.jobs import ProcessingJob
+from spotm3u.jobs import JOB_FAILURE_MESSAGE, ProcessingJob
 from spotm3u.models import ResolvedTrack, Track
 from spotm3u.resolution import TrackResolution
 
@@ -24,7 +24,7 @@ class FakeResolver:
     def __init__(self, outcomes) -> None:
         self.outcomes = list(outcomes)
 
-    def resolve(self, track, *, stage_callback=None):
+    def resolve(self, track, *, stage_callback=None, exclude_urls=()):
         if stage_callback is not None:
             for stage in ("resolving-local", "searching", "downloading", "validating-audio"):
                 stage_callback(stage)
@@ -141,8 +141,12 @@ def test_a_conversion_that_dies_records_the_run_as_failed(tmp_path) -> None:
     assert run["status"] == "failed"
     assert run["error"]
     assert run["finished_at"] is not None
-    # The track never reached a decision, so it is still recorded as waiting.
-    assert run["tracks"][0]["status"] == "queued"
+    # The track never reached a decision of its own, so it is recorded as
+    # failed with the job's reason: a track left queued would never be
+    # retryable, and would sit in the history as processing until a restart.
+    assert run["tracks"][0]["status"] == "failed"
+    assert run["tracks"][0]["reason"] == JOB_FAILURE_MESSAGE
+    assert run["tracks"][0]["finished_at"] is not None
 
 
 def test_a_retry_is_recorded_as_another_attempt_on_the_same_run(tmp_path) -> None:

@@ -168,8 +168,30 @@ CREATE TABLE IF NOT EXISTS tracks (
     UNIQUE (run_ref, position)
 );
 
+-- One row per attempt at a track. ``tracks`` holds the attempt that is current
+-- so every count, filter and listing reads one table; this keeps what the
+-- earlier attempts did, which is the whole point of retrying: a failed attempt
+-- must still be readable after the next one replaces it.
+CREATE TABLE IF NOT EXISTS attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_ref INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    attempt INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    stage TEXT NOT NULL DEFAULT '',
+    resolution TEXT NOT NULL DEFAULT '',
+    source_url TEXT,
+    output_path TEXT,
+    reason TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '',
+    queued_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    UNIQUE (track_ref, attempt)
+);
+
 CREATE INDEX IF NOT EXISTS tracks_run_status ON tracks (run_ref, status);
 CREATE INDEX IF NOT EXISTS runs_status ON runs (status);
+CREATE INDEX IF NOT EXISTS attempts_track ON attempts (track_ref, attempt);
 """
 
 
@@ -306,6 +328,11 @@ class HistoryStore:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA busy_timeout = 5000")
             connection.executescript(_SCHEMA)
+            self._backfill_attempts(connection)
+            # The backfill writes, so it has to be committed here: reconcile()
+            # below returns without committing when no run is in flight, which
+            # would leave this transaction open and lock the file.
+            connection.commit()
         except (OSError, sqlite3.Error) as exc:
             self._failure = str(exc)
             logger.warning("Processing history is unavailable at %s: %s", self.path, exc)
@@ -319,6 +346,51 @@ class HistoryStore:
             connection, self._connection = self._connection, None
         if connection is not None:
             connection.close()
+
+    @staticmethod
+    def _open_first_attempt(
+        connection: sqlite3.Connection,
+        run_ref: int,
+        position: int,
+        now: int,
+    ) -> None:
+        """Give a newly queued track its first attempt row.
+
+        A run that already stored the track has its attempts; only a track seen
+        for the first time needs one opened, which is why this checks before
+        inserting rather than relying on the unique index to fail.
+        """
+        track = connection.execute(
+            "SELECT id FROM tracks WHERE run_ref = ? AND position = ?", (run_ref, position)
+        ).fetchone()
+        if track is None:
+            return
+        track_ref = int(track["id"])
+        connection.execute(
+            "INSERT INTO attempts (track_ref, attempt, status, stage, queued_at) "
+            "SELECT ?, 1, 'queued', 'queued', ? WHERE NOT EXISTS ("
+            "SELECT 1 FROM attempts WHERE track_ref = ?)",
+            (track_ref, now, track_ref),
+        )
+
+    @staticmethod
+    def _backfill_attempts(connection: sqlite3.Connection) -> None:
+        """Give every already stored track a first attempt row.
+
+        The attempts table arrived after the tracks table, so a history written
+        by an earlier version has rows that were retried without their earlier
+        attempts being kept. Those attempts are simply gone, and this records
+        what is still known: the current state, as attempt ``retry_count + 1``.
+        A track retried three times therefore lists one attempt numbered 4, which
+        is why the API reports the retry count separately from the attempt list.
+        """
+        connection.execute(
+            "INSERT INTO attempts (track_ref, attempt, status, stage, resolution, source_url, "
+            "output_path, reason, error, queued_at, started_at, finished_at) "
+            "SELECT id, retry_count + 1, status, stage, resolution, source_url, output_path, "
+            "reason, error, queued_at, started_at, finished_at FROM tracks "
+            "WHERE id NOT IN (SELECT track_ref FROM attempts)"
+        )
 
     def reconcile(self) -> None:
         """Close out the runs an earlier session left in flight.
@@ -353,10 +425,38 @@ class HistoryStore:
                 )
                 connection.execute(mark_runs, (INTERRUPTED_ERROR, now, *references))
                 connection.execute(mark_tracks, (INTERRUPTED_ERROR, now, *references))
+                self._cancel_open_attempts(connection, now, INTERRUPTED_ERROR)
                 connection.commit()
             except sqlite3.Error as exc:
                 connection.rollback()
                 logger.warning("Processing history could not be closed out: %s", exc)
+
+    @staticmethod
+    def _cancel_open_attempts(
+        connection: sqlite3.Connection,
+        now: int,
+        error: str,
+        track_refs: Sequence[int] | None = None,
+    ) -> None:
+        """Finish the attempt rows that never reached a decision.
+
+        An attempt is written when a retry starts, so one without a
+        ``finished_at`` is an attempt that was abandoned rather than one that
+        completed. Restricting the sweep to ``track_refs`` keeps a retry from
+        closing the attempts of the tracks it did not pick up.
+        """
+        sql = (
+            "UPDATE attempts SET status = 'cancelled', error = ?, finished_at = ? "
+            "WHERE finished_at IS NULL"
+        )
+        if track_refs is None:
+            connection.execute(sql, (error, now))
+            return
+        placeholders = ", ".join("?" * len(track_refs))
+        connection.execute(
+            f"{sql} AND track_ref IN ({placeholders})",
+            (error, now, *track_refs),
+        )
 
     # -- writes ------------------------------------------------------------
 
@@ -444,6 +544,7 @@ class HistoryStore:
                     connection.execute(
                         _QUEUE_TRACK_SQL, _queue_parameters(run_ref, position, track, now)
                     )
+                    self._open_first_attempt(connection, run_ref, position, now)
                 connection.commit()
             except sqlite3.Error as exc:
                 connection.rollback()
@@ -471,35 +572,68 @@ class HistoryStore:
         stage: str = "",
         resolution: str = "",
         source_url: str | None = None,
-        output_path: str | None = None,
+        output_path: str | Path | None = None,
         reason: str = "",
         error: str = "",
     ) -> None:
-        """Record a track's final state, with what produced it."""
-        self._write(
+        """Record a track's final state, with what produced it.
+
+        The attempt that was running is closed with the same values, so a later
+        retry that replaces the track row leaves this outcome readable.
+        """
+        now = _now_ms()
+        self._write_many(
             "recording a finished track",
-            "UPDATE tracks SET status = ?, stage = ?, resolution = ?, source_url = ?, "
-            "output_path = ?, reason = ?, error = ?, finished_at = ? "
-            "WHERE run_ref = ? AND position = ?",
             (
-                status,
-                _text(stage, 64) or _text(resolution, 64),
-                _text(resolution, 64),
-                _text(source_url) or None,
-                _text(output_path) or None,
-                _text(reason),
-                _text(error),
-                _now_ms(),
-                run_ref,
-                position,
+                (
+                    "UPDATE tracks SET status = ?, stage = ?, resolution = ?, source_url = ?, "
+                    "output_path = ?, reason = ?, error = ?, finished_at = ? "
+                    "WHERE run_ref = ? AND position = ?",
+                    (
+                        status,
+                        _text(stage, 64) or _text(resolution, 64),
+                        _text(resolution, 64),
+                        _text(source_url) or None,
+                        _text(output_path) or None,
+                        _text(reason),
+                        _text(error),
+                        now,
+                        run_ref,
+                        position,
+                    ),
+                ),
+                (
+                    "UPDATE attempts SET status = ?, stage = ?, resolution = ?, source_url = ?, "
+                    "output_path = ?, reason = ?, error = ?, started_at = COALESCE(started_at, ?), "
+                    "finished_at = ? WHERE id = (SELECT id FROM attempts WHERE track_ref = "
+                    "(SELECT id FROM tracks WHERE run_ref = ? AND position = ?) "
+                    "ORDER BY attempt DESC LIMIT 1)",
+                    (
+                        status,
+                        _text(stage, 64) or _text(resolution, 64),
+                        _text(resolution, 64),
+                        _text(source_url) or None,
+                        _text(output_path) or None,
+                        _text(reason),
+                        _text(error),
+                        now,
+                        now,
+                        run_ref,
+                        position,
+                    ),
+                ),
             ),
         )
 
     def requeue_tracks(self, run_ref: int, positions: Sequence[int]) -> None:
-        """Put the retried tracks back to ``queued`` and count the attempt.
+        """Put the retried tracks back to ``queued`` and start a new attempt.
 
         The finished rows of the tracks that are not being retried are left
-        alone, so a retry costs only the tracks it picked up.
+        alone, so a retry costs only the tracks it picked up. A retried track
+        keeps the reason and source of the attempt that failed until the new
+        one lands -- the queued row has to say why it is queued -- and the
+        attempt it replaces is closed as cancelled rather than dropped, so
+        nothing about the earlier failure is lost.
         """
         now = _now_ms()
         with self._lock:
@@ -514,11 +648,25 @@ class HistoryStore:
                 )
                 for position in positions:
                     connection.execute(
-                        "UPDATE tracks SET status = 'queued', stage = 'queued', reason = '', "
-                        "error = '', resolution = '', source_url = NULL, output_path = NULL, "
-                        "retry_count = retry_count + 1, queued_at = ?, started_at = NULL, "
-                        "finished_at = NULL WHERE run_ref = ? AND position = ?",
+                        "UPDATE tracks SET status = 'queued', stage = 'queued', "
+                        "output_path = NULL, retry_count = retry_count + 1, queued_at = ?, "
+                        "started_at = NULL, finished_at = NULL "
+                        "WHERE run_ref = ? AND position = ?",
                         (now, run_ref, position),
+                    )
+                    track = connection.execute(
+                        "SELECT id FROM tracks WHERE run_ref = ? AND position = ?",
+                        (run_ref, position),
+                    ).fetchone()
+                    if track is None:
+                        continue
+                    track_ref = int(track["id"])
+                    self._cancel_open_attempts(connection, now, INTERRUPTED_ERROR, (track_ref,))
+                    connection.execute(
+                        "INSERT INTO attempts (track_ref, attempt, status, stage, queued_at) "
+                        "SELECT id, retry_count + 1, 'queued', 'queued', ? FROM tracks "
+                        "WHERE id = ?",
+                        (now, track_ref),
                     )
                 connection.commit()
             except sqlite3.Error as exc:
@@ -619,18 +767,33 @@ class HistoryStore:
         return int(rows[0]["total"]) if rows else 0
 
     def get_run(self, run_ref: int) -> dict[str, object] | None:
-        """One run with its tracks in playlist order, or ``None``."""
+        """One run with its tracks in playlist order, or ``None``.
+
+        Each track carries its attempts, so the interface can show what an
+        earlier retry did without a second request.
+        """
         rows = self._query("SELECT * FROM runs WHERE id = ?", (int(run_ref),))
         if not rows:
             return None
         run = self._run_payload(rows[0])
-        run["tracks"] = [
-            self._track_payload(row)
+        tracks: list[dict[str, object]] = []
+        for row in self._query(
+            "SELECT * FROM tracks WHERE run_ref = ? ORDER BY position", (int(run_ref),)
+        ):
+            track = self._track_payload(row)
+            track["attempts"] = self._attempts_for(int(row["id"]))
+            tracks.append(track)
+        run["tracks"] = tracks
+        return run
+
+    def _attempts_for(self, track_ref: int) -> list[dict[str, object]]:
+        """Every attempt at one track, oldest first, as the API reports them."""
+        return [
+            self._attempt_payload(row)
             for row in self._query(
-                "SELECT * FROM tracks WHERE run_ref = ? ORDER BY position", (int(run_ref),)
+                "SELECT * FROM attempts WHERE track_ref = ? ORDER BY attempt", (track_ref,)
             )
         ]
-        return run
 
     def _run_payload(self, row: sqlite3.Row) -> dict[str, object]:
         """One run as the API reports it, with its per-state track counts.
@@ -679,6 +842,23 @@ class HistoryStore:
             "error": str(row["error"]),
             "retry_count": int(row["retry_count"]),
             "cancelled": bool(row["cancelled"]),
+            "queued_at": int(row["queued_at"]),
+            "started_at": int(row["started_at"]) if row["started_at"] is not None else None,
+            "finished_at": int(row["finished_at"]) if row["finished_at"] is not None else None,
+        }
+
+    @staticmethod
+    def _attempt_payload(row: sqlite3.Row) -> dict[str, object]:
+        """One recorded attempt as the API reports it."""
+        return {
+            "attempt": int(row["attempt"]),
+            "status": str(row["status"]),
+            "stage": str(row["stage"]),
+            "resolution": str(row["resolution"]),
+            "source_url": row["source_url"],
+            "output_path": row["output_path"],
+            "reason": str(row["reason"]),
+            "error": str(row["error"]),
             "queued_at": int(row["queued_at"]),
             "started_at": int(row["started_at"]) if row["started_at"] is not None else None,
             "finished_at": int(row["finished_at"]) if row["finished_at"] is not None else None,

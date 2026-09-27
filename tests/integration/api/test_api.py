@@ -417,7 +417,7 @@ def test_result_waits_until_every_playlist_finished(tmp_path, monkeypatch) -> No
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
-        def resolve(self, track, stage_callback=None):
+        def resolve(self, track, stage_callback=None, exclude_urls=()):
             started.set()
             release.wait(timeout=10)
             return TrackResolution(track=track, status="failed", reason="blocked")
@@ -451,8 +451,86 @@ def test_retry_reports_how_many_tracks_it_picked_up(tmp_path, monkeypatch) -> No
     response = client.post(f"/api/jobs/{job_id}/playlists/1/processing/retry")
 
     assert response.status_code == 200
-    assert response.get_json()["retried"] == 1
+    payload = response.get_json()
+    assert payload["retried"] == 1
+    # The picked-up tracks are named so the interface can show which rows it is
+    # waiting on without having to guess from the counts.
+    assert payload["tracks"] == [0]
     client.application.config["JOB_MANAGER"].get(job_id, "1").wait(timeout=10)
+
+
+def test_retry_of_a_named_track_reports_that_track(tmp_path, monkeypatch) -> None:
+    client, job_id, music = _finished(tmp_path, monkeypatch)
+    (music / "Artist - Second.mp3").unlink()
+
+    response = client.post(f"/api/jobs/{job_id}/playlists/1/processing/retry", json={"tracks": [0]})
+    client.application.config["JOB_MANAGER"].get(job_id, "1").wait(timeout=10)
+
+    assert response.status_code == 200
+    assert response.get_json()["retried"] == 1
+    assert response.get_json()["tracks"] == [0]
+
+
+def test_retry_refuses_a_track_that_is_already_downloaded(tmp_path, monkeypatch) -> None:
+    client, job_id, _music = _finished(tmp_path, monkeypatch)
+    # Track 0 is on disk, so a retry of it would download a second copy.
+    complete = client.get(f"/api/jobs/{job_id}/playlists/1/processing").get_json()["tracks"][0]
+    assert complete["status"] == "complete"
+
+    response = client.post(f"/api/jobs/{job_id}/playlists/1/processing/retry", json={"tracks": [0]})
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["code"] == "track_not_retryable"
+    assert "0" in body["error"]
+
+
+def test_retry_refuses_a_selection_it_cannot_act_on(tmp_path, monkeypatch) -> None:
+    client, job_id, _music = _finished(tmp_path, monkeypatch)
+    url = f"/api/jobs/{job_id}/playlists/1/processing/retry"
+
+    for body in (
+        {"tracks": []},
+        {"tracks": [9]},
+        {"tracks": [0, 0]},
+        {"tracks": ["0"]},
+        {"tracks": [True]},
+        [0],
+    ):
+        response = client.post(url, json=body)
+        assert response.status_code == 400, body
+        assert response.get_json()["code"] == "retry_invalid", body
+
+
+def test_retry_of_a_running_job_is_refused_even_with_a_selection(tmp_path, monkeypatch) -> None:
+    release = threading.Event()
+    started = threading.Event()
+
+    class BlockingResolver:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def resolve(self, track, stage_callback=None, exclude_urls=()):
+            started.set()
+            release.wait(timeout=10)
+            return TrackResolution(track=track, status="failed", reason="blocked")
+
+    monkeypatch.setattr("spotm3u.web_jobs.TrackResolver", BlockingResolver)
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kwargs: NoCandidates())
+    client = _client(tmp_path, RESOLVE_WORKERS=1)
+    job_id = _upload(tmp_path, client)
+    client.post(f"/api/jobs/{job_id}/processing", json={"playlist_ids": ["1"]})
+    assert started.wait(timeout=10)
+    try:
+        response = client.post(
+            f"/api/jobs/{job_id}/playlists/1/processing/retry", json={"tracks": [0]}
+        )
+    finally:
+        release.set()
+    client.application.config["JOB_MANAGER"].get(job_id, "1").wait(timeout=10)
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "job_running"
 
 
 def test_retry_refuses_a_playlist_that_is_still_running(tmp_path, monkeypatch) -> None:
@@ -463,7 +541,7 @@ def test_retry_refuses_a_playlist_that_is_still_running(tmp_path, monkeypatch) -
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
-        def resolve(self, track, stage_callback=None):
+        def resolve(self, track, stage_callback=None, exclude_urls=()):
             started.set()
             release.wait(timeout=10)
             return TrackResolution(track=track, status="failed", reason="blocked")

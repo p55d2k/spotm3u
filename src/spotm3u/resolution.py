@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -64,6 +64,9 @@ class TrackResolution:
     validation: SourceValidation | None = None
     audio_validation: AudioValidation | None = None
     reasons: tuple[str, ...] = ()
+    # The candidates this attempt turned down, kept so a retry can let the
+    # search pipeline look elsewhere instead of re-proposing the same source.
+    rejected_urls: tuple[str, ...] = ()
 
     @property
     def local_path(self) -> Path | None:
@@ -243,12 +246,16 @@ class TrackResolver:
         prepared: PreparedTrack,
         *,
         stage_callback: TrackStageCallback | None = None,
+        exclude_urls: Collection[str] = (),
     ) -> TrackResolution:
         """Download and validate the best candidate for a prepared track.
 
         ``prepared`` is a :class:`PreparedTrack` returned by :meth:`prepare`.
         Candidates are tried in ranking order, downloading and validating each
         until one passes audio validation or every candidate is exhausted.
+        ``exclude_urls`` names candidates an earlier attempt already turned
+        down, so a retry looks for a different source rather than repeating the
+        same rejection.
         """
         track = prepared.track
         candidates = prepared.candidates
@@ -266,6 +273,15 @@ class TrackResolver:
             tuple[Path, CandidateRanking, SourceValidation, AudioValidation] | None
         ) = None
         for position, ranking in enumerate(rankings, start=1):
+            if exclude_urls and ranking.candidate.url in exclude_urls:
+                # A previous attempt already turned this source down. Skipping it
+                # here is not a validation bypass: the candidates after it are
+                # ranked, downloaded and validated exactly as they would be.
+                log.info(
+                    "candidate skipped url=%s reason=rejected by an earlier attempt",
+                    ranking.candidate.url,
+                )
+                continue
             report("validating-source")
             source_validation = validate_source_candidate(track, ranking.candidate)
             log.info(
@@ -407,6 +423,7 @@ class TrackResolver:
                     "all downloaded candidates failed audio validation",
                     *invalid_downloads,
                 ),
+                rejected_urls=tuple(rejected_urls),
             )
 
         if download_failures:
@@ -420,6 +437,7 @@ class TrackResolver:
                 candidates=candidates,
                 ranking=rankings,
                 reasons=(f"{download_failures} download attempt(s) failed",),
+                rejected_urls=tuple(rejected_urls),
             )
 
         log.error("resolution status=rejected reasons=no candidate passed source validation")
@@ -429,6 +447,7 @@ class TrackResolver:
             source_url=rejected_urls[0] if rejected_urls else None,
             candidates=candidates,
             ranking=rankings,
+            rejected_urls=tuple(rejected_urls),
             reasons=("no candidate passed source validation",),
         )
 
@@ -437,8 +456,14 @@ class TrackResolver:
         track: Track,
         *,
         stage_callback: TrackStageCallback | None = None,
+        exclude_urls: Collection[str] = (),
     ) -> TrackResolution:
-        """Resolve one track without allowing an uncertain result to succeed."""
+        """Resolve one track without allowing an uncertain result to succeed.
+
+        ``exclude_urls`` is forwarded to :meth:`complete`; the search and
+        ranking in :meth:`prepare` still run in full, so an alternative source
+        is found rather than assumed.
+        """
         started = time.perf_counter()
         prepared = self.prepare(track, stage_callback=stage_callback)
         if not isinstance(prepared, PreparedTrack):
@@ -447,7 +472,7 @@ class TrackResolver:
                 (time.perf_counter() - started) * 1000,
             )
             return prepared
-        result = self.complete(prepared, stage_callback=stage_callback)
+        result = self.complete(prepared, stage_callback=stage_callback, exclude_urls=exclude_urls)
         self._log.with_track(track).info(
             "timing stage=track-processing duration_ms=%.1f",
             (time.perf_counter() - started) * 1000,

@@ -4,7 +4,7 @@ import { Button, ButtonLink } from "../components/Button";
 import { EmptyState } from "../components/Panel";
 import { SavePlaylistButton } from "../components/SavePlaylist";
 import { ErrorNote, StatusNote } from "../components/Notice";
-import { ApiError, apiUrl, addBatchToMediaPlayer, addPlaylistToMediaPlayer, getJobResult } from "../lib/api";
+import { ApiError, apiUrl, addBatchToMediaPlayer, addPlaylistToMediaPlayer, getJobResult, retryProcessing } from "../lib/api";
 import type { BatchImportResponse, JobResult, MediaPlayerAction } from "../lib/api";
 import { appUrl, navigate } from "../lib/router";
 import { useToast } from "../components/Toast";
@@ -16,6 +16,11 @@ import { useDocumentTitle } from "../hooks/useDocumentTitle";
  * adds every playlist to the library in one click, and the per-playlist report
  * of that import. The "View track details" link opens a single result page with
  * the back-link that Flask drew for the same entry point.
+ *
+ * The batch view retries a whole playlist rather than individual tracks: the
+ * tracks of one playlist are one job on the backend, so that is the unit a
+ * retry can name. Choosing tracks is offered on the playlist's own result page,
+ * and the card links straight to it.
  */
 export default function BatchResult({ jobId }: { jobId: string }) {
   useDocumentTitle("Batch results - Spotify to M3U Converter");
@@ -27,6 +32,7 @@ export default function BatchResult({ jobId }: { jobId: string }) {
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [playerNotes, setPlayerNotes] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const [retryNotes, setRetryNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +109,27 @@ export default function BatchResult({ jobId }: { jobId: string }) {
           ok: false,
           text: cause instanceof ApiError ? cause.message : "The playlist could not be added.",
         },
+      }));
+    } finally {
+      setPending((current) => ({ ...current, [playlistId]: false }));
+    }
+  };
+
+  const retryPlaylist = async (playlistId: string) => {
+    setPending((current) => ({ ...current, [playlistId]: true }));
+    setRetryNotes((notes) => ({ ...notes, [playlistId]: "" }));
+    try {
+      await retryProcessing(jobId, playlistId);
+      // The retry runs in the background, so the card cannot know yet what it
+      // produced. The playlist's own result page is where that is followed.
+      setRetryNotes((notes) => ({
+        ...notes,
+        [playlistId]: "Retrying. Open this playlist's track details to follow it.",
+      }));
+    } catch (cause) {
+      setRetryNotes((notes) => ({
+        ...notes,
+        [playlistId]: cause instanceof ApiError ? cause.message : "The retry could not be started.",
       }));
     } finally {
       setPending((current) => ({ ...current, [playlistId]: false }));
@@ -186,6 +213,8 @@ export default function BatchResult({ jobId }: { jobId: string }) {
       {result.playlists.map((playlist) => {
         const counts = playlist.counts;
         const note = playerNotes[playlist.playlist.id];
+        const retryNote = retryNotes[playlist.playlist.id];
+        const unresolved = playlist.playlist.total_tracks - (counts?.successful ?? 0);
         return (
           <section key={playlist.playlist.id} className="mb-6 flex flex-col gap-2">
             <h2 className="m-0 text-lg">{playlist.playlist.name}</h2>
@@ -213,6 +242,7 @@ export default function BatchResult({ jobId }: { jobId: string }) {
               ) : (
                 <ErrorNote>Add to Media Player failed: {note.text}</ErrorNote>
               ))}
+            {retryNote && <StatusNote>{retryNote}</StatusNote>}
             <div className="flex flex-wrap items-center gap-2">
               {playlist.m3u_path && (
                 <SavePlaylistButton
@@ -221,6 +251,17 @@ export default function BatchResult({ jobId }: { jobId: string }) {
                   m3uUrl={apiUrl(`/jobs/${jobId}/playlists/${playlist.playlist.id}/m3u`)}
                   downloadName={playlist.playlist.name}
                 />
+              )}
+              {unresolved + playlist.stale_outputs > 0 && (
+                <Button
+                  variant="secondary"
+                  busy={pending[playlist.playlist.id] === true}
+                  disabled={playlist.status === "running" || playlist.status === "queued"}
+                  onClick={() => void retryPlaylist(playlist.playlist.id)}
+                >
+                  Retry {unresolved + playlist.stale_outputs} unresolved track
+                  {unresolved + playlist.stale_outputs === 1 ? "" : "s"}
+                </Button>
               )}
               {playlist.m3u_path && (counts?.successful ?? 0) > 0 && result.media_player_available && (
                 <Button

@@ -232,6 +232,59 @@ def test_all_rejected_candidates_report_rejected(tmp_path: Path) -> None:
 
     assert result.status == "rejected"
     assert result.reason == "no candidate passed source validation"
+    assert result.rejected_urls == (wrong.url,)
+
+
+def test_excluded_candidates_are_not_validated_or_downloaded(tmp_path: Path) -> None:
+    """A retry must not spend another attempt on a source already refused.
+
+    Both candidates fail source validation, so nothing downloads either way. The
+    only difference between the two runs is the exclusion, which is what shows
+    the excluded source was dropped before validation rather than after it.
+    """
+    refused = "https://example.com/first-live"
+    other = "https://example.com/second-live"
+
+    def live(url: str) -> SourceCandidate:
+        return SourceCandidate(
+            url=url,
+            title="Song (Live)",
+            artist="Artist",
+            uploader="Artist",
+            duration_s=200,
+            source_type="youtube",
+        )
+
+    def resolve(exclude_urls=()):
+        return TrackResolver(
+            LocalAudioResolver(tmp_path / "output-empty"),
+            tmp_path / "output",
+            searcher=Searcher((live(refused), live(other))),
+            downloader=lambda track, url, output: (_ for _ in ()).throw(
+                AssertionError(f"must not download, refused validation of {url}")
+            ),
+        ).resolve(TRACK, exclude_urls=exclude_urls)
+
+    assert resolve().rejected_urls == (refused, other), "both sources are refused to begin with"
+
+    second = resolve(exclude_urls=(refused,))
+    assert second.status == "rejected"
+    assert second.rejected_urls == (other,), "the excluded source was never validated"
+
+
+def test_excluding_every_candidate_reports_nothing_left_to_try(tmp_path: Path) -> None:
+    refused = "https://example.com/refused"
+    result = TrackResolver(
+        LocalAudioResolver(tmp_path / "empty"),
+        tmp_path / "output",
+        searcher=Searcher((candidate(url=refused),)),
+        downloader=lambda track, url, output: (_ for _ in ()).throw(
+            AssertionError("must not download")
+        ),
+    ).resolve(TRACK, exclude_urls=(refused,))
+
+    assert result.status == "rejected"
+    assert result.rejected_urls == ()
 
 
 def test_downloaded_audio_uncertainty_is_not_success(tmp_path: Path, monkeypatch) -> None:

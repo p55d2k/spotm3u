@@ -125,6 +125,8 @@ export type SnapshotTrack = {
   local_path: string | null;
   source_url: string | null;
   resolution: TrackResolution;
+  /** How many times this track has been sent through the pipeline. */
+  attempts: number;
   stage_started_at: number | null;
   /** Whether cached artwork is available to serve (annotated server-side). */
   artwork?: boolean;
@@ -292,6 +294,25 @@ export type HistoryRunSummary = {
   finished_at: number | null;
 };
 
+/**
+ * One attempt at one track, as it was recorded. A retry adds an attempt rather
+ * than replacing the last one, so this is the history of a track: the first
+ * entry is the first conversion, the last is what the track is now.
+ */
+export type HistoryAttempt = {
+  attempt: number;
+  status: HistoryStatus;
+  stage: string;
+  resolution: string;
+  reason: string;
+  error: string;
+  source_url: string | null;
+  output_path: string | null;
+  queued_at: number | null;
+  started_at: number | null;
+  finished_at: number | null;
+};
+
 /** One track of a stored conversion, as it was left behind. */
 export type HistoryTrack = {
   position: number;
@@ -313,6 +334,8 @@ export type HistoryTrack = {
   finished_at: number | null;
   /** A completed track whose audio file was deleted by hand. */
   file_missing?: boolean;
+  /** Every attempt at this track, oldest first; the last one is current. */
+  attempts: HistoryAttempt[];
 };
 
 /** One stored conversion with its tracks, in playlist order. */
@@ -432,12 +455,34 @@ export function getPlaylistProcessingStatus(jobId: string, playlistId: string): 
   );
 }
 
-/** Re-resolve the tracks of one playlist that have no usable file on disk. */
-export function retryProcessing(jobId: string, playlistId: string): Promise<JobState & { retried: number }> {
-  return request(
-    `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/processing/retry`,
-    { method: "POST" },
-  );
+/**
+ * The outcome of a retry: the job state as it is now, plus which tracks the
+ * retry actually picked up. The tracks are named so the interface can show the
+ * rows it is waiting on without having to guess from the counts.
+ */
+export type RetryResponse = JobState & { retried: number; tracks: number[] };
+
+/**
+ * Re-resolve tracks of one playlist that have no usable file on disk. With no
+ * `tracks` the backend retries every track that needs it; with them it retries
+ * exactly those, which is how one track or a selected set is retried.
+ */
+export function retryProcessing(
+  jobId: string,
+  playlistId: string,
+  tracks?: readonly number[],
+): Promise<RetryResponse> {
+  const url = `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(
+    playlistId,
+  )}/processing/retry`;
+  if (!tracks) {
+    return request(url, { method: "POST" });
+  }
+  return request(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tracks }),
+  });
 }
 
 export function getPlaylistResult(jobId: string, playlistId: string): Promise<PlaylistResult> {

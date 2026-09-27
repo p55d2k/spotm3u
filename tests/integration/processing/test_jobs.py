@@ -4,7 +4,13 @@ import threading
 import time
 from pathlib import Path
 
-from spotm3u.jobs import JOB_FAILURE_MESSAGE, JobManager, JobStartError, ProcessingJob
+from spotm3u.jobs import (
+    JOB_FAILURE_MESSAGE,
+    JobManager,
+    JobStartError,
+    ProcessingJob,
+    TrackNotRetryableError,
+)
 from spotm3u.models import ResolvedTrack, Track
 from spotm3u.resolution import PreparedTrack, TrackResolution
 
@@ -25,7 +31,7 @@ class FakeResolver:
         self.outcomes = list(outcomes)
         self.stage_sequences: list[list[str]] = []
 
-    def resolve(self, track, *, stage_callback=None):
+    def resolve(self, track, *, stage_callback=None, exclude_urls=()):
         stages: list[str] = []
         if stage_callback is None:
 
@@ -67,7 +73,7 @@ class RewritingResolver:
         self.paths = paths
         self.calls = 0
 
-    def resolve(self, track, *, stage_callback=None):
+    def resolve(self, track, *, stage_callback=None, exclude_urls=()):
         self.calls += 1
         path = self.paths[track.title]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,7 +265,7 @@ def test_job_reports_running_state_while_processing(tmp_path: Path) -> None:
         def __init__(self):
             self.first = True
 
-        def resolve(self, track, *, stage_callback=None):
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
             if stage_callback is not None:
                 stage_callback("resolving-local")
             if self.first:
@@ -306,7 +312,7 @@ def test_job_failure_sets_error_and_failed_status(tmp_path: Path) -> None:
     track = _track()
 
     class BrokenResolver:
-        def resolve(self, track, *, stage_callback=None):
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
             raise RuntimeError("boom")
 
     job = ProcessingJob(
@@ -401,7 +407,7 @@ class ParallelResolver:
         self._touch(stage_callback)
         return PreparedTrack(track, candidates=(), rankings=())
 
-    def complete(self, prepared, *, stage_callback=None):
+    def complete(self, prepared, *, stage_callback=None, exclude_urls=()):
         self._touch(stage_callback)
         return self.outcomes_by_index.pop(0)
 
@@ -450,7 +456,7 @@ def test_job_parallel_phase_two_runs_only_after_prepare(tmp_path: Path) -> None:
                 observed.append("prepare")
             return PreparedTrack(track, candidates=(), rankings=())
 
-        def complete(self, prepared, *, stage_callback=None):
+        def complete(self, prepared, *, stage_callback=None, exclude_urls=()):
             with type(self).lock:
                 observed.append("complete")
             return _resolution(prepared.track, "missing")
@@ -480,7 +486,7 @@ def test_job_reports_searched_progress_during_search_phase(tmp_path: Path) -> No
         def prepare(self, track, *, stage_callback=None):
             return PreparedTrack(track, candidates=(), rankings=())
 
-        def complete(self, prepared, *, stage_callback=None):
+        def complete(self, prepared, *, stage_callback=None, exclude_urls=()):
             release_downloads.wait(timeout=5)
             return _resolution(prepared.track, "missing")
 
@@ -521,7 +527,7 @@ def test_job_finalizes_each_track_as_its_download_finishes(tmp_path: Path) -> No
         def prepare(self, track, *, stage_callback=None):
             return PreparedTrack(track, candidates=(), rankings=())
 
-        def complete(self, prepared, *, stage_callback=None):
+        def complete(self, prepared, *, stage_callback=None, exclude_urls=()):
             with self.lock:
                 self.call_count += 1
                 first = self.call_count == 1
@@ -638,7 +644,7 @@ class DownloadCapResolver:
     def prepare(self, track, *, stage_callback=None):
         return PreparedTrack(track, candidates=(), rankings=())
 
-    def complete(self, prepared, *, stage_callback=None):
+    def complete(self, prepared, *, stage_callback=None, exclude_urls=()):
         with type(self).lock:
             type(self).complete_active += 1
             type(self).complete_max = max(type(self).complete_max, type(self).complete_active)
@@ -677,7 +683,7 @@ def test_job_respects_overall_timeout(tmp_path: Path) -> None:
     tracks = [_track("A"), _track("B")]
 
     class SlowResolver:
-        def resolve(self, track, *, stage_callback=None):
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
             time.sleep(0.5)
             return _resolution(track, "missing")
 
@@ -746,13 +752,13 @@ def test_retry_reports_progress_across_the_retried_tracks(tmp_path: Path) -> Non
     started = threading.Event()
 
     class FirstPassResolver:
-        def resolve(self, track, *, stage_callback=None):
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
             if track.title == "A":
                 return _resolution(track, "local", path=local_file)
             return _resolution(track, "failed")
 
     class GatedRetryResolver:
-        def resolve(self, track, *, stage_callback=None):
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
             started.set()
             release.wait(timeout=5)
             return _resolution(track, "missing")
@@ -813,7 +819,7 @@ def test_retry_is_rejected_while_the_job_is_running(tmp_path: Path) -> None:
     release = threading.Event()
 
     class SlowResolver:
-        def resolve(self, track, *, stage_callback=None):
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
             release.wait(timeout=5)
             return _resolution(track, "missing")
 
@@ -835,6 +841,212 @@ def test_retry_is_rejected_while_the_job_is_running(tmp_path: Path) -> None:
 
     release.set()
     job.wait(timeout=5)
+
+
+def test_retry_of_one_failed_track_leaves_the_others_alone(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B"), _track("C")]
+    local_file = tmp_path / "Artist - B.mp3"
+    local_file.write_bytes(b"audio")
+    kept_file = tmp_path / "Artist - C.mp3"
+    kept_file.write_bytes(b"audio")
+    retried_file = tmp_path / "Artist - A.mp3"
+    retried_file.write_bytes(b"audio")
+    outcomes = [
+        _resolution(tracks[0], "failed"),
+        _resolution(tracks[1], "local", path=local_file),
+        _resolution(tracks[2], "downloaded", path=kept_file),
+        _resolution(tracks[0], "downloaded", path=retried_file),
+    ]
+
+    job = _job(tracks, outcomes, tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    # B is on disk, so naming it alone is refused: retrying it would download a
+    # second copy of a track that is already there.
+    try:
+        job.retry([1])
+        raise AssertionError("expected TrackNotRetryableError")
+    except TrackNotRetryableError as exc:
+        assert exc.indices == (1,)
+
+    assert job.retry([0]) == (0,)
+    job.wait(timeout=5)
+
+    snapshot = job.as_dict()
+    assert snapshot["successful"] == 3
+    assert snapshot["failed"] == 0
+    assert [state["status"] for state in snapshot["tracks"]] == [
+        "complete",
+        "complete",
+        "complete",
+    ]
+    # A was resolved twice, B and C were not handed to the resolver again.
+    assert len(job._fake.stage_sequences) == 4
+    assert [state["attempts"] for state in snapshot["tracks"]] == [1, 0, 0]
+
+
+def test_retry_of_a_selected_batch_ignores_tracks_left_untouched(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B"), _track("C")]
+    third_file = tmp_path / "Artist - C.mp3"
+    third_file.write_bytes(b"audio")
+    outcomes = [
+        _resolution(tracks[0], "failed"),
+        _resolution(tracks[1], "failed"),
+        _resolution(tracks[2], "failed"),
+        # Only the two retried tracks are resolved again.
+        _resolution(tracks[0], "failed"),
+        _resolution(tracks[2], "downloaded", path=third_file),
+    ]
+
+    job = _job(tracks, outcomes, tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    assert job.retry([0, 2]) == (0, 2)
+    job.wait(timeout=5)
+
+    snapshot = job.as_dict()
+    # B keeps the failure it already had: it was not part of the selection.
+    assert [state["attempts"] for state in snapshot["tracks"]] == [1, 0, 1]
+    assert [state["status"] for state in snapshot["tracks"]] == [
+        "failed",
+        "failed",
+        "complete",
+    ]
+    assert len(job._fake.stage_sequences) == 5
+
+
+def test_retry_keeps_the_previous_failure_while_the_track_waits(tmp_path: Path) -> None:
+    tracks = [_track("A")]
+    release = threading.Event()
+    started = threading.Event()
+
+    class GatedResolver:
+        """The first attempt decides at once; the retry waits for the test."""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
+            self.calls += 1
+            if self.calls > 1:
+                started.set()
+                release.wait(timeout=5)
+            return _resolution(track, "missing")
+
+    resolver = GatedResolver()
+    job = ProcessingJob(
+        job_id="retry-reason",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=tmp_path / "output",
+        resolver_factory=lambda: resolver,
+    )
+    job.start()
+    job.wait(timeout=5)
+
+    job.retry()
+
+    try:
+        assert started.wait(timeout=5)
+        state = job.as_dict()["tracks"][0]
+        # The track is queued again, but the reason it is queued is not erased:
+        # the interface shows it while the retry runs, and the history keeps the
+        # same reason on the attempt that has just been archived.
+        assert state["status"] == "queued"
+        assert state["reason"] == "missing"
+        assert state["attempts"] == 1
+    finally:
+        release.set()
+    job.wait(timeout=5)
+
+
+def test_retry_refuses_tracks_that_are_not_in_the_selection(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B")]
+    outcomes = [_resolution(track, "failed") for track in tracks]
+    job = _job(tracks, outcomes, tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+    before = job.as_dict()["tracks"]
+
+    for requested, error in (([5], IndexError), ([0, 0], ValueError)):
+        try:
+            job.retry(requested)
+            raise AssertionError(f"expected {error.__name__} for {requested}")
+        except error:
+            pass
+
+    # A refused retry is not a partial retry: nothing was queued or counted.
+    assert job.as_dict()["tracks"] == before
+    assert len(job._fake.stage_sequences) == 2
+
+
+def test_a_retry_withdraws_the_sources_the_last_attempt_rejected(tmp_path: Path) -> None:
+    tracks = [_track("A")]
+    refused = "https://example.com/bad-audio"
+    seen: list[frozenset[str]] = []
+
+    class RecordingResolver:
+        def resolve(self, track, *, stage_callback=None, exclude_urls=()):
+            seen.append(frozenset(exclude_urls))
+            if len(seen) == 1:
+                return TrackResolution(
+                    track,
+                    "failed",
+                    reasons=("no candidate validated",),
+                    rejected_urls=(refused,),
+                )
+            file = tmp_path / "Artist - A.mp3"
+            file.write_bytes(b"audio")
+            return _resolution(track, "downloaded", path=file)
+
+    job = ProcessingJob(
+        job_id="retry-rejected",
+        playlist_id="0",
+        playlist_name="Playlist",
+        tracks=tracks,
+        output_dir=tmp_path / "output",
+        resolver_factory=RecordingResolver,
+    )
+    job.start()
+    job.wait(timeout=5)
+
+    job.retry()
+    job.wait(timeout=5)
+
+    assert seen == [frozenset(), frozenset({refused})]
+    assert job.as_dict()["successful"] == 1
+
+
+def test_a_retry_that_dies_records_the_unfinished_track_as_failed(tmp_path: Path) -> None:
+    tracks = [_track("A"), _track("B")]
+    local_file = tmp_path / "Artist - A.mp3"
+    local_file.write_bytes(b"audio")
+    outcomes = [
+        _resolution(tracks[0], "local", path=local_file),
+        _resolution(tracks[1], "failed"),
+    ]
+    job = _job(tracks, outcomes, tmp_path / "output")
+    job.start()
+    job.wait(timeout=5)
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("the resolver fell over")
+
+    job.resolver_factory = explode
+    job.retry()
+    job.wait(timeout=5)
+
+    snapshot = job.as_dict()
+    # The track that never decided is failed rather than left queued, so it can
+    # be retried again and does not look like it is still being worked on.
+    assert snapshot["tracks"][1]["status"] == "failed"
+    assert snapshot["tracks"][1]["reason"] == JOB_FAILURE_MESSAGE
+    assert snapshot["tracks"][0]["status"] == "complete", "the finished track keeps its result"
+    assert snapshot["failed"] == 1
+    assert snapshot["successful"] == 1
 
 
 def test_job_prefetches_each_unique_artist_once(tmp_path: Path, monkeypatch) -> None:

@@ -239,6 +239,49 @@ def test_a_run_reports_its_tracks_in_playlist_order(tmp_path) -> None:
     assert detail["tracks"][1]["reason"] == "no source matched this track"
     assert detail["error"] == ""
     assert [track["retry_count"] for track in detail["tracks"]] == [0, 0]
+    # Every track reports at least the attempt that is in progress, so the
+    # interface can show the history of a track without a second request.
+    assert [len(track["attempts"]) for track in detail["tracks"]] == [1, 1]
+    assert detail["tracks"][1]["attempts"][0]["status"] == "failed"
+    assert detail["tracks"][1]["attempts"][0]["reason"] == "no source matched this track"
+
+
+def test_a_retried_track_reports_both_of_its_attempts(tmp_path, monkeypatch) -> None:
+    client = _client(tmp_path)
+    blocked = _FakeSearcher(no_results_titles=frozenset({"Second Song"}))
+    _convert(
+        client,
+        tmp_path,
+        monkeypatch,
+        "Mixed",
+        "spotify:track:a,First Song,,First Artist,200000\n"
+        "spotify:track:b,Second Song,,Second Artist,250000\n",
+        searcher=blocked,
+    )
+    manager = client.application.config["JOB_MANAGER"]
+    run = client.application.config["HISTORY"].list_runs()[0]
+    job = manager.get(run["job_id"], run["playlist_id"])
+    assert job is not None
+    failed = [track for track in job.as_dict()["tracks"] if track["status"] == "failed"]
+    assert len(failed) == 1
+
+    # The source that refused the track the first time is found this time, so
+    # the retry succeeds and the two attempts disagree on purpose.
+    monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **_kw: _FakeSearcher())
+    job.retry()
+    job.wait(timeout=30)
+
+    detail = client.get(f"/api/history/{run['id']}").get_json()
+    retried = next(track for track in detail["tracks"] if track["retry_count"] == 1)
+    # A retry adds to the record rather than overwriting it: the attempt that
+    # failed is kept as it was recorded, with its reason, alongside the attempt
+    # that replaced it.
+    assert [attempt["attempt"] for attempt in retried["attempts"]] == [1, 2]
+    assert retried["attempts"][0]["status"] == "failed"
+    assert retried["attempts"][0]["reason"]
+    assert retried["attempts"][1]["status"] == "completed"
+    assert retried["attempts"][1]["reason"] == ""
+    assert retried["status"] == "completed"
 
 
 def test_the_list_can_be_filtered_and_paged(tmp_path) -> None:

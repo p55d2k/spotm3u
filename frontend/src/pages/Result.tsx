@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, BackLink } from "../components/PageHeader";
 import { buttonClasses, Button, ButtonLink } from "../components/Button";
 import { EmptyState } from "../components/Panel";
@@ -20,6 +20,11 @@ type TrackFilter = "all" | "failed";
  * player), and the empty states for a conversion that produced nothing. The
  * media-player note is filled from the handoff response, exactly where the
  * Flask page flashed it after posting the same action.
+ *
+ * A retry can name one track, the ticked ones, or everything unresolved. The
+ * page stays where it is and polls the same result endpoint while the retry
+ * runs, so the rows turn from queued back into their new outcome in place
+ * rather than the user having to go and re-open the page.
  */
 export default function Result({
   jobId,
@@ -39,6 +44,9 @@ export default function Result({
   const [mediaBusy, setMediaBusy] = useState(false);
   const [retryBusy, setRetryBusy] = useState(false);
   const [filter, setFilter] = useState<TrackFilter>("all");
+  const [selected, setSelected] = useState<readonly number[]>([]);
+  const mountedRef = useRef(true);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,24 +78,75 @@ export default function Result({
     };
   }, [jobId, playlistId, toast]);
 
-  const retry = async () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  /**
+   * Read the result again and, while the retry is still running, come back for
+   * another look. The result endpoint answers with the live state rather than
+   * refusing while a job runs, so the same call serves both: one read when the
+   * job has settled, and a poll until it has.
+   */
+  const pollUntilSettled = useCallback(
+    (schedule: () => void) => {
+      getPlaylistResult(jobId, playlistId)
+        .then((result) => {
+          if (!mountedRef.current) return;
+          setState(result);
+          if (result.status === "running" || result.status === "queued") {
+            schedule();
+            return;
+          }
+          setRetryBusy(false);
+          setSelected([]);
+        })
+        .catch((cause) => {
+          if (!mountedRef.current) return;
+          setRetryBusy(false);
+          if (cause instanceof ApiError && cause.code === "job_running") {
+            schedule();
+            return;
+          }
+          toast.error(
+            "The retry could not be followed.",
+            cause instanceof ApiError ? cause.message : "Try again in a moment.",
+          );
+        });
+    },
+    [jobId, playlistId, toast],
+  );
+
+  const runRetry = async (tracks?: readonly number[]) => {
     setRetryBusy(true);
+    setMediaNote(null);
+    setMediaError(null);
     try {
-      await retryProcessing(jobId, playlistId);
-      setMediaNote(null);
-      setMediaError(null);
-      const result = await getPlaylistResult(jobId, playlistId);
-      setState(result);
+      await retryProcessing(jobId, playlistId, tracks);
       setFilter("all");
     } catch (cause) {
+      setRetryBusy(false);
       toast.error(
         "The retry could not be started.",
         cause instanceof ApiError ? cause.message : "Try again in a moment.",
       );
-    } finally {
-      setRetryBusy(false);
+      return;
     }
+    const schedule = () => {
+      if (!mountedRef.current) return;
+      timerRef.current = window.setTimeout(() => pollUntilSettled(schedule), 1000);
+    };
+    schedule();
   };
+
+  const toggle = (index: number) =>
+    setSelected((current) =>
+      current.includes(index) ? current.filter((item) => item !== index) : [...current, index],
+    );
 
   const addToMediaPlayer = async () => {
     setMediaBusy(true);
@@ -108,6 +167,17 @@ export default function Result({
     [state],
   );
   const retryable = (state?.stale_outputs ?? 0) + unresolved;
+  // A conversion that is already running owns the tracks, so nothing is offered
+  // for retry until it settles. This also covers landing here mid-conversion,
+  // where no retry of our own is driving anything.
+  const busy = retryBusy || state?.status === "running" || state?.status === "queued";
+  const retryableTracks = useMemo(
+    () =>
+      (state?.tracks ?? []).filter(
+        (track) => track.status !== "complete" || track.file_missing,
+      ),
+    [state],
+  );
   const failedTracks = useMemo(
     () =>
       (state?.tracks ?? []).filter(
@@ -139,6 +209,12 @@ export default function Result({
       />
 
       {state.error && <ErrorNote>Processing failed: {state.error}</ErrorNote>}
+      {retryBusy && (
+        <StatusNote>
+          Retrying — the rows below update as each track finishes. Tracks keep the reason they
+          failed with until their new attempt decides.
+        </StatusNote>
+      )}
       {mediaError ? (
         <ErrorNote>Add to Media Player failed: {mediaError}</ErrorNote>
       ) : (
@@ -168,8 +244,13 @@ export default function Result({
           />
         )}
         {retryable > 0 && (
-          <Button variant="secondary" busy={retryBusy} onClick={() => void retry()}>
+          <Button variant="secondary" busy={retryBusy} disabled={busy} onClick={() => void runRetry()}>
             Retry {retryable} unresolved track{retryable === 1 ? "" : "s"}
+          </Button>
+        )}
+        {selected.length > 0 && (
+          <Button busy={retryBusy} disabled={busy} onClick={() => void runRetry(selected)}>
+            Retry {selected.length} selected track{selected.length === 1 ? "" : "s"}
           </Button>
         )}
         {state.m3u_path && (counts?.successful ?? 0) > 0 && state.media_player_available && (
@@ -236,6 +317,30 @@ export default function Result({
                 />
               </div>
             )}
+            {retryableTracks.length > 0 && !busy && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() =>
+                    setSelected(
+                      selected.length === retryableTracks.length
+                        ? []
+                        : retryableTracks.map((track) => track.index),
+                    )
+                  }
+                >
+                  {selected.length === retryableTracks.length
+                    ? "Clear selection"
+                    : `Select all ${retryableTracks.length} to retry`}
+                </Button>
+                {selected.length > 0 && (
+                  <span className="text-sm text-ink-muted">
+                    {selected.length} selected — the retry keeps the failure each track had.
+                  </span>
+                )}
+              </div>
+            )}
             <ol className="m-0 list-none rounded-md border border-line p-1">
               {shownTracks.map((track) => (
                 <TrackRow
@@ -245,6 +350,11 @@ export default function Result({
                   playlistId={playlistId}
                   lyricsBadge
                   fileMissingReason
+                  retryable={!busy && (track.status !== "complete" || track.file_missing)}
+                  selected={selected.includes(track.index)}
+                  onToggle={toggle}
+                  onRetry={(index) => void runRetry([index])}
+                  retryBusy={busy}
                 />
               ))}
             </ol>

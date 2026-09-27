@@ -66,6 +66,31 @@ one, validates the resulting audio, and on a failure tries the next plausible
 candidate, stopping when a valid recording is found or candidates are
 exhausted. Obviously unsuitable candidates are never retried.
 
+## Retrying a track
+
+A track that did not resolve can be tried again: on the result page, from the
+download history, or all at once from the batch results. A retry re-runs the
+whole search for the track, so it can succeed where the first attempt could not —
+a source may have been published since, the search may have been rate-limited
+earlier, or the failure may simply have been the network.
+
+A retry does not repeat itself blindly. The reason the track failed is kept while
+it waits, so it is still visible while the new attempt runs, and sources the
+previous attempt refused to validate are not offered again — those were the
+wrong recording, so re-trying them would spend the attempt reaching the same
+conclusion. A download that merely failed is not treated that way, because that
+is usually a temporary problem worth trying again.
+
+Every attempt is kept, including the ones that failed: the history lists what
+each attempt decided and why, so a track that finally works still shows what went
+wrong before it. A track that already downloaded its audio is not offered for
+retry, because downloading it again would produce a second copy rather than
+finish something.
+
+A retry needs the ZIP the conversion came from. Once the upload folder has been
+cleaned up, the history still shows the run but the retry cannot be started, and
+says so: import the ZIP again to convert it anew.
+
 ## Download discipline
 
 The downloader treats source URLs as data, never as shell commands, and keeps

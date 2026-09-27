@@ -40,6 +40,7 @@ from . import preferences
 from .artwork import cached_artwork_path
 from .exportify import ExportifyParseError, parse_exportify
 from .history import HISTORY_ORDERS, RUN_STATUSES, HistoryUnavailableError
+from .jobs import JobStartError, TrackNotRetryableError
 from .m3u import check_playlist
 from .maintenance import CLEAR_ITEMS, CONFIRM_PHRASE, unknown_items
 from .media_player import (
@@ -90,6 +91,12 @@ ERROR_SELECTION_EXPIRED = "selection_expired"
 ERROR_JOB_NOT_FOUND = "job_not_found"
 ERROR_JOB_NOT_READY = "job_not_ready"
 ERROR_JOB_RUNNING = "job_running"
+# A retry asked for tracks that are not there, or are already finished.
+ERROR_RETRY_INVALID = "retry_invalid"
+ERROR_TRACK_NOT_RETRYABLE = "track_not_retryable"
+# Distinguishes "retry every track that needs it" from a malformed request body.
+_RETRY_ALL = object()
+_RETRY_INVALID = object()
 # The generated playlist points at files that are gone.
 ERROR_PLAYLIST_INCOMPLETE = "playlist_incomplete"
 # A UI preference was sent with a value the application does not accept.
@@ -708,13 +715,41 @@ def playlist_processing_status(job_id: str, playlist_id: str):
     return jsonify(_track_state(job))
 
 
+def _retry_selection() -> tuple[int, ...] | object:
+    """The track indices a retry asked for, or :data:`_RETRY_ALL` for all of them.
+
+    A plain ``None`` cannot stand for "everything" here, because a body that
+    could not be read has to be refused rather than quietly widening the retry to
+    every track. Booleans are refused too: ``True`` is an ``int`` in Python, and
+    a track numbered 1 is not what ``true`` means to whoever sent it.
+    """
+    body = request.get_json(silent=True)
+    if body is None:
+        return _RETRY_ALL
+    if not isinstance(body, dict):
+        return _RETRY_INVALID
+    if "tracks" not in body:
+        return _RETRY_ALL
+    raw = body["tracks"]
+    if not isinstance(raw, list) or not raw:
+        return _RETRY_INVALID
+    if not all(isinstance(value, int) and not isinstance(value, bool) for value in raw):
+        return _RETRY_INVALID
+    if len(set(raw)) != len(raw):
+        return _RETRY_INVALID
+    return tuple(raw)
+
+
 @api.post("/jobs/<job_id>/playlists/<playlist_id>/processing/retry")
 def retry_processing(job_id: str, playlist_id: str):
-    """Re-resolve the tracks of one playlist that have no usable file on disk.
+    """Re-resolve tracks of one playlist that have no usable file on disk.
 
-    Tracks whose audio is still there keep their result, so a retry costs only
-    the unresolved ones. ``retried`` reports how many were picked up: zero when
-    there was nothing left to do.
+    With no body, every track that needs it is retried: tracks whose audio is
+    still there keep their result, so a retry costs only the unresolved ones. A
+    body of ``{"tracks": [3, 7]}`` retries exactly those, which is how the
+    interface retries one failed track or a selected set. The answer names the
+    tracks that were picked up in ``tracks`` alongside the ``retried`` count, so
+    a client can tell which rows to consider in flight.
     """
     job_directory = _job_or_error(job_id)
     if job_directory is None:
@@ -736,8 +771,25 @@ def retry_processing(job_id: str, playlist_id: str):
         )
     if job.status in {"queued", "running"}:
         return _error("That playlist is still being converted.", ERROR_JOB_RUNNING, 409)
-    retried = job.retry()
-    return jsonify({**_track_state(job), "retried": len(retried)})
+    selection = _retry_selection()
+    if selection is _RETRY_INVALID:
+        return _error(
+            "Send the tracks to retry as a list of track numbers, or nothing at all.",
+            ERROR_RETRY_INVALID,
+            400,
+        )
+    indices = None if selection is _RETRY_ALL else selection
+    try:
+        retried = job.retry(indices)
+    except TrackNotRetryableError as exc:
+        return _error(str(exc), ERROR_TRACK_NOT_RETRYABLE, 400)
+    except (IndexError, ValueError) as exc:
+        return _error(f"That playlist has no such track: {exc}", ERROR_RETRY_INVALID, 400)
+    except JobStartError:
+        # The status check above and this call are not one atomic step, so a
+        # retry can lose a race with a conversion that started in between.
+        return _error("That playlist is still being converted.", ERROR_JOB_RUNNING, 409)
+    return jsonify({**_track_state(job), "retried": len(retried), "tracks": list(retried)})
 
 
 @api.get("/jobs/<job_id>/playlists/<playlist_id>/result")

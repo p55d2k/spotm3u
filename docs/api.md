@@ -97,7 +97,7 @@ playlist's position in the export
 | `POST` | `/api/jobs/<job_id>/processing` | Start converting the selection: `{"playlist_ids": ["1"], "fast_mode": false}`. Both keys are optional; without them the stored selection and the `[fast] enabled` default apply. Answers `202` with the batch summary. |
 | `GET` | `/api/jobs/<job_id>/processing` | Live progress for the selection, ready to poll every second. `?playlist_ids=0,2` scopes it. |
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing` | Live progress for one playlist (one `ProcessingJob.snapshot()` with per-track artwork flags). |
-| `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing/retry` | Re-resolve the tracks with no usable file; answers the state plus `retried` (0 when nothing was left to do). |
+| `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing/retry` | Re-resolve the tracks with no usable file; answers the state plus `retried` (0 when nothing was left to do) and `tracks`, the indices that were picked up. |
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/result` | The finished outcome of one playlist, with per-track lyrics and `m3u_url`. |
 | `GET` | `/api/jobs/<job_id>/result` | The outcome of every selected playlist, for the batch result screen (`409 job_running` until all of them finish). |
 
@@ -105,6 +105,29 @@ Starting also stores the effective selection, so the status and result routes
 find the same playlists afterwards. Each
 playlist gets its own M3U (`playlist-<id>.m3u` inside the download folder), so
 converting a batch never overwrites another playlist's file.
+
+The retry route takes an optional body naming the tracks to retry:
+
+- No body (or `{}`): every track that needs it is retried, which is what the
+  "Retry N unresolved tracks" action posts.
+- `{"tracks": [3, 7]}`: exactly those tracks, which is how one track or a ticked
+  set is retried. The indices are the positions in the playlist, the same ones
+  the track rows and the artwork route use.
+
+A track whose audio is still on disk is finished, not retryable: naming one is
+`400 track_not_retryable` rather than downloading a second copy of it. A body
+that is not an object, a `tracks` that is not a list of integers, an empty
+list, a repeat, or an index outside the playlist is `400 retry_invalid` — a
+retry is refused as a whole rather than going ahead with part of the selection.
+A retry while the playlist is still converting is `409 job_running`, the same as
+the result route.
+
+A retried track keeps the reason it failed with while it waits, so the interface
+can say why it is queued again; the outcome of the attempt it replaces is kept
+in the history. Each track state also reports `attempts`, how many times it has
+been through the pipeline, so a row can show "Retried 1×". Sources a previous
+attempt turned down are withheld from the next attempt rather than being tried
+and refused again.
 
 ### Output
 
@@ -175,6 +198,20 @@ and error text, the source, the output path, `retry_count`, its three
 timestamps, and `file_missing` for a completed track whose audio has since been
 deleted. A run the application was closed in the middle of is recorded as
 `cancelled` with an error saying so, rather than claiming to still be running.
+
+Each track also carries `attempts`, every attempt at it from the first onwards
+(oldest first, the last one being the track's current state). A retry adds an
+attempt rather than replacing the last, so the record of what went wrong the
+first time survives a later success. Each attempt reports its own number,
+state, stage, resolution, reason, error, source, output path, and its three
+timestamps. An attempt that was still open when the application was closed is
+recorded as `cancelled`, which is how a run interrupted mid-conversion reads.
+
+A history written before attempts were kept is backfilled on first open: each
+stored track is given the one attempt that is still known, numbered with the
+retry count it reached. The attempts it lost cannot be recovered, which is why
+`retry_count` and the attempt list are reported separately rather than one being
+derived from the other.
 
 With `[history] enabled = false`, or when the local file cannot be read, both
 routes answer `503 history_unavailable`: the record is off, not empty.
