@@ -1,7 +1,7 @@
 # Processing pipeline profile
 
-Task 95 baseline for the later concurrency work. This note describes the
-current architecture and the timing records emitted by a normal conversion.
+This note describes the current architecture and the timing records emitted by a
+normal conversion.
 
 ## Current flow
 
@@ -61,8 +61,8 @@ pipelines. It contains the track and metadata destination before audio exists;
 `with_audio_path()` creates the ready-to-run job after download. Its `run()`
 method delegates to the existing enrichment implementation and returns the
 existing `MetadataResult`, preserving provider behavior and cache semantics.
-This is a queueable boundary for Task 97 without starting additional workers
-or changing request rates in this task.
+This is the queueable boundary the bounded metadata pool below submits to; it
+starts no additional workers and changes no provider request rates.
 
 Live job snapshots expose three separate milestones: `searched` counts tracks
 whose local/online search phase has finished, `resolved` counts tracks whose
@@ -72,7 +72,7 @@ finished. The processing UI displays all three as equal thirds of the progress
 bar, so slow downloads or metadata work cannot look like an idle job; download
 and metadata progress can advance concurrently in their own thirds.
 
-Task 97 now uses a bounded metadata pool. Normal web jobs defer enrichment
+Enrichment runs in a bounded metadata pool. Normal web jobs defer enrichment
 from the resolver, submit completed audio files to up to
 `metadata.workers` workers (default `3`, capped at `8`), and finalize each
 track only after its metadata job returns. Download workers continue submitting
@@ -132,4 +132,4 @@ request counts, and retries. The current repository does not contain a
 deterministic 50/250/1,000-track fixture or an offline provider harness, so
 real-network benchmark numbers must be captured from the operator's chosen
 representative playlists rather than fabricated here. The timing records above
-provide the baseline data for Tasks 96-100.
+provide the baseline data for later comparisons.

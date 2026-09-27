@@ -1,4 +1,4 @@
-"""Tests for search-term normalization and symbolic-title expansion (task 112).
+"""Tests for search-term normalization and symbolic-title expansion.
 
 A Spotify title is not always a searchable string: Coldplay really does have
 tracks titled ``❤️`` and ``♾️``, and titles carry decoration emoji, full-width

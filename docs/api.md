@@ -147,6 +147,6 @@ which is why the action is limited to files this application created.
 
 ## Not here yet
 
-The settings screen does not exist in the current application (it is task 118),
-so `/api/preferences` covers only the theme; `/api/meta` covers the read-only
-defaults the shell needs today. Nothing under `/api` renders HTML.
+The application has no settings screen, so `/api/preferences` covers only the
+theme; `/api/meta` covers the read-only defaults the shell needs today. Nothing
+under `/api` renders HTML.

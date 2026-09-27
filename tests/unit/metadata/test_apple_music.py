@@ -1,4 +1,4 @@
-"""Tests for the experimental Apple Music catalog matching (task 93).
+"""Tests for the experimental Apple Music catalog matching.
 
 The resolver is opt-in and default-off, and its matching is deliberately
 conservative: a local track is associated with a catalog id only on strong,

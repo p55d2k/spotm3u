@@ -1,4 +1,4 @@
-"""Optional, experimental Apple Music catalog matching (task 93).
+"""Optional, experimental Apple Music catalog matching.
 
 Apple Music does not use an imported MP3's embedded ``SYLT`` data to render
 synchronized lyrics. Community experimentation suggests that writing Apple's
