@@ -114,3 +114,77 @@ export function parseRoute(route: string): AppRoute {
   if (segments[2] === "result") return { name: "batch-result", jobId };
   return { name: "import" };
 }
+
+/** The address a route renders at. */
+export function routePath(route: AppRoute): string {
+  switch (route.name) {
+    case "import":
+      return "/";
+    case "playlists":
+      return `/jobs/${route.jobId}/playlists`;
+    case "processing":
+      return `/jobs/${route.jobId}/playlists/${route.playlistId}/processing`;
+    case "result":
+      return `/jobs/${route.jobId}/playlists/${route.playlistId}/result`;
+    case "batch-processing":
+      return `/jobs/${route.jobId}/processing`;
+    case "batch-result":
+      return `/jobs/${route.jobId}/result`;
+    case "history":
+      return "/history";
+    case "history-run":
+      return `/history/${route.runId}`;
+  }
+}
+
+// What the history calls the conversion it can send the user back to. Only the
+// workflow has a place worth returning to, so import and the history itself are
+// left out: the label is the whole point, and "back to where you were" has to
+// name the step.
+const CONVERSION_LABELS: Record<AppRoute["name"], string | null> = {
+  import: null,
+  playlists: "Back to choosing playlists",
+  processing: "Back to the conversion in progress",
+  result: "Back to your results",
+  "batch-processing": "Back to the batch in progress",
+  "batch-result": "Back to your batch results",
+  history: null,
+  "history-run": null,
+};
+
+const LAST_CONVERSION_KEY = "spotm3u-last-conversion";
+
+/** Somewhere the history can offer to return the user to. */
+export type ConversionPlace = { path: string; label: string };
+
+/**
+ * A conversion lives entirely in its address: the job, the selection and the
+ * playlist are all in the URL, and the import screen knows only how to take a
+ * new ZIP. So without a note of where the user was, opening the history costs
+ * them the whole job -- they would have to find the back button or upload,
+ * select and convert all over again. Session memory is the right scope, like
+ * the shell's own state: it lasts as long as the window is open, which is
+ * exactly as long as the job does.
+ */
+export function rememberConversionPlace(route: AppRoute): void {
+  const label = CONVERSION_LABELS[route.name];
+  if (!label) return;
+  try {
+    sessionStorage.setItem(LAST_CONVERSION_KEY, JSON.stringify({ path: routePath(route), label }));
+  } catch {
+    // Session memory can be unavailable; the history then simply offers no way
+    // back, which is where it started.
+  }
+}
+
+/** The last conversion screen visited, or nothing if there has not been one. */
+export function lastConversionPlace(): ConversionPlace | null {
+  try {
+    const stored = sessionStorage.getItem(LAST_CONVERSION_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as ConversionPlace;
+    return typeof parsed?.path === "string" && typeof parsed?.label === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}

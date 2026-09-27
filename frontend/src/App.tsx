@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import { AppShell } from "./components/AppShell";
 import type { WorkflowStage } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TooltipProvider } from "./components/Tooltip";
-import { parseRoute, useRoute } from "./lib/router";
+import { parseRoute, rememberConversionPlace, routePath, useRoute } from "./lib/router";
 import type { AppRoute } from "./lib/router";
 import Import from "./pages/Import";
 import Playlists from "./pages/Playlists";
@@ -34,9 +35,15 @@ export default function App() {
 function AppShellContent() {
   const route = parseRoute(useRoute());
 
+  // Noted here rather than in each page: the history is the screen that needs
+  // it, and only one place should decide what "where the user was" means.
+  useEffect(() => {
+    rememberConversionPlace(route);
+  }, [route]);
+
   return (
     <AppShell currentStage={stageFor(route.name)}>
-      <div key={routeKey(route)}>{pageFor(route)}</div>
+      <div key={routePath(route)}>{pageFor(route)}</div>
     </AppShell>
   );
 }
@@ -57,27 +64,6 @@ function stageFor(name: AppRoute["name"]): WorkflowStage | undefined {
     case "history":
     case "history-run":
       return undefined;
-  }
-}
-
-function routeKey(route: AppRoute): string {
-  switch (route.name) {
-    case "import":
-      return "/";
-    case "playlists":
-      return `/jobs/${route.jobId}/playlists`;
-    case "processing":
-      return `/jobs/${route.jobId}/playlists/${route.playlistId}/processing`;
-    case "result":
-      return `/jobs/${route.jobId}/playlists/${route.playlistId}/result`;
-    case "batch-processing":
-      return `/jobs/${route.jobId}/processing`;
-    case "batch-result":
-      return `/jobs/${route.jobId}/result`;
-    case "history":
-      return "/history";
-    case "history-run":
-      return `/history/${route.runId}`;
   }
 }
 

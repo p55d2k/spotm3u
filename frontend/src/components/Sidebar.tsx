@@ -55,7 +55,7 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
       aria-label="Application navigation"
     >
       <div
-        className={`px-4 ${trafficGap ? "" : framed && platform === "mac" ? "pb-5 pt-5" : "pb-4 pt-5"}`}
+        className={`px-4 ${trafficGap ? "pb-4" : framed && platform === "mac" ? "pb-5 pt-5" : "pb-4 pt-5"}`}
         style={trafficGap ? { paddingTop: trafficGap } : undefined}
       >
         <a href={appUrl("/")} aria-label="SpotM3U home" className="inline-flex items-center gap-3 text-ink no-underline">

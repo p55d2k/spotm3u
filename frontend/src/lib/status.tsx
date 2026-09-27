@@ -28,7 +28,7 @@ import { useTooltip } from "../components/Tooltip";
 
 export type StatusGroup = "wait" | "ok" | "warn" | "err";
 
-export type StatusInfo = { label: string; group: StatusGroup; icon: LucideIcon };
+export type StatusInfo = { label: string; group: StatusGroup; icon: LucideIcon; spinning?: boolean };
 
 export const TRACK_STATUSES: Record<string, StatusInfo> = {
   queued: { label: "Waiting to start", group: "wait", icon: FlaskConical },
@@ -69,7 +69,10 @@ const JOB_LABELS: Record<string, string> = {
  */
 export const RUN_STATUSES: Record<string, StatusInfo> = {
   queued: { label: "Waiting to start", group: "wait", icon: FlaskConical },
-  processing: { label: "In progress", group: "wait", icon: Loader },
+  // The one state that is genuinely working rather than waiting, so it is the
+  // one that turns. A spinner on "Waiting to start" would claim work that has
+  // not begun.
+  processing: { label: "In progress", group: "wait", icon: Loader, spinning: true },
   completed: { label: "Finished", group: "ok", icon: CircleCheck },
   failed: { label: "Failed", group: "err", icon: CircleX },
   cancelled: { label: "Cancelled", group: "warn", icon: Ban },
@@ -119,7 +122,7 @@ function StatusGlyph({ status, entry }: { status: string; entry?: StatusInfo }) 
       className={`ml-auto inline-flex size-6 flex-none items-center justify-center ${color}`}
       {...tooltip.bind(info.label)}
     >
-      <Icon aria-hidden="true" className="size-4" />
+      <Icon aria-hidden="true" className={`size-4 ${info.spinning ? "animate-spin" : ""}`} />
     </span>
   );
 }

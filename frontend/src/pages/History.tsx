@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
 import { Button, buttonClasses } from "../components/Button";
 import { EmptyState } from "../components/Panel";
 import { ErrorNote, StatusNote } from "../components/Notice";
+import { ConversionReturn } from "../components/ConversionReturn";
 import { RunStatusIcon, statusLabel } from "../lib/status";
 import { ApiError, getHistory } from "../lib/api";
 import type { HistoryOrder, HistoryPage, HistoryStatus } from "../lib/api";
 import { HISTORY_MAX_LIMIT, HISTORY_PAGE_SIZE, formatDuration, formatWhen, isLive, runSummary } from "../lib/history";
-import { Link } from "../lib/router";
+import { Link, lastConversionPlace } from "../lib/router";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 const ORDERS: { value: HistoryOrder; label: string }[] = [
@@ -92,6 +94,10 @@ export default function History() {
 
   const filtered = Boolean(status || query);
   const runs = page?.runs ?? [];
+  // Reading the history is a detour, not a destination: the conversion the user
+  // came from is still open, and leaving here should not cost them the job. Read
+  // once, like the shell's own state -- it cannot change while this page is up.
+  const [place] = useState(lastConversionPlace);
 
   return (
     <>
@@ -99,6 +105,7 @@ export default function History() {
         eyebrow="Stored on this machine"
         title="Download history"
         intro="Every conversion this app has run here: when it ran, how many tracks it finished, where the audio went, and why a track did not make it."
+        actions={place ? <ConversionReturn place={place} /> : undefined}
       />
 
       {failure ? (
@@ -117,20 +124,14 @@ export default function History() {
         <StatusNote>Reading the download history…</StatusNote>
       ) : (
         <>
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by state">
-              <StateButton active={status === ""} onClick={() => filterBy("")} label="All" />
-              {(page?.statuses ?? []).map((value) => (
-                <StateButton
-                  key={value}
-                  active={status === value}
-                  onClick={() => filterBy(value)}
-                  label={statusLabel(value)}
-                />
-              ))}
-            </div>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Sort runs">
+          <div className="mb-4 flex items-center gap-3">
+            <StateFilter
+              value={status}
+              statuses={page?.statuses ?? []}
+              onChange={filterBy}
+            />
+            <div className="ml-auto flex min-w-0 items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2" role="group" aria-label="Sort runs">
                 {ORDERS.map((option) => (
                   <StateButton
                     key={option.value}
@@ -140,17 +141,21 @@ export default function History() {
                   />
                 ))}
               </div>
-              <label className="flex items-center gap-2">
-                <span className="text-sm text-ink-muted">Search</span>
+              {/* The field carries its own icon and border, so it reads as a
+                  field rather than as a third button with loose text beside it;
+                  the visible label would only have repeated the placeholder. */}
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-line-strong bg-surface pr-2 pl-2.5 focus-within:border-accent lg:w-56 lg:flex-none">
+                <Search aria-hidden="true" className="size-4 flex-none text-ink-faint" />
                 <input
                   type="search"
                   value={text}
                   autoComplete="off"
+                  aria-label="Search the download history"
                   placeholder="Playlist, track or artist"
                   onChange={(event) => setText(event.target.value)}
-                  className="w-56 rounded-sm border border-line-strong bg-surface px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint"
+                  className="min-w-0 flex-1 border-0 bg-transparent py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none"
                 />
-              </label>
+              </div>
             </div>
           </div>
 
@@ -240,6 +245,120 @@ function HistoryRow({ run }: { run: HistoryPage["runs"][number] }) {
         <RunStatusIcon status={run.status} />
       </Link>
     </li>
+  );
+}
+
+/**
+ * The state filter as one control. There are seven states to offer and the
+ * toolbar beside them needs the room, so a row of buttons wrapped onto two lines
+ * and read as a mistake; a single button that names the current state keeps the
+ * whole bar on one line at any window width. The states still come from the
+ * backend, so the filter cannot offer a state the model does not have.
+ */
+function StateFilter({
+  value,
+  statuses,
+  onChange,
+}: {
+  value: HistoryStatus | "";
+  statuses: readonly HistoryStatus[];
+  onChange: (value: HistoryStatus | "") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const options: { value: HistoryStatus | ""; label: string }[] = [
+    { value: "", label: "All states" },
+    ...statuses.map((item) => ({ value: item, label: statusLabel(item) })),
+  ];
+  const chosen = options.find((option) => option.value === value) ?? options[0];
+
+  // The menu belongs to the page, not to the document, so a click or a press of
+  // Escape anywhere else puts it away and gives the keyboard back.
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: MouseEvent | TouchEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("touchstart", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("touchstart", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  // The list is a listbox, so the arrow keys walk it and the selection follows
+  // the highlight rather than needing a second Enter.
+  const step = (delta: number) => {
+    const from = options.findIndex((option) => option.value === value);
+    const next = options[(from + delta + options.length) % options.length];
+    onChange(next.value);
+  };
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            if (!open) setOpen(true);
+            else step(1);
+          } else if (event.key === "ArrowUp" && open) {
+            event.preventDefault();
+            step(-1);
+          }
+        }}
+        className={`${buttonClasses("secondary", "small")} bg-state-selected`}
+      >
+        {chosen.label}
+        <ChevronDown aria-hidden="true" className="size-4 text-ink-muted" />
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          aria-label="Filter by state"
+          className="absolute top-[calc(100%+0.25rem)] left-0 z-20 m-0 max-h-72 min-w-44 list-none overflow-y-auto rounded-md border border-line-strong bg-surface p-1 shadow-popover"
+        >
+          {options.map((option) => (
+            <li key={option.value || "all"}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                  buttonRef.current?.focus();
+                }}
+                className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
+                  option.value === value
+                    ? "bg-state-selected font-semibold text-ink"
+                    : "text-ink-muted hover:bg-state-hover hover:text-ink"
+                }`}
+              >
+                <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                  {option.value === value && <Check aria-hidden="true" className="size-3.5" />}
+                </span>
+                {option.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

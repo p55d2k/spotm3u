@@ -8,9 +8,10 @@ import { statusLabel } from "../lib/status";
 import { ApiError, getHistoryRun, retryProcessing } from "../lib/api";
 import type { HistoryRun } from "../lib/api";
 import { formatDuration, formatWhen } from "../lib/history";
-import { Link, appUrl } from "../lib/router";
+import { Link, appUrl, lastConversionPlace } from "../lib/router";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useToast } from "../components/Toast";
+import { ConversionReturn } from "../components/ConversionReturn";
 
 type TrackFilter = "all" | "unfinished";
 
@@ -36,6 +37,11 @@ export default function HistoryRun({ runId }: { runId: string }) {
   const [selected, setSelected] = useState<readonly number[]>([]);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryNote, setRetryNote] = useState<{ ok: boolean; text: string } | null>(null);
+  // Reading a stored run is a detour, not a destination: if a conversion is
+  // still open in this window, the way back to it belongs here as well. Read
+  // once, with the rest of the session state, and above the early returns --
+  // a hook below one is not called on the first render, which React refuses.
+  const [place] = useState(lastConversionPlace);
   const toast = useToast();
   const mountedRef = useRef(true);
   const timerRef = useRef<number | null>(null);
@@ -205,7 +211,10 @@ export default function HistoryRun({ runId }: { runId: string }) {
           </>
         }
         actions={
-          <BackLink href={appUrl("/history")}>Back to the download history</BackLink>
+          <div className="flex flex-col items-end gap-1">
+            <BackLink href={appUrl("/history")}>Back to the download history</BackLink>
+            {place && <ConversionReturn place={place} />}
+          </div>
         }
       />
 

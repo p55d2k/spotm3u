@@ -54,7 +54,12 @@ const TONE_CLASSES: Record<ToastTone, { border: string; tile: string }> = {
   err: { border: "border-danger-border", tile: "bg-danger-subtle text-danger-ink" },
 };
 
-const TOAST_ANIMATION = "animate-[toast-in_0.18s_ease]";
+// ``both`` so the toast does not jump as the animation ends: the keyframes
+// carry the same ``translate(-50%)`` as the element, so the animated and the
+// resting position are one thing. Without a fill mode the transform is dropped
+// the moment the animation finishes, which left the toast sitting to the right
+// of centre with only its left edge at the centre.
+const TOAST_ANIMATION = "animate-[toast-in_0.18s_ease_both]";
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<ToastInput | null>(null);
@@ -103,7 +108,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <div
           role="status"
           aria-live="polite"
-          className={`pointer-events-auto fixed bottom-6 left-1/2 z-[300] flex min-w-64 max-w-[min(44rem,calc(100vw-2rem))] items-center gap-3 rounded-lg border bg-surface p-3 pr-4 shadow-popover ${TOAST_ANIMATION} ${tone.border}`}
+          className={`pointer-events-auto fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex min-w-64 max-w-[min(44rem,calc(100vw-2rem))] items-center gap-3 rounded-lg border bg-surface p-3 pr-4 shadow-popover ${TOAST_ANIMATION} ${tone.border}`}
         >
           <span
             className={`flex size-7 shrink-0 items-center justify-center rounded-full ${tone.tile}`}
