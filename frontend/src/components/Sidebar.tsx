@@ -19,7 +19,7 @@ import { useTheme } from "../hooks/useTheme";
  * The application navigation, migrated from ``_sidebar.html``: the brand, the
  * four conversion steps with one leading icon and a dot that carries workflow
  * state (position, or a check once the step is done), and a footer holding the
- * download history, the update notice, the developer tools, and the theme
+ * update notice, the download history, the developer tools, and the theme
  * toggle. On macOS the native traffic lights float over the sidebar, so the
  * brand is kept clear of them.
  */
@@ -124,6 +124,7 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
       </div>
 
       <div className="flex flex-col gap-1 border-t border-line p-3">
+        <UpdateNotice />
         <Link
           to="/history"
           aria-current={onHistory ? "page" : undefined}
@@ -138,7 +139,6 @@ export function Sidebar({ currentStage = 1 }: { currentStage?: WorkflowStage }) 
           </span>
           <span>Download history</span>
         </Link>
-        <UpdateNotice />
         <DeveloperTools />
         <button
           type="button"
