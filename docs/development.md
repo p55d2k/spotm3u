@@ -204,7 +204,8 @@ playlist order and intentional duplicates.
 Use `config.toml` as the starting point for local settings. Do not commit
 credentials, browser cookie databases, downloaded media, or machine-specific
 paths. `SPOTM3U_LOG_LEVEL=DEBUG` enables detailed diagnostic logging without
-changing the default log level.
+changing the default log level. See [logging](logging.md) for log levels, log
+file locations, and how failures are reported.
 
 If a UI change affects the screenshots embedded in the README or
 [web.md](web.md), recapture the affected PNGs in `docs/images/` from the

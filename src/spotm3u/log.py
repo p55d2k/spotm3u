@@ -58,10 +58,10 @@ def log_file_path() -> Path:
     """Return the persistent per-user log file for this platform.
 
     ``SPOTM3U_LOG_FILE`` overrides the default. Below that, logs land in the
-    application log directory -- ``%LOCALAPPDATA%\\SpotM3U`` on Windows,
-    ``~/Library/Logs/SpotM3U`` on macOS, and ``$XDG_STATE_HOME/spotm3u`` (or
-    ``~/.local/state/spotm3u``) on Linux -- so a packaged app logs somewhere
-    writable and findable even when installed under Program Files.
+    application log directory -- ``%LOCALAPPDATA%\\SpotM3U\\logs`` on Windows,
+    ``~/Library/Logs/SpotM3U`` on macOS, and ``$XDG_STATE_HOME/spotm3u/logs``
+    (or ``~/.local/state/spotm3u/logs``) on Linux -- so a packaged app logs
+    somewhere writable and findable even when installed under Program Files.
     """
     environment = os.environ.get(LOG_FILE_ENV)
     if environment:

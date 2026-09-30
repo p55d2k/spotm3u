@@ -224,4 +224,4 @@ Structured context comes from `src/spotm3u/log.py`; the `spotm3u` package
 logger is configured through `[web] log_level` in `config.toml` or the
 `SPOTM3U_LOG_LEVEL` environment variable (set to `DEBUG` for full stage
 tracing). Credentials, authentication secrets, and private data are never
-logged.
+logged. See [logging](logging.md) for log files, levels, and failure reporting.

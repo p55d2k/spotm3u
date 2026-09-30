@@ -49,6 +49,8 @@
 # diagnosable without a console. Default location per platform:
 #   Windows: %LOCALAPPDATA%\SpotM3U\logs\spotm3u.log
 #   macOS:   ~/Library/Logs/SpotM3U/spotm3u.log
+#   Linux:   $XDG_STATE_HOME/spotm3u/logs/spotm3u.log
+#            (~/.local/state/spotm3u/logs/spotm3u.log when XDG_STATE_HOME is unset)
 # SPOTM3U_LOG_FILE overrides the location; setting it also enables file logging
 # in development runs.
 

@@ -223,4 +223,5 @@ finding plausible candidates at all.
 Candidate decisions are logged at debug level with the score, title similarity,
 the artist-evidence breakdown (explicit / title / uploader), and the accept or
 reject reasons, so wrong-artist and cover miscounts stay traceable. Logs at
-`SPOTM3U_LOG_LEVEL=DEBUG` show the full picture.
+`SPOTM3U_LOG_LEVEL=DEBUG` show the full picture; see
+[logging](logging.md) for how to read and locate them.

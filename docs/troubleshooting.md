@@ -4,14 +4,16 @@
 
 Configuration errors are reported in the terminal for source runs. A packaged
 Windows build has no console, so it shows a dialog instead. If the packaged
-launcher exits before the window appears, inspect `spotm3u-error.log` and
-`spotm3u-startup.log` beside `SpotM3U.exe`; if that folder is not writable, the
-same files are written to Windows' temporary directory (`%TEMP%`).
+launcher exits before the window appears, inspect `spotm3u-error.log` beside
+`SpotM3U.exe` and `spotm3u.log` in the per-user log directory
+(`%LOCALAPPDATA%\SpotM3U\logs\`); if either folder is not writable, the same
+files are written to Windows' temporary directory (`%TEMP%`). See
+[logging](logging.md) for the full set of locations and log levels.
 
 SpotM3U prefers the `web.port` from `config.toml` (default 5001) and falls back
 to a free port when that port is already taken, so another program using 5001
 does not stop it from starting. The port actually in use is the one opened in
-the native window; the startup log names it for source runs.
+the native window; the log names it for source runs.
 
 Packaged launches bind to `127.0.0.1` only; the application is not intended to
 be exposed directly to the network.
@@ -20,11 +22,11 @@ be exposed directly to the network.
 
 The packaged application opens its interface in a native `SpotM3U` window, not
 a browser. Set `SPOTM3U_NO_WEBVIEW=1` to disable that window for headless or
-scripted runs; the startup log still reports it as
+scripted runs; the log still reports it as
 `listening on http://127.0.0.1:<port>` so the server can be reached manually.
 
 If no window appears, the application may still be running: open the printed
-URL in a browser or check the startup log. A machine without a windowing system
+URL in a browser or check the log. A machine without a windowing system
 cannot display a native window.
 
 ### Windows: double-clicking `SpotM3U.exe` appears to do nothing
@@ -50,13 +52,14 @@ the packaged build:
   Runtime. If it is missing, install the Evergreen WebView2 Runtime, then launch
   `SpotM3U.exe` again.
 
-Every packaged launch writes `spotm3u-startup.log` beside `SpotM3U.exe` (or in
-`%TEMP%` when that folder is not writable), and a failed launch additionally
-leaves `spotm3u-error.log` with the fatal message and traceback. The startup log
-captures the full startup sequence, so a launch that dies before any dialog
-appears still records the real reason on disk. To run without the native window
-while diagnosing a bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell; the server
-then listens at `http://127.0.0.1:5001/` (or the port shown in the log).
+Every packaged launch writes `spotm3u.log` to the per-user log directory beside
+`%LOCALAPPDATA%\SpotM3U\logs\` (or in `%TEMP%` when that folder is not
+writable), and a failed launch additionally leaves `spotm3u-error.log` next to
+`SpotM3U.exe` with the fatal message and traceback. The log captures the full
+startup sequence, so a launch that dies before any dialog appears still records
+the real reason on disk. To run without the native window while diagnosing a
+bundle, set `SPOTM3U_NO_WEBVIEW=1` in PowerShell; the server then listens at
+`http://127.0.0.1:5001/` (or the port shown in the log).
 
 ## The macOS app runs but never shows a window
 

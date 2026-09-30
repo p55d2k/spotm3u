@@ -121,7 +121,7 @@ duration_ms=<value>`. Current stages are `matching`, `searching`,
 `lyrics`, and `job` completion duration. Records include the existing job and
 track context where available. Set `SPOTM3U_LOG_LEVEL=INFO` or `DEBUG` and
 capture the log for a run; aggregate by stage to compare scenarios without a
-debugger.
+debugger. See [logging](logging.md) for how to force a log file in a source run.
 
 ## Repeatable benchmark procedure
 

@@ -168,16 +168,6 @@ def write_error_log(message: str, *, exception: bool = False, path: Path | None 
     return target
 
 
-def startup_log_path() -> Path:
-    """The default startup-log location for a packaged launch.
-
-    Logs land in the per-user application log directory (see
-    :func:`spotm3u.log.log_file_path`) so the file is writable and findable
-    even when the bundle sits under Program Files.
-    """
-    return log_file_path()
-
-
 def configure_startup_log(path: Path | None = None) -> Path | None:
     """Ensure a packaged launch mirrors logs into a file before the app imports.
 
@@ -186,8 +176,10 @@ def configure_startup_log(path: Path | None = None) -> Path | None:
     Configuring the process file log before the desktop shell (or its import)
     runs keeps that reason on disk even when the process dies before any dialog
     appears. No-op outside a PyInstaller bundle, where the console already
-    shows the log. Returns the log path, or ``None`` when nothing was
-    configured.
+    shows the log. Defaults to the per-user application log directory (see
+    :func:`spotm3u.log.log_file_path`) so the file is writable and findable
+    even when the bundle sits under Program Files. Returns the log path, or
+    ``None`` when nothing was configured.
     """
     if not is_frozen():
         return None
@@ -196,7 +188,7 @@ def configure_startup_log(path: Path | None = None) -> Path | None:
         return getattr(logger, "_spotm3u_startup_log_path", None)
     if logger.level == logging.NOTSET or logger.level > logging.INFO:
         logger.setLevel(logging.INFO)
-    target = configure_file_logging(level=logger.level, path=path or startup_log_path())
+    target = configure_file_logging(level=logger.level, path=path or log_file_path())
     logger._spotm3u_startup_log_configured = True  # type: ignore[attr-defined]
     logger._spotm3u_startup_log_path = target  # type: ignore[attr-defined]
     return target

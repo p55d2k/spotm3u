@@ -204,6 +204,7 @@ documented in [troubleshooting](docs/troubleshooting.md).
 - [Exportify format](docs/exportify.md) — how your exported playlists are parsed
 - [Matching and source selection](docs/matching.md) — local and online matching
 - [M3U output](docs/m3u.md) — playlist generation semantics
+- [Logging and crash reports](docs/logging.md) — log levels, log files, and startup failures
 - [Security design](docs/security.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Development](docs/development.md) — local setup, checks, and project layout
