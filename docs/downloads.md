@@ -100,6 +100,10 @@ as a shell command.
 
 Concurrency is bounded:
 
+- playlist-level concurrency (`queue.max_active_playlists`, default 2) caps how
+  many playlists convert at once; the rest wait their turn in the download queue.
+  This counts playlists, not files, since one conversion already parallelises its
+  own tracks — see [the download queue](architecture.md#download-queue)
 - track-level download concurrency (`download.workers`) is a separate, smaller
   cap than search concurrency (`web.resolve_workers`), so a large playlist can
   search broadly without launching an uncontrolled number of downloads

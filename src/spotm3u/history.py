@@ -106,6 +106,7 @@ _PERSISTED_TRACK_STATUS: dict[str, str] = {
     "enriching-metadata": "processing",
     "complete": "completed",
     "failed": "failed",
+    "cancelled": "cancelled",
     "ambiguous": "skipped",
     "skipped": "skipped",
 }
@@ -114,9 +115,11 @@ _PERSISTED_TRACK_STATUS: dict[str, str] = {
 # ``processing``.
 _PERSISTED_RUN_STATUS: dict[str, str] = {
     "queued": "queued",
+    "active": "processing",
     "running": "processing",
     "completed": "completed",
     "failed": "failed",
+    "cancelled": "cancelled",
 }
 
 # The sort orders the history list offers. Newest first is the useful default:
@@ -491,8 +494,14 @@ class HistoryStore:
                 logger.warning("Processing history could not be read: %s", exc)
         return []
 
-    def begin_run(self, run: RunIdentity, tracks: Sequence[Track]) -> int | None:
+    def begin_run(
+        self, run: RunIdentity, tracks: Sequence[Track], *, status: str = "processing"
+    ) -> int | None:
         """Record a conversion that is starting, with one row per track.
+
+        ``status`` is the state the run is being recorded in, which is not
+        always ``processing``: work that has been queued but has not started is
+        written down as ``queued`` so it survives the interface being closed.
 
         A retry re-uses the run it belongs to (the same job and playlist), so
         the history keeps one entry per conversion rather than one per attempt.
@@ -514,7 +523,7 @@ class HistoryStore:
                         "playlist_name = ?, total_tracks = ?, output_dir = ?, fast_mode = ? "
                         "WHERE id = ?",
                         (
-                            "processing",
+                            status,
                             _text(run.playlist_name),
                             run.total_tracks,
                             run.output_dir,
@@ -532,7 +541,7 @@ class HistoryStore:
                             _text(run.job_id),
                             _text(run.playlist_id),
                             _text(run.playlist_name),
-                            "processing",
+                            status,
                             int(run.fast_mode),
                             run.total_tracks,
                             run.output_dir,
@@ -552,6 +561,48 @@ class HistoryStore:
                 return None
         self._prune()
         return run_ref
+
+    def set_run_status(self, run_ref: int, status: str) -> None:
+        """Move a run to ``status`` without touching the tracks it already holds.
+
+        Used by the queue: work that is waiting again after a retry already has
+        its track rows, and re-recording them would throw away the outcomes of
+        the tracks that are finished.
+        """
+        self._write(
+            "recording a run status",
+            "UPDATE runs SET status = ?, finished_at = NULL WHERE id = ?",
+            (status, run_ref),
+        )
+
+    def cancel_run(self, run_ref: int, *, reason: str = "") -> None:
+        """Record a run and every track it has not decided as ``cancelled``.
+
+        Cancellation is not failure: a cancelled run is work the user stopped
+        choosing to do, not work that went wrong, and the history has to be able
+        to say which of the two it was.
+        """
+        now = _now_ms()
+        text = _text(reason)
+        self._write(
+            "cancelling a run",
+            "UPDATE runs SET status = 'cancelled', error = ?, finished_at = ? "
+            "WHERE id = ? AND status IN ('queued', 'processing')",
+            (text, now, run_ref),
+        )
+        self._write(
+            "cancelling a run's tracks",
+            "UPDATE tracks SET status = 'cancelled', stage = 'cancelled', reason = ?, "
+            "finished_at = ? WHERE run_ref = ? AND status IN ('queued', 'processing')",
+            (text, now, run_ref),
+        )
+        self._write(
+            "cancelling a run's attempts",
+            "UPDATE attempts SET status = 'cancelled', reason = ?, finished_at = ? "
+            "WHERE track_ref IN (SELECT id FROM tracks WHERE run_ref = ?) "
+            "AND status IN ('queued', 'processing')",
+            (text, now, run_ref),
+        )
 
     def set_track_stage(self, run_ref: int, position: int, *, status: str, stage: str) -> None:
         """Record that a track moved into ``status`` for ``stage``."""

@@ -26,7 +26,7 @@ from .resolution import (
 
 logger = logging.getLogger(__name__)
 
-JobStatus = Literal["queued", "running", "completed", "failed"]
+JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 TrackProcessingStatus = Literal[
     "queued",
     "resolving-local",
@@ -37,10 +37,15 @@ TrackProcessingStatus = Literal[
     "validating-audio",
     "complete",
     "failed",
+    "cancelled",
     "ambiguous",
     "skipped",
 ]
 ResolverFactory = Callable[[], TrackResolver]
+
+# The message recorded when work is stopped before it starts. It is deliberately
+# not a failure: nothing went wrong, the user simply chose not to have it done.
+JOB_CANCELLED_MESSAGE = "Cancelled before the conversion started."
 
 
 def _prefetch_artist_artwork_best_effort(output_dir: Path, tracks: Sequence[Track]) -> None:
@@ -103,6 +108,14 @@ TRACK_STATUS_TERMINAL = {
 
 class JobStartError(RuntimeError):
     """A job has already started and cannot be started again."""
+
+
+class JobNotCancellableError(RuntimeError):
+    """A job is past the point where it can be cancelled without being stopped.
+
+    Cancelling work that has already begun is a different operation from
+    dropping work that has not, so the queue refuses rather than pretending.
+    """
 
 
 class JobTimeoutError(RuntimeError):
@@ -233,11 +246,71 @@ class ProcessingJob:
         self._excluded_sources: dict[int, frozenset[str]] = {}
         # The in-flight playlist-level artist-artwork prefetch, if any.
         self._prefetch_thread: threading.Thread | None = None
+        # What the next thread runs. A first conversion resolves the whole
+        # playlist; a retry resolves only the tracks it requeued, so the two
+        # are kept here rather than baked into ``start``.
+        self._next_run: tuple[Callable[..., None], tuple[object, ...]] = (self._run, ())
 
     @property
     def status(self) -> JobStatus:
         with self._lock:
             return self._status
+
+    @property
+    def error(self) -> str | None:
+        """Why this job did not complete, if it has a reason to say."""
+        with self._lock:
+            return self._error
+
+    @property
+    def is_new(self) -> bool:
+        """True until this job has ever been started."""
+        with self._lock:
+            return self._started_at is None and self._history_ref is None
+
+    def reserve(self) -> None:
+        """Record this conversion as waiting, before any of it has started.
+
+        Called by the queue when the job is accepted rather than when it runs, so
+        work that is only waiting is still written down. A queued job therefore
+        survives the interface being closed, and the history can say a conversion
+        was waiting rather than never having happened.
+        """
+        if self._history is None:
+            return
+        if self._history_ref is None:
+            self._begin_history("queued")
+            return
+        # A retry already holds its track rows, and their finished outcomes must
+        # survive being queued again, so only the run's own state moves.
+        self._history.set_run_status(self._history_ref, "queued")
+
+    def cancel_before_start(self, reason: str = JOB_CANCELLED_MESSAGE) -> None:
+        """Stop this job while it is still waiting to run.
+
+        Nothing has been downloaded, so this is not a failure: the tracks end as
+        ``cancelled`` and the user is free to queue the playlist again.
+        """
+        with self._lock:
+            if self._status != "queued" or self._thread is not None:
+                raise JobNotCancellableError("job has already started")
+            self._error = reason
+            self._status = "cancelled"
+            self._completed_at = time.time()
+            for index, current in enumerate(self._track_states):
+                self._track_states[index] = TrackJobState(
+                    current.index,
+                    current.title,
+                    current.artists,
+                    "cancelled",
+                    reason,
+                    current.source_url,
+                    current.resolution,
+                    current.attempts,
+                    current.stage_started_at,
+                )
+        if self._history is not None and self._history_ref is not None:
+            self._history.cancel_run(self._history_ref, reason=reason)
 
     @property
     def completed(self) -> int:
@@ -285,16 +358,23 @@ class ProcessingJob:
             if self._status != "queued":
                 raise JobStartError("job has already started")
             self._status = "running"
-            self._started_at = time.time()
+            self._started_at = self._started_at or time.time()
             if self._thread is not None:
                 return
-            self._thread = threading.Thread(
-                target=self._run,
+            target, args = self._next_run
+            thread = threading.Thread(
+                target=target,
+                args=args,
                 name=f"spotm3u-job-{self.job_id}",
                 daemon=True,
             )
-        self._begin_history()
-        self._thread.start()
+            self._thread = thread
+            # Written down before the thread exists, so the run is recorded as
+            # started even if it finishes immediately, and the thread is started
+            # while the lock is still held so ``wait`` is never handed one that
+            # exists but has not begun and cannot be joined.
+            self._begin_history("processing")
+            thread.start()
 
     def wait(self, timeout: float | None = None) -> None:
         """Block until the background job finishes."""
@@ -320,6 +400,19 @@ class ProcessingJob:
         earlier attempt rejected are withheld from the next one, and the M3U is
         rewritten from the merged results once the retry settles.
         """
+        selected = self.prepare_retry(indices)
+        if selected:
+            self.start()
+        return selected
+
+    def prepare_retry(self, indices: Sequence[int] | None = None) -> tuple[int, ...]:
+        """Put the tracks a retry would redo back into the queue, without running.
+
+        The split from :meth:`retry` is what lets a retry wait its turn: the
+        state, attempt count and history are all updated here, while the work
+        itself is started by whoever owns the concurrency limit. Returns the
+        indices that were queued, which is empty when nothing needed retrying.
+        """
         with self._lock:
             if self._status in {"queued", "running"}:
                 raise JobStartError("job is still running")
@@ -344,7 +437,9 @@ class ProcessingJob:
             self._searched = 0
             self._resolved = 0
             self._error = None
-            self._status = "running"
+            # Waiting, not running: the retry takes a queue slot like any other
+            # work, so a batch of retries cannot bypass the concurrency limit.
+            self._status = "queued"
             self._deadline = time.monotonic() + self.timeout if self.timeout is not None else None
             self._excluded_sources = {
                 index: self._rejected_sources(self._results[index])
@@ -369,12 +464,9 @@ class ProcessingJob:
                 # attempt that is about to start is written to the history.
                 self._history_states[index] = None
                 self._history_stages[index] = ""
-            self._thread = threading.Thread(
-                target=self._process,
-                args=(selected,),
-                name=f"spotm3u-job-{self.job_id}-retry",
-                daemon=True,
-            )
+            self._next_run = (self._process, (selected,))
+            # The previous run's thread is finished, so the retry gets a new one.
+            self._thread = None
         TrackLogger(logger, job_id=self.job_id).info(
             "retrying %d track(s): %s",
             len(selected),
@@ -382,7 +474,6 @@ class ProcessingJob:
         )
         if self._history is not None and self._history_ref is not None:
             self._history.requeue_tracks(self._history_ref, selected)
-        self._thread.start()
         return selected
 
     def _validated_retry_indices(self, indices: Sequence[int]) -> tuple[int, ...]:
@@ -814,7 +905,7 @@ class ProcessingJob:
 
     # -- persistent state ---------------------------------------------------
 
-    def _begin_history(self) -> None:
+    def _begin_history(self, status: str = "processing") -> None:
         """Open this conversion's run in the history store, with its tracks."""
         if self._history is None:
             return
@@ -828,6 +919,7 @@ class ProcessingJob:
                 fast_mode=self.fast_mode,
             ),
             self.tracks,
+            status=status,
         )
 
     def _record_track_stage(self, index: int) -> None:
@@ -993,8 +1085,11 @@ class JobManager:
 
 
 __all__ = [
+    "JOB_CANCELLED_MESSAGE",
     "JobManager",
+    "JobNotCancellableError",
     "JobStartError",
+    "JobStatus",
     "JobTimeoutError",
     "ProcessingJob",
     "TrackJobState",

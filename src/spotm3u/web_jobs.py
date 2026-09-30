@@ -26,6 +26,7 @@ from .metadata import embedded_lyrics_form
 from .models import Playlist
 from .online import OnlineSourceSearcher, download_track
 from .online.cache import DownloadCache
+from .queue import ConversionQueue
 from .resolution import TrackResolver
 from .update import check_for_updates
 from .uploads import (
@@ -167,24 +168,63 @@ def _selected_playlist_ids(job_directory: Path | None) -> list[str]:
     return state.get("selected_playlist_ids", [])
 
 
-def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
+def conversion_queue(app: Flask) -> ConversionQueue | None:
+    """The application's download queue, or ``None`` when there is none.
+
+    The queue is created by the application factory, so a test that builds a
+    bare Flask app without one still gets working routes; they simply report no
+    queue state rather than failing.
+    """
+    queue = app.config.get("CONVERSION_QUEUE")
+    return queue if isinstance(queue, ConversionQueue) else None
+
+
+def _batch_overall_status(states: list[dict[str, object]]) -> str:
+    """The one word that describes a whole batch, given its playlists.
+
+    Progress in a batch is not a single number, because the playlists are at
+    different points: some are running, some are still waiting for a slot, and
+    some finished long ago. The batch is only ``completed`` when every playlist
+    is, and it is ``queued`` while nothing has started yet, so a freshly added
+    playlist does not read as though work is already underway.
+    """
+    if not states:
+        return "running"
+    statuses = [str(state["status"]) for state in states]
+    if all(status == "completed" for status in statuses):
+        return "completed"
+    if any(status == "failed" for status in statuses):
+        return "failed"
+    if any(status == "running" for status in statuses):
+        return "running"
+    if any(status == "queued" for status in statuses):
+        return "queued"
+    # Everything that is left has stopped without completing: cancelled, or
+    # settled some other way. Saying so is more honest than calling it running.
+    return "cancelled"
+
+
+def _batch_status(
+    jobs: list[ProcessingJob], queue: ConversionQueue | None = None
+) -> dict[str, object]:
     states = []
     for job in jobs:
         state = job.as_dict()
         _annotate_artwork(job, state)
+        entry = queue.entry(job.job_id, job.playlist_id) if queue is not None else None
+        # Where the conversion is in the queue is not the same as how far its
+        # tracks have got: a waiting playlist is fully "queued" and has made no
+        # progress at all, which is what tells the interface to show it as
+        # waiting rather than as a stalled run.
+        state["queue_state"] = entry.state if entry is not None else None
+        state["queue_position"] = entry.position if entry is not None else None
         states.append(state)
     total = sum(int(state["playlist"]["total_tracks"]) for state in states)
     completed = sum(int(state["completed"]) for state in states)
     searched = sum(int(state["searched"]) for state in states)
     resolved = sum(int(state["resolved"]) for state in states)
     return {
-        "status": (
-            "completed"
-            if states and all(state["status"] == "completed" for state in states)
-            else "failed"
-            if any(state["status"] == "failed" for state in states)
-            else "running"
-        ),
+        "status": _batch_overall_status(states),
         "completed": completed,
         "searched": searched,
         "resolved": resolved,
@@ -198,6 +238,7 @@ def _batch_status(jobs: list[ProcessingJob]) -> dict[str, object]:
             (int(state["started_at"]) for state in states if isinstance(state["started_at"], int)),
             default=None,
         ),
+        "queue": queue.snapshot() if queue is not None else None,
         "playlists": states,
     }
 

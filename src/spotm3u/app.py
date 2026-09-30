@@ -33,6 +33,7 @@ from .metadata import (
 )
 from .online import describe_youtube_setup
 from .online.youtube_setup import set_pot_provider_timeout
+from .queue import DEFAULT_MAX_ACTIVE_PLAYLISTS, ConversionQueue
 from .uploads import default_upload_root
 
 
@@ -68,6 +69,13 @@ def create_app(config: dict | None = None) -> Flask:
         app.config.get("HISTORY_DB"),
         enabled=bool(app.config.get("HISTORY_ENABLED", True)),
         max_runs=int(app.config.get("HISTORY_MAX_RUNS", 200)),
+    )
+
+    # How many playlists may be converting at once (see spotm3u.queue). The rest
+    # wait their turn, so asking for more work than the machine can take never
+    # fails and never silently crowds out what is already running.
+    app.config["CONVERSION_QUEUE"] = ConversionQueue(
+        max_active=int(app.config.get("QUEUE_MAX_ACTIVE", DEFAULT_MAX_ACTIVE_PLAYLISTS))
     )
 
     set_metadata_enabled(bool(app.config.get("METADATA_ENABLED", True)))

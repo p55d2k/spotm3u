@@ -35,6 +35,20 @@ Processing resolves local audio first, then searches, ranks, validates, and
 downloads an online match when necessary. Fast mode can skip slower enrichment
 steps. Failed tracks can be retried from the processing screen.
 
+Several playlists are converted through a **download queue**, which runs a
+bounded number of them at once and lets the rest wait their turn, because each
+conversion already works on its own tracks in parallel. The processing screen
+shows the queue rather than one implied "active playlist": a line counts what is
+converting against the limit and what is waiting, and each playlist is listed in
+the state it is actually in. A playlist that is waiting says how many tracks it
+has yet to start, which is what distinguishes it from one that has stalled
+midway. Waiting playlists can be removed with **Remove**, which is safe because
+nothing has been downloaded for them; a playlist that has already started is not
+offered the action, because stopping work in progress is a different thing.
+
+Queued work keeps its place if you close the window: it is recorded before it
+starts, and picks up again when the application is reopened.
+
 ## Results
 
 The result screen reports resolved and missing tracks, offers the generated M3U

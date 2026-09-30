@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .audio.resolver import AUDIO_EXTENSIONS
+from .queue import DEFAULT_MAX_ACTIVE_PLAYLISTS
 
 DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 DEFAULT_MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
@@ -92,6 +93,8 @@ class Config:
     # [m3u]
     m3u_extended: bool = True
     m3u_relative: bool = False
+    # [queue]
+    max_active_playlists: int = DEFAULT_MAX_ACTIVE_PLAYLISTS
     # [history]
     history_enabled: bool = True
     history_database: str | None = None
@@ -141,6 +144,7 @@ class Config:
             "YTDLP_POT_PROVIDER_TIMEOUT": self.pot_provider_timeout,
             "M3U_EXTENDED": self.m3u_extended,
             "M3U_RELATIVE": self.m3u_relative,
+            "QUEUE_MAX_ACTIVE": self.max_active_playlists,
             "HISTORY_ENABLED": self.history_enabled,
             "HISTORY_MAX_RUNS": self.history_max_runs,
             "UPDATE_CHECK": self.check_updates,
@@ -202,6 +206,7 @@ _FIELD_ATTRIBUTES: dict[str, str] = {
     "download.pot_provider_timeout": "pot_provider_timeout",
     "m3u.extended": "m3u_extended",
     "m3u.relative": "m3u_relative",
+    "queue.max_active_playlists": "max_active_playlists",
     "history.enabled": "history_enabled",
     "history.database": "history_database",
     "history.max_runs": "history_max_runs",

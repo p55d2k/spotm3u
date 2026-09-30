@@ -94,9 +94,10 @@ playlist's position in the export
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/jobs/<job_id>/processing` | Start converting the selection: `{"playlist_ids": ["1"], "fast_mode": false}`. Both keys are optional; without them the stored selection and the `[fast] enabled` default apply. Answers `202` with the batch summary. |
+| `POST` | `/api/jobs/<job_id>/processing` | Queue the selection for conversion: `{"playlist_ids": ["1"], "fast_mode": false}`. Both keys are optional; without them the stored selection and the `[fast] enabled` default apply. Answers `202` with the batch summary. Every playlist is accepted whether or not it can start: a bounded number run at once and the rest wait their turn. |
 | `GET` | `/api/jobs/<job_id>/processing` | Live progress for the selection, ready to poll every second. `?playlist_ids=0,2` scopes it. |
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing` | Live progress for one playlist (one `ProcessingJob.snapshot()` with per-track artwork flags). |
+| `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/queue/cancel` | Drop a playlist that is still waiting for a queue slot. Answers its state; `409 job_running` once it has begun. |
 | `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing/retry` | Re-resolve the tracks with no usable file; answers the state plus `retried` (0 when nothing was left to do) and `tracks`, the indices that were picked up. |
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/result` | The finished outcome of one playlist, with per-track lyrics and `m3u_url`. |
 | `GET` | `/api/jobs/<job_id>/result` | The outcome of every selected playlist, for the batch result screen (`409 job_running` until all of them finish). |
@@ -105,6 +106,63 @@ Starting also stores the effective selection, so the status and result routes
 find the same playlists afterwards. Each
 playlist gets its own M3U (`playlist-<id>.m3u` inside the download folder), so
 converting a batch never overwrites another playlist's file.
+
+### The download queue
+
+Conversions go through a bounded queue (see
+[Architecture](architecture.md#download-queue)), so the conversion routes report
+where each playlist is rather than only how far its tracks have got.
+
+Queue state is separate from interface state and is named separately from the
+job status: `queue_state` is one of `queued`, `active`, `completed`, `failed`,
+`cancelled`, where `active` means the conversion holds one of the queue's slots
+and is working, and `queued` means it has been accepted and is waiting its turn.
+A playlist in `queued` has searched nothing and downloaded nothing, which is not
+the same as a conversion that has stalled at zero progress.
+
+Every playlist state carries `queue_state` and `queue_position` (its place in
+line, counted from one, or `null` when it is not waiting), including on the
+single-playlist and retry routes. The batch routes add `queue`, the whole queue:
+
+```json
+{
+  "max_active": 2,
+  "active": 1,
+  "waiting": 2,
+  "completed": 3,
+  "failed": 0,
+  "cancelled": 1,
+  "total": 7,
+  "entries": [
+    {
+      "job_id": "...",
+      "playlist_id": "0",
+      "playlist_name": "Road trip",
+      "state": "active",
+      "total_tracks": 42,
+      "position": null,
+      "queued_at": 1767225600000,
+      "started_at": 1767225601000,
+      "finished_at": null,
+      "error": ""
+    }
+  ]
+}
+```
+
+The batch's own `status` is the one word that describes the selection as a whole:
+`queued` while nothing has started, `running` while anything is, `completed` only
+when every playlist is, `failed` if any failed, and `cancelled` for work that was
+stopped without completing.
+
+`[queue] max_active_playlists` (default 2) is how many playlists may convert at
+once. Each conversion already downloads and searches its own tracks in parallel,
+so this counts playlists, not files.
+
+Cancelling a waiting playlist is `POST .../queue/cancel`. Nothing has been
+downloaded for it, so it is recorded as `cancelled` rather than `failed`, and it
+is refused with `409 job_running` once it has begun. A playlist the queue never
+took is `404 job_not_found`.
 
 The retry route takes an optional body naming the tracks to retry:
 

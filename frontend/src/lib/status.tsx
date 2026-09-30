@@ -46,6 +46,9 @@ export const TRACK_STATUSES: Record<string, StatusInfo> = {
   complete: { label: "Complete", group: "ok", icon: CircleCheck },
   local: { label: "Local match", group: "ok", icon: CircleCheck },
   downloaded: { label: "Downloaded", group: "ok", icon: Download },
+  // Cancelled is not a failure: the work was stopped on purpose, before it
+  // began, so it reads as a warning rather than an error.
+  cancelled: { label: "Cancelled", group: "warn", icon: Ban },
   failed: { label: "Failed", group: "err", icon: CircleX },
   rejected: { label: "Rejected", group: "err", icon: Ban },
   missing: { label: "Missing", group: "err", icon: FileX },
@@ -59,7 +62,27 @@ const JOB_LABELS: Record<string, string> = {
   running: "Processing in progress",
   completed: "Processing complete",
   failed: "Processing failed",
+  cancelled: "Cancelled before it started",
 };
+
+/**
+ * The five states a conversion can be in while it holds or waits for a place in
+ * the download queue. `active` is the only one that is genuinely working, so it
+ * is the only one that turns: a spinner on a waiting conversion would claim
+ * work that has not begun.
+ */
+export const QUEUE_STATUSES: Record<string, StatusInfo> = {
+  queued: { label: "Waiting for a slot", group: "wait", icon: FlaskConical },
+  active: { label: "Converting", group: "wait", icon: Loader, spinning: true },
+  completed: { label: "Finished", group: "ok", icon: CircleCheck },
+  failed: { label: "Failed", group: "err", icon: CircleX },
+  cancelled: { label: "Cancelled", group: "warn", icon: Ban },
+};
+
+/** The glyph a queue state carries, for the queue-aware progress lists. */
+export function QueueStatusIcon({ state }: { state: string }) {
+  return <StatusGlyph status={state} entry={QUEUE_STATUSES[state]} />;
+}
 
 /**
  * The six states a stored run (and each of its tracks) can be in. They reuse
@@ -84,6 +107,7 @@ export function statusLabel(status: string) {
   const entry = TRACK_STATUSES[status];
   if (entry) return entry.label;
   if (RUN_STATUSES[status]) return RUN_STATUSES[status].label;
+  if (QUEUE_STATUSES[status]) return QUEUE_STATUSES[status].label;
   if (JOB_LABELS[status]) return JOB_LABELS[status];
   const name = String(status || "").replace(/[-_]+/g, " ");
   return name.charAt(0).toUpperCase() + name.slice(1);

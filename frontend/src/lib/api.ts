@@ -99,6 +99,7 @@ export type TrackProcessingStatus =
   | "enriching-metadata"
   | "complete"
   | "failed"
+  | "cancelled"
   | "ambiguous"
   | "skipped";
 
@@ -113,7 +114,14 @@ export type TrackResolution =
   | "uncertain"
   | "";
 
-export type JobStatus = "queued" | "running" | "completed" | "failed";
+export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+/**
+ * Where one conversion sits in the download queue. Distinct from `JobStatus`:
+ * `active` means it holds one of the bounded number of queue slots and is
+ * working, `queued` means it has been accepted and is waiting its turn.
+ */
+export type QueueState = "queued" | "active" | "completed" | "failed" | "cancelled";
 
 /** One row of a job's snapshot, with the per-track flags the pages annotate. */
 export type SnapshotTrack = {
@@ -168,12 +176,42 @@ export type JobState = {
   tracks: SnapshotTrack[];
   started_at: number | null;
   completed_at: number | null;
+  /** Where this conversion is in the queue, when the app has one. */
+  queue_state?: QueueState | null;
+  /** A waiting conversion's place in line, counted from one. */
+  queue_position?: number | null;
+};
+
+/** One conversion as the queue holds it, whether or not it has started. */
+export type QueueEntry = {
+  job_id: string;
+  playlist_id: string;
+  playlist_name: string;
+  state: QueueState;
+  total_tracks: number;
+  position: number | null;
+  queued_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+  error: string;
+};
+
+/** The whole download queue: the counts a header needs and every entry. */
+export type QueueSnapshot = {
+  max_active: number;
+  active: number;
+  waiting: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  total: number;
+  entries: QueueEntry[];
 };
 
 /** The aggregated progress of every job in the current selection. */
 export type BatchState = {
   job_id: string;
-  status: "completed" | "running" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   completed: number;
   searched: number;
   resolved: number;
@@ -183,6 +221,8 @@ export type BatchState = {
   stale_outputs: number;
   started_at: number | null;
   playlists: JobState[];
+  /** Every conversion the app knows about, in the order the user gave them. */
+  queue?: QueueSnapshot | null;
 };
 
 /** The read-only capabilities and defaults the shell needs before an upload. */
@@ -449,6 +489,18 @@ export function getProcessingStatus(jobId: string, playlistIds?: string[]): Prom
 }
 
 /** Live progress for one playlist. */
+/**
+ * Drop a playlist that is still waiting for a queue slot. Nothing has been
+ * downloaded for it, so this never stops work in progress: a playlist that has
+ * already started is `409 job_running`.
+ */
+export function cancelQueuedPlaylist(jobId: string, playlistId: string): Promise<JobState> {
+  return request(
+    `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/queue/cancel`,
+    { method: "POST" },
+  );
+}
+
 export function getPlaylistProcessingStatus(jobId: string, playlistId: string): Promise<JobState> {
   return request(
     `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/processing`,

@@ -265,6 +265,16 @@
 # that is still in flight is always kept. (default 200)
 # max_runs = 200
 
+[queue]
+# How many playlists may be converting at the same time. Each conversion
+# already downloads and searches its own tracks in parallel, so this is the
+# number of playlists, not of files. Playlists beyond this wait their turn:
+# the Download page shows them as waiting, and they keep their place even if the
+# window is closed, because the work is recorded as queued before it starts.
+# Raising it past 2 mostly trades download speed for contention.
+# (default 2)
+# max_active_playlists = 2
+
 [update]
 # Check GitHub for a newer SpotM3U release and show an in-app update notice.
 # The check never blocks or fails the app and never replaces the app itself;

@@ -53,6 +53,7 @@ from .media_player import (
 from .models import Playlist, Track
 from .normalization import sanitize_filename_component
 from .preferences import read_preferences, write_preferences
+from .queue import QueueJobConflictError, QueueJobNotCancellableError, UnknownQueueEntryError
 from .uploads import PickedFile
 from .web_jobs import (
     _annotate_artwork,
@@ -67,6 +68,7 @@ from .web_jobs import (
     _selection_matches,
     _valid_playlist_index,
     clear_downloaded_data,
+    conversion_queue,
     history_page,
     history_run,
     storage_inventory,
@@ -609,10 +611,12 @@ def save_selection(job_id: str):
 
 @api.post("/jobs/<job_id>/processing")
 def start_processing(job_id: str):
-    """Start converting the selected playlists (or the ones named in the body).
+    """Queue the selected playlists (or the ones named in the body).
 
     The effective selection is stored on the way in, so the status and result
-    routes find the same playlists afterwards.
+    routes find the same playlists afterwards. Every selected playlist is
+    accepted whether or not it can start: the queue runs a bounded number at a
+    time and the rest wait their turn, so adding more work is never refused.
     """
     job_directory = _job_or_error(job_id)
     if job_directory is None:
@@ -637,6 +641,7 @@ def start_processing(job_id: str):
     # The job outlives this request in its own thread, so it gets the real
     # application object rather than the request-bound proxy.
     app = current_app._get_current_object()
+    queue = conversion_queue(app)
     jobs = []
     for playlist_id in playlist_ids:
         existing = manager.get(job_id, playlist_id)
@@ -656,9 +661,15 @@ def start_processing(job_id: str):
             fast_mode=fast_mode,
         )
         manager.submit(job)
-        job.start()
+        if queue is None:
+            # No queue to hold it (a bare app in a test), so run it directly
+            # rather than leaving the playlist waiting for a slot that will
+            # never come.
+            job.start()
+        else:
+            queue.submit(job)
         jobs.append(job)
-    return jsonify({"job_id": job_id, **_batch_status(jobs)}), 202
+    return jsonify({"job_id": job_id, **_batch_status(jobs, queue)}), 202
 
 
 @api.get("/jobs/<job_id>/processing")
@@ -666,7 +677,9 @@ def processing_status(job_id: str):
     """Live progress for the selected playlists, ready to poll.
 
     ``?playlist_ids=0,2`` scopes the answer to specific playlists; without it,
-    whichever playlists are currently selected are reported.
+    whichever playlists are currently selected are reported. The answer carries
+    the whole queue alongside the per-playlist state, so a batch can show what is
+    running, what is waiting for a slot, and what is already done.
     """
     job_directory = _job_or_error(job_id)
     if job_directory is None:
@@ -680,7 +693,8 @@ def processing_status(job_id: str):
             ERROR_SELECTION_EXPIRED,
             404,
         )
-    manager = current_app.config["JOB_MANAGER"]
+    app = current_app._get_current_object()
+    manager = app.config["JOB_MANAGER"]
     jobs = [job for job in (manager.get(job_id, pid) for pid in playlist_ids) if job is not None]
     if not jobs:
         return _error(
@@ -688,7 +702,7 @@ def processing_status(job_id: str):
             ERROR_JOB_NOT_FOUND,
             404,
         )
-    return jsonify({"job_id": job_id, **_batch_status(jobs)})
+    return jsonify({"job_id": job_id, **_batch_status(jobs, conversion_queue(app))})
 
 
 @api.get("/jobs/<job_id>/playlists/<playlist_id>/processing")
@@ -705,14 +719,65 @@ def playlist_processing_status(job_id: str, playlist_id: str):
             ERROR_SELECTION_EXPIRED,
             404,
         )
-    job = current_app.config["JOB_MANAGER"].get(job_id, playlist_id)
+    app = current_app._get_current_object()
+    job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
     if job is None or job.playlist_id != playlist_id:
         return _error(
             "No conversion has been started for that playlist.",
             ERROR_JOB_NOT_FOUND,
             404,
         )
-    return jsonify(_track_state(job))
+    state = _track_state(job)
+    # Whether this one playlist is working or waiting is queue state, not job
+    # state, so it is reported alongside it.
+    queue = conversion_queue(app)
+    entry = queue.entry(job_id, playlist_id) if queue is not None else None
+    state["queue_state"] = entry.state if entry is not None else None
+    state["queue_position"] = entry.position if entry is not None else None
+    return jsonify(state)
+
+
+@api.post("/jobs/<job_id>/playlists/<playlist_id>/queue/cancel")
+def cancel_queued_playlist(job_id: str, playlist_id: str):
+    """Drop a playlist that is still waiting for a queue slot.
+
+    Nothing has been downloaded for a playlist that has not started, so this is
+    safe to do at any time before it begins. A playlist that is already running
+    is refused: stopping work in progress is a different operation, and offering
+    a button here that quietly did nothing would be worse than saying no.
+    """
+    job_directory = _job_or_error(job_id)
+    if job_directory is None:
+        return _error(
+            "That upload has expired. Please upload the ZIP again.", ERROR_JOB_EXPIRED, 404
+        )
+    if not _selection_matches(job_directory, playlist_id):
+        return _error(
+            "That playlist selection has expired. Please choose playlists again.",
+            ERROR_SELECTION_EXPIRED,
+            404,
+        )
+    app = current_app._get_current_object()
+    job = app.config["JOB_MANAGER"].get(job_id, playlist_id)
+    if job is None or job.playlist_id != playlist_id:
+        return _error(
+            "No conversion has been started for that playlist.",
+            ERROR_JOB_NOT_FOUND,
+            404,
+        )
+    queue = conversion_queue(app)
+    if queue is None:
+        return _error("The download queue is not available.", ERROR_JOB_NOT_FOUND, 404)
+    try:
+        entry = queue.cancel(job_id, playlist_id)
+    except UnknownQueueEntryError as exc:
+        return _error(str(exc), ERROR_JOB_NOT_FOUND, 404)
+    except QueueJobNotCancellableError:
+        return _error("That playlist has already started converting.", ERROR_JOB_RUNNING, 409)
+    state = _track_state(job)
+    state["queue_state"] = entry.state
+    state["queue_position"] = entry.position
+    return jsonify(state)
 
 
 def _retry_selection() -> tuple[int, ...] | object:
@@ -779,8 +844,12 @@ def retry_processing(job_id: str, playlist_id: str):
             400,
         )
     indices = None if selection is _RETRY_ALL else selection
+    app = current_app._get_current_object()
+    queue = conversion_queue(app)
     try:
-        retried = job.retry(indices)
+        # A retry takes a queue slot like any other work, so a batch of retries
+        # cannot slip past the limit that bounds everything else.
+        retried = job.prepare_retry(indices) if queue is None else queue.submit_retry(job, indices)
     except TrackNotRetryableError as exc:
         return _error(str(exc), ERROR_TRACK_NOT_RETRYABLE, 400)
     except (IndexError, ValueError) as exc:
@@ -789,7 +858,17 @@ def retry_processing(job_id: str, playlist_id: str):
         # The status check above and this call are not one atomic step, so a
         # retry can lose a race with a conversion that started in between.
         return _error("That playlist is still being converted.", ERROR_JOB_RUNNING, 409)
-    return jsonify({**_track_state(job), "retried": len(retried), "tracks": list(retried)})
+    except QueueJobConflictError:
+        return _error("That playlist is still being converted.", ERROR_JOB_RUNNING, 409)
+    if queue is None and retried:
+        job.start()
+    state = _track_state(job)
+    # The retry is queued like any other work, so the answer says where it now
+    # sits rather than implying the tracks are already being downloaded.
+    entry = queue.entry(job_id, playlist_id) if queue is not None else None
+    state["queue_state"] = entry.state if entry is not None else None
+    state["queue_position"] = entry.position if entry is not None else None
+    return jsonify({**state, "retried": len(retried), "tracks": list(retried)})
 
 
 @api.get("/jobs/<job_id>/playlists/<playlist_id>/result")
@@ -846,7 +925,7 @@ def job_result(job_id: str):
     if any(job is None or job.status in {"queued", "running"} for job in jobs):
         return _error("Every playlist must finish converting first.", ERROR_JOB_RUNNING, 409)
     completed = [job for job in jobs if job is not None]
-    payload = _batch_status(completed)
+    payload = _batch_status(completed, conversion_queue(current_app._get_current_object()))
     # Lyrics are read from the files themselves, so they are only reported once
     # nothing is in flight, never on every poll.
     for state in payload["playlists"]:

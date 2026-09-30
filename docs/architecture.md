@@ -152,6 +152,43 @@ The M3U writer receives the final ordered local audio paths and writes the
 playlist. It does not search, match, download, or validate — see
 [M3U playlists](m3u.md).
 
+## Download queue
+
+A conversion is a playlist's worth of tracks, and one playlist already resolves
+its own tracks in parallel. Several playlists at once is a different thing: each
+one opens its own searches, downloads and connections, so the only honest way to
+cap the load is to cap how many conversions run at once and let the rest wait
+their turn. That cap is `src/spotm3u/queue.py`, a `ConversionQueue` held as
+`CONVERSION_QUEUE` on the application, and it is deliberately separate from
+`JobManager`: the manager knows which conversions exist, the queue knows which of
+them are allowed to be running, and keeping them apart is what makes the limit
+testable on its own.
+
+Each conversion is in one of five states — `queued`, `active`, `completed`,
+`failed`, `cancelled` — and each running conversion has one thread, so the number
+of threads is exactly the number allowed to run: the limit is the shape of the
+queue rather than a check inside a job. Submitting never refuses work, because
+whether it can start is not the caller's business; a playlist beyond the limit is
+recorded as waiting, keeps its place, and starts when a slot frees up. The limit
+is `[queue] max_active_playlists` (default 2), which is conservative because each
+conversion already parallelises itself: a third playlist mostly buys contention
+rather than speed.
+
+A retry is queued work too, not a special case, so it takes a slot the same way
+and a batch of retries cannot bypass the bound. Only waiting work can be
+dropped: `POST /api/jobs/<job_id>/playlists/<playlist_id>/queue/cancel` refuses
+with `409 job_running` once a playlist has begun, because stopping work in
+progress is a different operation and a button that quietly did nothing would be
+worse than saying no. Cancellation is not failure: a cancelled conversion and its
+undecided tracks are recorded as `cancelled`.
+
+Queue state is separate from interface state and is reported in full alongside
+the per-playlist snapshots, so the interface never has to infer it: each playlist
+carries `queue_state` and `queue_position`, and the batch carries the whole
+queue's counts and entries. A queued job is written to the history in the
+`queued` state before it starts, which is what makes waiting work survive the
+window being closed.
+
 ## Processing history
 
 Processing state is persistent, and the backend owns it. `src/spotm3u/history.py`

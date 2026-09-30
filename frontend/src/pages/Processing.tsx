@@ -3,7 +3,7 @@ import { PageHeader, BackLink } from "../components/PageHeader";
 import { Button } from "../components/Button";
 import { ProgressCard } from "../components/ProgressCard";
 import { TrackRow } from "../components/TrackRow";
-import { ErrorNote } from "../components/Notice";
+import { ErrorNote, StatusNote } from "../components/Notice";
 import { ApiError, getJob, getPlaylistProcessingStatus, startProcessing } from "../lib/api";
 import type { JobPayload, JobState } from "../lib/api";
 import { appUrl, navigate } from "../lib/router";
@@ -59,6 +59,8 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
         setPhase("active");
       }
       setState(next);
+      // A waiting playlist still has to be polled: it starts on its own once a
+      // slot frees up. A cancelled one never will, so it stops.
       if (next.status === "running" || next.status === "queued") {
         scheduleNext();
       }
@@ -129,6 +131,10 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
     state?.tracks.find((track) => track.status === "enriching-metadata")?.status ??
     state?.tracks.find((track) => track.status === "searching")?.status ??
     state?.current_track?.status;
+  // A playlist waiting for a queue slot has not started any of that work, so
+  // the line says it is waiting instead of naming a stage it has not reached.
+  const waiting = state?.queue_state === "queued" || (state?.status === "queued" && !activeStage);
+  const statusLine = waiting ? statusLabel("queued") : activeStage ? statusLabel(activeStage) : statusLabel(state?.status ?? "");
 
   return (
     <>
@@ -159,11 +165,7 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
 
       {state && phase === "active" && (
         <ProgressCard
-        statusLine={
-          activeStage
-            ? statusLabel(activeStage)
-            : statusLabel(state.status)
-        }
+        statusLine={statusLine}
         percent={progressFraction(
           state.searched,
           state.resolved,
@@ -194,6 +196,21 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
 
       {state && state.status === "failed" && !state.error && (
         <ErrorNote>The conversion stopped unexpectedly. Try again from the playlist selection.</ErrorNote>
+      )}
+
+      {waiting && state && (
+        <StatusNote>
+          {state.queue_position
+            ? `Waiting for a conversion slot (position ${state.queue_position}). SpotM3U converts a few playlists at a time; this one starts as soon as a slot frees up, and it keeps its place if you close the window.`
+            : "Waiting for a conversion slot. SpotM3U converts a few playlists at a time; this one starts as soon as a slot frees up."}
+        </StatusNote>
+      )}
+
+      {state && state.status === "cancelled" && (
+        <StatusNote>
+          This playlist was waiting for a conversion slot and was removed from the queue, so
+          nothing was downloaded. Start it again whenever you like.
+        </StatusNote>
       )}
     </>
   );
