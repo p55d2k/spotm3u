@@ -40,7 +40,7 @@ from . import preferences
 from .artwork import cached_artwork_path
 from .exportify import ExportifyParseError, parse_exportify
 from .history import HISTORY_ORDERS, RUN_STATUSES, HistoryUnavailableError
-from .jobs import JobStartError, TrackNotRetryableError
+from .jobs import JobStartError, ProcessingJob, TrackNotRetryableError
 from .m3u import check_playlist
 from .maintenance import CLEAR_ITEMS, CONFIRM_PHRASE, unknown_items
 from .media_player import (
@@ -53,7 +53,11 @@ from .media_player import (
 from .models import Playlist, Track
 from .normalization import sanitize_filename_component
 from .preferences import read_preferences, write_preferences
-from .queue import QueueJobConflictError, QueueJobNotCancellableError, UnknownQueueEntryError
+from .queue import (
+    QueueJobConflictError,
+    QueueJobNotCancellableError,
+    UnknownQueueEntryError,
+)
 from .uploads import PickedFile
 from .web_jobs import (
     _annotate_artwork,
@@ -729,22 +733,29 @@ def playlist_processing_status(job_id: str, playlist_id: str):
         )
     state = _track_state(job)
     # Whether this one playlist is working or waiting is queue state, not job
-    # state, so it is reported alongside it.
+    # state, so it is reported alongside it — together with whether the queue as
+    # a whole is holding its work back, which is what decides whether this page
+    # offers Pause or Resume.
     queue = conversion_queue(app)
     entry = queue.entry(job_id, playlist_id) if queue is not None else None
     state["queue_state"] = entry.state if entry is not None else None
     state["queue_position"] = entry.position if entry is not None else None
+    state["queue_paused"] = queue.paused if queue is not None else False
     return jsonify(state)
 
 
 @api.post("/jobs/<job_id>/playlists/<playlist_id>/queue/cancel")
 def cancel_queued_playlist(job_id: str, playlist_id: str):
-    """Drop a playlist that is still waiting for a queue slot.
+    """Stop one playlist, whether it is waiting for a slot or already running.
 
-    Nothing has been downloaded for a playlist that has not started, so this is
-    safe to do at any time before it begins. A playlist that is already running
-    is refused: stopping work in progress is a different operation, and offering
-    a button here that quietly did nothing would be worse than saying no.
+    Nothing has been downloaded for a playlist that has not started, so it is
+    dropped outright. A running playlist is asked to stop instead of killed: it
+    reaches a boundary where stopping is safe — between candidates, around a
+    download, before the output is written — and stops there, keeping the files
+    it already has. Either way it ends as ``cancelled``, which is not a failure.
+
+    A playlist that has already settled is refused: there is nothing left to
+    stop, and reporting a stop that never happened would be worse than saying no.
     """
     job_directory = _job_or_error(job_id)
     if job_directory is None:
@@ -772,12 +783,116 @@ def cancel_queued_playlist(job_id: str, playlist_id: str):
         entry = queue.cancel(job_id, playlist_id)
     except UnknownQueueEntryError as exc:
         return _error(str(exc), ERROR_JOB_NOT_FOUND, 404)
-    except QueueJobNotCancellableError:
-        return _error("That playlist has already started converting.", ERROR_JOB_RUNNING, 409)
+    except QueueJobNotCancellableError as exc:
+        return _error(
+            f"That playlist has already {exc.state}.",
+            ERROR_JOB_RUNNING,
+            409,
+        )
     state = _track_state(job)
     state["queue_state"] = entry.state
     state["queue_position"] = entry.position
     return jsonify(state)
+
+
+@api.post("/jobs/<job_id>/queue/pause")
+def pause_queue(job_id: str):
+    """Hold the queue so no new conversion starts until it is resumed.
+
+    Whatever is already running keeps going: a pause decides what starts next
+    rather than interrupting work in progress, so a slow track is never
+    abandoned by pressing pause. Work that arrives while paused waits in order,
+    exactly as it would have without a pause.
+    """
+    error = _queue_refused(job_id)
+    if error is not None:
+        return error
+    queue = conversion_queue(current_app._get_current_object())
+    assert queue is not None  # _queue_refused already refused a missing queue
+    queue.pause()
+    return jsonify(_queue_action_response(job_id, "paused"))
+
+
+@api.post("/jobs/<job_id>/queue/resume")
+def resume_queue(job_id: str):
+    """Let the queue start waiting conversions again, in the order they were given.
+
+    Resuming is idempotent and loses nothing: no attempt count, playlist
+    association or queued-at time is rewritten, so a conversion that waited
+    through a pause starts as it would have without one.
+    """
+    error = _queue_refused(job_id)
+    if error is not None:
+        return error
+    queue = conversion_queue(current_app._get_current_object())
+    assert queue is not None  # _queue_refused already refused a missing queue
+    queue.resume()
+    return jsonify(_queue_action_response(job_id, "resumed"))
+
+
+@api.post("/jobs/<job_id>/queue/cancel-all")
+def cancel_pending_work(job_id: str):
+    """Stop everything from this upload that has not finished.
+
+    Waiting playlists are dropped; running ones are asked to stop and settle as
+    cancelled. What already completed, failed or was cancelled keeps that
+    outcome, since rewriting it would hide what happened. Scoped to this upload
+    on purpose: another upload's work is not this batch's to stop.
+    """
+    error = _queue_refused(job_id)
+    if error is not None:
+        return error
+    app = current_app._get_current_object()
+    queue = conversion_queue(app)
+    assert queue is not None  # _queue_refused already refused a missing queue
+    stopped = queue.cancel_pending(job_id=job_id)
+    return jsonify(
+        {
+            "job_id": job_id,
+            "stopped": len(stopped),
+            **_batch_status(_selected_jobs(app, job_id), queue),
+        }
+    )
+
+
+def _queue_refused(job_id: str):
+    """The error answer for a queue action, or ``None`` when it may go ahead.
+
+    Queue control is a whole-queue action, so it is offered for an upload that
+    exists rather than for a particular playlist: there is nothing to select
+    first, and a request naming an expired upload is refused the same way every
+    other route refuses one. A bare app with no queue (some tests) is refused
+    too, rather than answering that pausing did something.
+    """
+    if _job_or_error(job_id) is None:
+        return _error(
+            "That upload has expired. Please upload the ZIP again.", ERROR_JOB_EXPIRED, 404
+        )
+    if conversion_queue(current_app._get_current_object()) is None:
+        return _error("The download queue is not available.", ERROR_JOB_NOT_FOUND, 404)
+    return None
+
+
+def _queue_action_response(job_id: str, action: str) -> dict[str, object]:
+    """The batch status after a queue-level action, plus what the action did.
+
+    ``action`` is echoed so the client that asked for it can tell it landed even
+    if a poll it made first arrives afterwards, which is what keeps a pause from
+    looking like it was ignored.
+    """
+    app = current_app._get_current_object()
+    return {
+        "job_id": job_id,
+        "action": action,
+        **_batch_status(_selected_jobs(app, job_id), conversion_queue(app)),
+    }
+
+
+def _selected_jobs(app: Flask, job_id: str) -> list[ProcessingJob]:
+    """The jobs for the playlists this upload currently has selected."""
+    playlist_ids = _selected_playlist_ids(_current_job_directory(app, job_id))
+    manager = app.config["JOB_MANAGER"]
+    return [job for job in (manager.get(job_id, pid) for pid in playlist_ids) if job is not None]
 
 
 def _retry_selection() -> tuple[int, ...] | object:

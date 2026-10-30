@@ -11,6 +11,8 @@ from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
+from conftest import stub_web_downloader
+
 from spotm3u.app import create_app
 from spotm3u.online.search import SourceCandidate
 
@@ -84,7 +86,7 @@ def test_full_e2e_flow_local_download_and_missing(tmp_path, monkeypatch):
         "spotm3u.web_jobs.OnlineSourceSearcher",
         lambda **kw: _FakeSearcher(no_results_titles=frozenset({"Missing Song"})),
     )
-    monkeypatch.setattr("spotm3u.web_jobs.download_track", _mock_download)
+    stub_web_downloader(monkeypatch, _mock_download)
     monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
 
     download_dir = tmp_path / "downloads"
@@ -151,7 +153,7 @@ def test_e2e_second_playlist_independent(tmp_path, monkeypatch):
     music = tmp_path / "music"
     music.mkdir()
     monkeypatch.setattr("spotm3u.web_jobs.OnlineSourceSearcher", lambda **kw: _FakeSearcher())
-    monkeypatch.setattr("spotm3u.web_jobs.download_track", _mock_download)
+    stub_web_downloader(monkeypatch, _mock_download)
     monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
 
     download_dir = tmp_path / "downloads"

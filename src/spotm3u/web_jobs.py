@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-from functools import partial
 from pathlib import Path
 
 from flask import Flask, session
@@ -24,7 +23,7 @@ from .maintenance import UnsafeTarget, clear, inventory
 from .media_player import MediaPlayerError, add_to_media_player, library_player_name
 from .metadata import embedded_lyrics_form
 from .models import Playlist
-from .online import OnlineSourceSearcher, download_track
+from .online import CancellableDownloader, OnlineSourceSearcher
 from .online.cache import DownloadCache
 from .queue import ConversionQueue
 from .resolution import TrackResolver
@@ -179,7 +178,7 @@ def conversion_queue(app: Flask) -> ConversionQueue | None:
     return queue if isinstance(queue, ConversionQueue) else None
 
 
-def _batch_overall_status(states: list[dict[str, object]]) -> str:
+def _batch_overall_status(states: list[dict[str, object]], *, paused: bool = False) -> str:
     """The one word that describes a whole batch, given its playlists.
 
     Progress in a batch is not a single number, because the playlists are at
@@ -187,6 +186,12 @@ def _batch_overall_status(states: list[dict[str, object]]) -> str:
     some finished long ago. The batch is only ``completed`` when every playlist
     is, and it is ``queued`` while nothing has started yet, so a freshly added
     playlist does not read as though work is already underway.
+
+    ``paused`` is reported as its own state rather than folded into the
+    playlists' own: the queue is a whole-batch decision, and a paused batch that
+    is still finishing what it started is not a batch that has stopped. It only
+    applies while something is unfinished — a batch that is paused and complete
+    is simply complete.
     """
     if not states:
         return "running"
@@ -195,6 +200,8 @@ def _batch_overall_status(states: list[dict[str, object]]) -> str:
         return "completed"
     if any(status == "failed" for status in statuses):
         return "failed"
+    if paused and any(status in {"queued", "running"} for status in statuses):
+        return "paused"
     if any(status == "running" for status in statuses):
         return "running"
     if any(status == "queued" for status in statuses):
@@ -219,12 +226,16 @@ def _batch_status(
         state["queue_state"] = entry.state if entry is not None else None
         state["queue_position"] = entry.position if entry is not None else None
         states.append(state)
+    paused = bool(queue is not None and queue.paused)
     total = sum(int(state["playlist"]["total_tracks"]) for state in states)
     completed = sum(int(state["completed"]) for state in states)
     searched = sum(int(state["searched"]) for state in states)
     resolved = sum(int(state["resolved"]) for state in states)
     return {
-        "status": _batch_overall_status(states),
+        "status": _batch_overall_status(states, paused=paused),
+        # The whole-queue decision, reported beside the overall state so the
+        # interface can offer Resume without inferring it from the status alone.
+        "paused": paused,
         "completed": completed,
         "searched": searched,
         "resolved": resolved,
@@ -601,8 +612,7 @@ def _build_processing_job(
             max_search_workers=max_search_workers,
             socket_timeout=search_socket_timeout,
         )
-        downloader = partial(
-            download_track,
+        downloader = CancellableDownloader(
             quality=quality,
             retries=retries,
             fragment_retries=fragment_retries,

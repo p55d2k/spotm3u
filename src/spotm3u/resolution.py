@@ -11,6 +11,7 @@ from typing import Literal
 
 from . import metadata as _metadata
 from .audio.resolver import LocalAudioResolver
+from .cancellation import CancelledError, CancelSignal, checkpoint
 from .log import TrackLogger
 from .metadata_jobs import MetadataJob
 from .models import ResolvedTrack, Track
@@ -162,6 +163,7 @@ class TrackResolver:
         cache: DownloadCache | None = None,
         log: TrackLogger | None = None,
         defer_metadata: bool = False,
+        cancel: CancelSignal | None = None,
     ) -> None:
         self.local_resolver = local_resolver
         self.output_dir = Path(output_dir)
@@ -170,11 +172,29 @@ class TrackResolver:
         self.cache = cache
         self.defer_metadata = defer_metadata
         self._log = log or TrackLogger(logger)
+        # The stop request this resolution honours at its boundaries. It is set
+        # after construction because the job that owns this resolver is the one
+        # that decides it can be stopped at all; see :meth:`set_cancel`.
+        self._check = checkpoint(cancel)
 
     def set_log_context(self, log: TrackLogger) -> None:
         """Replace the logging context (e.g. to add a background job id)."""
         if log is not None:
             self._log = log
+
+    def set_cancel(self, cancel: CancelSignal | None) -> None:
+        """Honour ``cancel`` at every checkpoint of this resolution.
+
+        A resolver is built by the job's factory before the job exists, so the
+        signal is attached the way the log context is: once the job that owns
+        this resolver has made it. A downloader that can be stopped is told too,
+        since interrupting a download is its own decision and not a checkpoint
+        the resolver could make on its behalf.
+        """
+        self._check = checkpoint(cancel)
+        setter = getattr(self.downloader, "set_cancel", None)
+        if callable(setter):
+            setter(cancel)
 
     def prepare(
         self,
@@ -189,6 +209,11 @@ class TrackResolver:
         with download candidates come back as a :class:`PreparedTrack` for a
         later :meth:`complete` call. Splitting the phases lets callers search
         every track up front while later downloads are still running.
+
+        The stop request is honoured at the boundaries here — before any work
+        starts, and before the search that follows a failed local match — rather
+        than between the two, because a local match that has already found the
+        file is the cheapest thing in the pipeline to finish.
         """
 
         def report(stage: TrackStage) -> None:
@@ -199,6 +224,7 @@ class TrackResolver:
         track_started = time.perf_counter()
         log.info("stage=resolving-local")
         report("resolving-local")
+        self._check()
         local = self.local_resolver.resolve(track)
         log.info(
             "timing stage=matching duration_ms=%.1f",
@@ -213,6 +239,7 @@ class TrackResolver:
             )
             log.info("local match found path=%s", local.resolved.local_path)
             if not self.defer_metadata:
+                self._check()
                 MetadataJob(track, self.output_dir, local.resolved.local_path).run()
             return TrackResolution(
                 track, "local", resolved=resolved, candidates=(), reasons=("local match",)
@@ -221,6 +248,10 @@ class TrackResolver:
         log.info("no local match status=%s", local.status)
         log.info("stage=searching")
         report("searching")
+        # Stopping here rather than during the search: the queries a track has
+        # left are a few seconds each, and a search that is abandoned halfway
+        # wastes a connection the next attempt would need again.
+        self._check()
         try:
             search_started = time.perf_counter()
             candidates = tuple(self.searcher.search(track))
@@ -228,6 +259,8 @@ class TrackResolver:
                 "timing stage=searching duration_ms=%.1f",
                 (time.perf_counter() - search_started) * 1000,
             )
+        except CancelledError:
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             log.error("source search failed: %s", exc)
             return TrackResolution(track, "failed", reasons=(f"source search failed: {exc}",))
@@ -256,6 +289,12 @@ class TrackResolver:
         ``exclude_urls`` names candidates an earlier attempt already turned
         down, so a retry looks for a different source rather than repeating the
         same rejection.
+
+        A stop request is honoured between candidates, before a download, and
+        between a download and the enrichment that follows it. Those are the
+        boundaries where stopping loses nothing: no candidate is half-validated,
+        no download is killed mid-write, and metadata is never written to a file
+        the conversion is about to leave alone.
         """
         track = prepared.track
         candidates = prepared.candidates
@@ -282,6 +321,10 @@ class TrackResolver:
                     ranking.candidate.url,
                 )
                 continue
+            # Between candidates: a candidate already downloaded and validated is
+            # kept, and the next one is only started if the user has not asked
+            # for the work to stop.
+            self._check()
             report("validating-source")
             source_validation = validate_source_candidate(track, ranking.candidate)
             log.info(
@@ -313,8 +356,14 @@ class TrackResolver:
                     log.info("download reused from cache path=%s", cached)
             if downloaded is None:
                 download_started = time.perf_counter()
+                # Before the download: this is the last cheap boundary. Past it
+                # the downloader owns a file, and stopping waits for it to reach
+                # one of its own rather than pulling it out from under yt-dlp.
+                self._check()
                 try:
                     downloaded = self.downloader(track, ranking.candidate.url, self.output_dir)
+                except CancelledError:
+                    raise
                 except (DownloadError, OSError, RuntimeError) as exc:
                     download_failures += 1
                     log.warning("download failed url=%s error=%s", ranking.candidate.url, exc)
@@ -325,6 +374,10 @@ class TrackResolver:
                 )
                 log.info("download completed path=%s", downloaded)
 
+            # After the download, before validation and enrichment: the file is
+            # whole at this point, so stopping leaves a real file on disk rather
+            # than a partial one, and a retry can reuse or replace it.
+            self._check()
             report("validating-audio")
             audio_validation = validate_downloaded_audio(track, downloaded)
             log.info(
@@ -371,6 +424,10 @@ class TrackResolver:
                 status="downloaded",
             )
             if not self.defer_metadata:
+                # Metadata is the last thing written to a file, so it is the last
+                # boundary before the track is done: stopping here leaves the
+                # download intact and only skips the enrichment.
+                self._check()
                 MetadataJob(track, self.output_dir, downloaded).run()
             reasons = ("reused cached download",) if reused_from_cache else ()
             log.info(

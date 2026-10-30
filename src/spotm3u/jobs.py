@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from .artwork import artwork_artist, prefetch_artist_artwork, prune_missing_artwork
+from .cancellation import CancelledError, CancelSignal, attach_cancellation
 from .history import HistoryStore, RunIdentity, persisted_run_status, persisted_track_status
 from .log import TrackLogger, attach_job_logging
 from .m3u.writer import write_m3u
@@ -46,6 +47,11 @@ ResolverFactory = Callable[[], TrackResolver]
 # The message recorded when work is stopped before it starts. It is deliberately
 # not a failure: nothing went wrong, the user simply chose not to have it done.
 JOB_CANCELLED_MESSAGE = "Cancelled before the conversion started."
+
+# The message recorded when work already under way is stopped. Also not a
+# failure, and deliberately different from the above: this one says the run was
+# cut short, so a reader knows some tracks may not have been reached at all.
+JOB_CANCELLED_RUNNING_MESSAGE = "Cancelled while the conversion was running."
 
 
 def _prefetch_artist_artwork_best_effort(output_dir: Path, tracks: Sequence[Track]) -> None:
@@ -105,17 +111,27 @@ TRACK_STATUS_TERMINAL = {
     "uncertain": "failed",
 }
 
+# Track states that will not change again on their own. Everything else is
+# still in flight, which is what tells a stopped run which of its tracks it
+# never decided.
+TRACK_STATUS_SETTLED = frozenset({"complete", "failed", "ambiguous", "cancelled", "skipped"})
+
 
 class JobStartError(RuntimeError):
     """A job has already started and cannot be started again."""
 
 
 class JobNotCancellableError(RuntimeError):
-    """A job is past the point where it can be cancelled without being stopped.
+    """A job has already settled, so there is nothing left to stop.
 
-    Cancelling work that has already begun is a different operation from
-    dropping work that has not, so the queue refuses rather than pretending.
+    Stopping work is only meaningful while it can still stop. A completed,
+    failed or already-cancelled run reports this rather than accepting a stop
+    that would never do anything, and ``state`` says how far it already got.
     """
+
+    def __init__(self, message: str, *, state: str = "completed") -> None:
+        super().__init__(message)
+        self.state = state
 
 
 class JobTimeoutError(RuntimeError):
@@ -246,6 +262,9 @@ class ProcessingJob:
         self._excluded_sources: dict[int, frozenset[str]] = {}
         # The in-flight playlist-level artist-artwork prefetch, if any.
         self._prefetch_thread: threading.Thread | None = None
+        # The stop request this run carries. Reset by a retry, because a retry is
+        # a new attempt at work the previous one was stopped from.
+        self._cancel = CancelSignal()
         # What the next thread runs. A first conversion resolves the whole
         # playlist; a retry resolves only the tracks it requeued, so the two
         # are kept here rather than baked into ``start``.
@@ -263,10 +282,57 @@ class ProcessingJob:
             return self._error
 
     @property
+    def cancelling(self) -> bool:
+        """Whether a stop has been asked for but not carried out yet.
+
+        A run under way cannot be stopped instantly: it stops at its next
+        boundary, which is why this is separate from :attr:`status`. It is what
+        the interface shows as "stopping" instead of a button that appears to do
+        nothing when pressed twice.
+
+        The signal itself never clears, so this is what distinguishes a stop that
+        is still on its way from one this run has already carried out: once the
+        run settles, its status says how it ended and this is no longer true.
+        """
+        with self._lock:
+            return self._status in {"queued", "running"} and self._cancel.cancelled
+
+    @property
     def is_new(self) -> bool:
         """True until this job has ever been started."""
         with self._lock:
             return self._started_at is None and self._history_ref is None
+
+    def cancel(self, reason: str = JOB_CANCELLED_RUNNING_MESSAGE) -> str:
+        """Ask this job to stop, whether or not it has started yet.
+
+        Waiting work is dropped outright, because nothing has been downloaded
+        for it. Work already running is asked rather than forced: it stops at its
+        next checkpoint, and the tracks that reached one keep the files they
+        already had. Both end as ``cancelled`` rather than ``failed``, because
+        the user chose to stop and nothing went wrong.
+
+        Returns the reason recorded, so a caller can report what the job was
+        told. Raises :class:`JobNotCancellableError` for a job that has already
+        settled: there is nothing left to stop, and pretending otherwise would
+        show a stop that never happened.
+        """
+        with self._lock:
+            status = self._status
+            started = self._thread is not None
+        if status == "queued" and not started:
+            try:
+                self.cancel_before_start(reason)
+                return reason
+            except JobNotCancellableError:
+                # It started between the check and the call, so it is now work in
+                # progress and is stopped the same way any other is.
+                with self._lock:
+                    status = self._status
+        if status == "running":
+            self._cancel.cancel(reason)
+            return reason
+        raise JobNotCancellableError("job has already stopped", state=status)
 
     def reserve(self) -> None:
         """Record this conversion as waiting, before any of it has started.
@@ -304,6 +370,7 @@ class ProcessingJob:
                     current.artists,
                     "cancelled",
                     reason,
+                    current.local_path,
                     current.source_url,
                     current.resolution,
                     current.attempts,
@@ -441,6 +508,11 @@ class ProcessingJob:
             # work, so a batch of retries cannot bypass the concurrency limit.
             self._status = "queued"
             self._deadline = time.monotonic() + self.timeout if self.timeout is not None else None
+            # A retry is a new attempt at work the last one stopped from, so it
+            # gets a signal that has not been set. The previous run's own signal
+            # object is left cancelled: anything still winding down from that
+            # run holds a reference to it and must keep seeing the stop.
+            self._cancel = CancelSignal()
             self._excluded_sources = {
                 index: self._rejected_sources(self._results[index])
                 for index in selected
@@ -554,13 +626,23 @@ class ProcessingJob:
             self.fast_mode,
         )
         try:
+            self._check_interrupted()
             resolver = self.resolver_factory()
             attach_job_logging(resolver, job_id=self.job_id)
+            # The resolver is built by a factory that does not know the job yet,
+            # so the stop request is handed over here, once the job that owns it
+            # exists. Its checkpoints are the ones between candidates and around
+            # each download.
+            attach_cancellation(resolver, self._cancel)
             output_dir = self.output_dir
             output_dir.mkdir(parents=True, exist_ok=True)
             self._resolve_all(resolver, indices)
 
             m3u_path = output_dir / self.m3u_filename
+            # Before the output is written: an M3U is the thing that says a
+            # conversion finished, so a cancelled run must not produce one that
+            # claims a partial playlist is a finished playlist.
+            self._check_interrupted()
             write_m3u(
                 m3u_path,
                 [result for result in self._results if result is not None],
@@ -579,6 +661,17 @@ class ProcessingJob:
                 m3u_path,
                 self.successful,
                 self.failed,
+                (time.perf_counter() - job_started) * 1000,
+            )
+        except CancelledError as exc:
+            # The user stopped it. Nothing went wrong, so nothing is recorded as
+            # an error: the run and the tracks it never decided are cancelled,
+            # and the files already downloaded stay where they are for a retry.
+            self._settle_cancelled(exc.reason, indices)
+            track_log.info(
+                "job cancelled reason=%s completed=%d duration_ms=%.1f",
+                exc.reason,
+                self.completed,
                 (time.perf_counter() - job_started) * 1000,
             )
         except Exception as exc:  # pragma: no cover - defensive final state
@@ -650,6 +743,46 @@ class ProcessingJob:
         """A failed resolution standing in for a track that never produced one."""
         return TrackResolution(self.tracks[index], "failed", reasons=(message,))
 
+    def _settle_cancelled(self, reason: str, indices: tuple[int, ...] | None) -> None:
+        """Record a stopped run as cancelled, with every track it never decided.
+
+        A cancelled run is the one case where a track without a result keeps no
+        result at all: a stand-in resolution would put a failure in the history
+        and in the result list, and the user asked for the work to stop rather
+        than to fail. The tracks keep their state as ``cancelled``, which is what
+        the result page reads to offer them for retry.
+        """
+        with self._lock:
+            self._current_index = None
+            self._pending = None
+            # Deliberately no error: the run was stopped on purpose, and the
+            # reason is a record of why rather than something that went wrong.
+            # The status is what says it was cancelled; the reason lives with the
+            # run's history so the result pages can explain it.
+            self._error = None
+            self._status = "cancelled"
+            self._completed_at = time.time()
+            selected = tuple(range(len(self.tracks))) if indices is None else indices
+            for index in selected:
+                current = self._track_states[index]
+                if current.status in TRACK_STATUS_SETTLED:
+                    continue
+                self._track_states[index] = TrackJobState(
+                    current.index,
+                    current.title,
+                    current.artists,
+                    "cancelled",
+                    reason,
+                    current.local_path,
+                    current.source_url,
+                    current.resolution,
+                    current.attempts,
+                    current.stage_started_at,
+                )
+        # The history closes the run and every track row still marked queued or
+        # processing, which is exactly the set that was never decided.
+        self._finish_history("cancelled", error=reason)
+
     def _resolve_all(
         self,
         resolver: TrackResolver,
@@ -667,8 +800,14 @@ class ProcessingJob:
         (``max_download_workers``) so the per-track yt-dlp/ffmpeg work can
         never spawn an uncontrolled number of processes. ``timeout`` bounds
         the whole job so a runaway playlist fails instead of running forever.
+
+        A stop request is honoured between the batch's items and around each of
+        the two phases. In the parallel case the per-track boundaries live in
+        the resolver, which stops a track between its own candidates; these
+        checks are what keep the job from handing a new track to a pool after it
+        has been asked to stop.
         """
-        self._check_deadline()
+        self._check_interrupted()
         tracks = self.tracks
         selected = tuple(range(len(tracks))) if indices is None else indices
         metadata_pool = ThreadPoolExecutor(
@@ -718,91 +857,125 @@ class ProcessingJob:
             if not result.successful or result.local_path is None:
                 self._finalize_track(index, result)
                 return
+            # Before the metadata pass: it is the last thing written to the
+            # file, so a stop here keeps the download and skips only the tags.
+            self._check_interrupted()
             self._set_track_status(index, "enriching-metadata")
             future = metadata_pool.submit(
                 MetadataJob(self.tracks[index], self.output_dir, result.local_path).run
             )
             future.add_done_callback(lambda completed: finalize_metadata(completed, index, result))
 
-        if self.max_workers <= 1 or len(selected) <= 1:
+        try:
+            if self.max_workers <= 1 or len(selected) <= 1:
+                for index in selected:
+                    with self._lock:
+                        self._current_index = index
+                    # Between the batch's items: no new track is started after a
+                    # stop was asked for, which is what makes the loop stop
+                    # rather than only the work in flight.
+                    self._check_interrupted()
+                    result = resolver.resolve(
+                        tracks[index],
+                        stage_callback=self._stage_reporter(index),
+                        exclude_urls=self._excluded_sources.get(index, frozenset()),
+                    )
+                    submit_metadata(index, result)
+                    self._mark_searched(index)
+                join_prefetch()
+                metadata_pool.shutdown()
+                if metadata_errors:
+                    raise metadata_errors[0]
+                return
+
+            def phase_one(index):
+                self._check_interrupted()
+                return resolver.prepare(tracks[index], stage_callback=self._stage_reporter(index))
+
+            prepared: list[TrackResolution | PreparedTrack | None] = [None] * len(tracks)
+            with ThreadPoolExecutor(
+                max_workers=self.max_workers,
+                thread_name_prefix=f"spotm3u-search-{self.job_id}",
+            ) as pool:
+                future_to_index = {pool.submit(phase_one, index): index for index in selected}
+                for future in as_completed(future_to_index):
+                    self._check_interrupted()
+                    index = future_to_index[future]
+                    outcome = future.result()
+                    prepared[index] = outcome
+                    if isinstance(outcome, PreparedTrack):
+                        self._mark_searched(index, status="searched")
+                    else:
+                        self._mark_searched(index)
+
+            download_plans = [
+                (index, prepared[index])
+                for index in selected
+                if isinstance(prepared[index], PreparedTrack)
+            ]
             for index in selected:
-                with self._lock:
-                    self._current_index = index
-                self._check_deadline()
-                result = resolver.resolve(
-                    tracks[index],
-                    stage_callback=self._stage_reporter(index),
-                    exclude_urls=self._excluded_sources.get(index, frozenset()),
-                )
-                submit_metadata(index, result)
-                self._mark_searched(index)
+                plan = prepared[index]
+                if not isinstance(plan, PreparedTrack):
+                    submit_metadata(index, plan)
+
+            if download_plans:
+                # Between the two phases: the searches that ran ahead have
+                # produced candidates, and none of them is downloaded after a
+                # stop.
+                self._check_interrupted()
+
+                def phase_two(index_plan):
+                    self._check_interrupted()
+                    return resolver.complete(
+                        index_plan[1],
+                        stage_callback=self._stage_reporter(index_plan[0]),
+                        exclude_urls=self._excluded_sources.get(index_plan[0], frozenset()),
+                    )
+
+                with ThreadPoolExecutor(
+                    max_workers=self.max_download_workers,
+                    thread_name_prefix=f"spotm3u-download-{self.job_id}",
+                ) as pool:
+                    future_to_index = {
+                        pool.submit(phase_two, index_plan): index_plan[0]
+                        for index_plan in download_plans
+                    }
+                    for future in as_completed(future_to_index):
+                        # After each download: a track that finished is recorded
+                        # before the stop is acted on, so a cancelled run keeps
+                        # every result it actually reached.
+                        index = future_to_index[future]
+                        submit_metadata(index, future.result())
+                        self._check_interrupted()
             join_prefetch()
             metadata_pool.shutdown()
             if metadata_errors:
                 raise metadata_errors[0]
-            return
-
-        def phase_one(index):
-            return resolver.prepare(tracks[index], stage_callback=self._stage_reporter(index))
-
-        prepared: list[TrackResolution | PreparedTrack | None] = [None] * len(tracks)
-        with ThreadPoolExecutor(
-            max_workers=self.max_workers,
-            thread_name_prefix=f"spotm3u-search-{self.job_id}",
-        ) as pool:
-            future_to_index = {pool.submit(phase_one, index): index for index in selected}
-            for future in as_completed(future_to_index):
-                self._check_deadline()
-                index = future_to_index[future]
-                outcome = future.result()
-                prepared[index] = outcome
-                if isinstance(outcome, PreparedTrack):
-                    self._mark_searched(index, status="searched")
-                else:
-                    self._mark_searched(index)
-
-        download_plans = [
-            (index, prepared[index])
-            for index in selected
-            if isinstance(prepared[index], PreparedTrack)
-        ]
-        for index in selected:
-            plan = prepared[index]
-            if not isinstance(plan, PreparedTrack):
-                submit_metadata(index, plan)
-
-        if download_plans:
-            self._check_deadline()
-
-            def phase_two(index_plan):
-                return resolver.complete(
-                    index_plan[1],
-                    stage_callback=self._stage_reporter(index_plan[0]),
-                    exclude_urls=self._excluded_sources.get(index_plan[0], frozenset()),
-                )
-
-            with ThreadPoolExecutor(
-                max_workers=self.max_download_workers,
-                thread_name_prefix=f"spotm3u-download-{self.job_id}",
-            ) as pool:
-                future_to_index = {
-                    pool.submit(phase_two, index_plan): index_plan[0]
-                    for index_plan in download_plans
-                }
-                for future in as_completed(future_to_index):
-                    self._check_deadline()
-                    index = future_to_index[future]
-                    submit_metadata(index, future.result())
-        join_prefetch()
-        metadata_pool.shutdown()
-        if metadata_errors:
-            raise metadata_errors[0]
+        finally:
+            # Nothing this run started may still be writing once the job
+            # settles, or a track would change state after the run reported its
+            # outcome. Queued metadata jobs are dropped rather than run: the stop
+            # was asked for, and the downloads they would tag are already on disk.
+            join_prefetch()
+            metadata_pool.shutdown(wait=True, cancel_futures=True)
 
     def _join_prefetch(self) -> None:
         """Wait for this job's artist-artwork prefetch thread, if one is running."""
         thread = self._prefetch_thread
         if thread is not None:
             thread.join()
+
+    def _check_interrupted(self) -> None:
+        """Stop at a safe boundary: the user asked to, or the budget ran out.
+
+        Both raise, and both are checked at the same boundaries, because a run
+        that is being stopped and a run that ran out of time need the same thing
+        from the pipeline: to notice at a point where stopping is safe. Which of
+        the two it was decides the state the run settles in, not what happens
+        here.
+        """
+        self._cancel.check()
+        self._check_deadline()
 
     def _check_deadline(self) -> None:
         """Raise when the whole job has exceeded its ``timeout`` budget."""
@@ -1036,6 +1209,10 @@ class ProcessingJob:
                 "stale_outputs": stale_outputs,
                 "counts": counts,
                 "status": self._status,
+                # True between asking a running job to stop and its reaching a
+                # boundary. Without it, "cancelled" and "stopping" would look
+                # the same and a second press would appear to do nothing.
+                "cancelling": self._cancel.cancelled,
                 "error": self._error,
                 "output_dir": str(self.output_dir),
                 "fast_mode": self.fast_mode,
@@ -1086,6 +1263,7 @@ class JobManager:
 
 __all__ = [
     "JOB_CANCELLED_MESSAGE",
+    "JOB_CANCELLED_RUNNING_MESSAGE",
     "JobManager",
     "JobNotCancellableError",
     "JobStartError",

@@ -4,7 +4,15 @@ import { Button } from "../components/Button";
 import { ProgressCard } from "../components/ProgressCard";
 import { TrackRow } from "../components/TrackRow";
 import { ErrorNote, StatusNote } from "../components/Notice";
-import { ApiError, getJob, getPlaylistProcessingStatus, startProcessing } from "../lib/api";
+import {
+  ApiError,
+  cancelPlaylistProcessing,
+  getJob,
+  getPlaylistProcessingStatus,
+  pauseQueue,
+  resumeQueue,
+  startProcessing,
+} from "../lib/api";
 import type { JobPayload, JobState } from "../lib/api";
 import { appUrl, navigate } from "../lib/router";
 import { useToast } from "../components/Toast";
@@ -31,6 +39,8 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
   const [phase, setPhase] = useState<Phase>("loading");
   const [fastMode, setFastMode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [queueBusy, setQueueBusy] = useState(false);
   const mountedRef = useRef(true);
   const timerRef = useRef<number | null>(null);
   const etaRef = useRef(new EtaEstimator());
@@ -120,6 +130,47 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
     }
   };
 
+  /**
+   * Stop this playlist. A waiting one is dropped outright; a running one is asked
+   * to stop and keeps the audio it has already finished, so the button stays busy
+   * until the run reports itself settled rather than pretending it is done.
+   */
+  const stopConverting = async () => {
+    setStopping(true);
+    try {
+      await cancelPlaylistProcessing(jobId, playlistId);
+      toast.success("Stopping. Audio already downloaded is kept.");
+    } catch (cause) {
+      setStopping(false);
+      toast.error(
+        "This playlist could not be stopped.",
+        cause instanceof ApiError ? cause.message : "Check your connection and try again.",
+      );
+      return;
+    }
+    void pollOnce();
+  };
+
+  const runQueueAction = async (
+    action: () => Promise<{ paused: boolean }>,
+    message: string,
+    failure: string,
+  ) => {
+    setQueueBusy(true);
+    try {
+      await action();
+      toast.success(message);
+    } catch (cause) {
+      toast.error(
+        failure,
+        cause instanceof ApiError ? cause.message : "Check your connection and try again.",
+      );
+    } finally {
+      setQueueBusy(false);
+      void pollOnce();
+    }
+  };
+
   const name = state?.playlist.name ?? header?.playlists.find((p) => p.id === playlistId)?.name ?? null;
   const totalTracks =
     state?.playlist.total_tracks ??
@@ -134,7 +185,17 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
   // A playlist waiting for a queue slot has not started any of that work, so
   // the line says it is waiting instead of naming a stage it has not reached.
   const waiting = state?.queue_state === "queued" || (state?.status === "queued" && !activeStage);
-  const statusLine = waiting ? statusLabel("queued") : activeStage ? statusLabel(activeStage) : statusLabel(state?.status ?? "");
+  // Pausing is only worth offering when there is something to hold back, and
+  // resuming only while the queue is actually holding it back.
+  const pausable = state?.queue_state === "queued" || state?.status === "queued";
+  const stoppable = state?.queue_state === "queued" || state?.queue_state === "active";
+  const statusLine = state?.cancelling
+    ? "Stopping — finishing the track it is on"
+    : waiting
+      ? statusLabel("queued")
+      : activeStage
+        ? statusLabel(activeStage)
+        : statusLabel(state?.status ?? "");
 
   return (
     <>
@@ -164,34 +225,77 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
       )}
 
       {state && phase === "active" && (
-        <ProgressCard
-        statusLine={statusLine}
-        percent={progressFraction(
-          state.searched,
-          state.resolved,
-          state.completed,
-          state.progress_total || state.playlist.total_tracks,
-        )}
-        searched={state.searched}
-        resolved={state.resolved}
-        completed={state.completed}
-          total={state.progress_total || state.playlist.total_tracks}
-          successful={state.successful}
-          failed={state.failed}
-          eta={state.status === "running" ? remainingLabel(state, etaRef.current) : null}
-          currentTrack={
-            state.current_track
-              ? `Current: ${state.current_track.title} — ${statusLabel(state.current_track.status)}`
-              : undefined
-          }
-          error={state.error}
-        >
-          <ol className="m-0 list-none rounded-md border border-line p-1">
-            {state.tracks.map((track) => (
-              <TrackRow key={track.index} track={track} jobId={jobId} playlistId={playlistId} />
-            ))}
-          </ol>
-        </ProgressCard>
+        <div className="flex flex-col gap-4">
+          <ProgressCard
+            statusLine={statusLine}
+            percent={progressFraction(
+              state.searched,
+              state.resolved,
+              state.completed,
+              state.progress_total || state.playlist.total_tracks,
+            )}
+            searched={state.searched}
+            resolved={state.resolved}
+            completed={state.completed}
+            total={state.progress_total || state.playlist.total_tracks}
+            successful={state.successful}
+            failed={state.failed}
+            eta={state.status === "running" ? remainingLabel(state, etaRef.current) : null}
+            currentTrack={
+              state.current_track
+                ? `Current: ${state.current_track.title} — ${statusLabel(state.current_track.status)}`
+                : undefined
+            }
+            error={state.error}
+          >
+            <ol className="m-0 list-none rounded-md border border-line p-1">
+              {state.tracks.map((track) => (
+                <TrackRow key={track.index} track={track} jobId={jobId} playlistId={playlistId} />
+              ))}
+            </ol>
+          </ProgressCard>
+          <div className="flex flex-wrap items-center gap-2">
+            {stoppable && (
+              <Button
+                variant="secondary"
+                busy={stopping}
+                onClick={() => void stopConverting()}
+              >
+                {waiting ? "Remove from queue" : "Cancel"}
+              </Button>
+            )}
+            {pausable && !state.queue_paused && (
+              <Button
+                variant="secondary"
+                busy={queueBusy}
+                onClick={() =>
+                  void runQueueAction(
+                    () => pauseQueue(jobId),
+                    "Paused. This playlist keeps its place in the queue.",
+                    "The queue could not be paused.",
+                  )
+                }
+              >
+                Pause queue
+              </Button>
+            )}
+            {pausable && state.queue_paused && (
+              <Button
+                variant="secondary"
+                busy={queueBusy}
+                onClick={() =>
+                  void runQueueAction(
+                    () => resumeQueue(jobId),
+                    "Resumed. This playlist starts as soon as a slot frees up.",
+                    "The queue could not be resumed.",
+                  )
+                }
+              >
+                Resume queue
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       {state && state.status === "failed" && !state.error && (
@@ -200,16 +304,19 @@ export default function Processing({ jobId, playlistId }: { jobId: string; playl
 
       {waiting && state && (
         <StatusNote>
-          {state.queue_position
-            ? `Waiting for a conversion slot (position ${state.queue_position}). SpotM3U converts a few playlists at a time; this one starts as soon as a slot frees up, and it keeps its place if you close the window.`
-            : "Waiting for a conversion slot. SpotM3U converts a few playlists at a time; this one starts as soon as a slot frees up."}
+          {state.queue_paused
+            ? "The download queue is paused, so this playlist is being held back. It keeps its place and starts as soon as you resume the queue."
+            : state.queue_position
+              ? `Waiting for a conversion slot (position ${state.queue_position}). SpotM3U converts a few playlists at a time; this one starts as soon as a slot frees up, and it keeps its place if you close the window.`
+              : "Waiting for a conversion slot. SpotM3U converts a few playlists at a time; this one starts as soon as a slot frees up."}
         </StatusNote>
       )}
 
       {state && state.status === "cancelled" && (
         <StatusNote>
-          This playlist was waiting for a conversion slot and was removed from the queue, so
-          nothing was downloaded. Start it again whenever you like.
+          {state.completed > 0
+            ? `Cancelled. The ${state.completed} track${state.completed === 1 ? "" : "s"} already finished are kept, so you can retry the rest from the results page.`
+            : "Cancelled before it started, so nothing was downloaded. Start it again whenever you like."}
         </StatusNote>
       )}
     </>

@@ -33,6 +33,11 @@ QueueState = Literal["queued", "active", "completed", "failed", "cancelled"]
 
 QUEUE_STATES: tuple[QueueState, ...] = ("queued", "active", "completed", "failed", "cancelled")
 
+# The states a conversion cannot move on from by itself. Naming them once keeps
+# "is this over yet" in one place, because a stop request, a snapshot and the
+# shutdown path all have to answer it the same way.
+QUEUE_SETTLED: frozenset[QueueState] = frozenset({"completed", "failed", "cancelled"})
+
 # Two conversions at once is the default because it is where a run is still
 # comfortably useful: each one already parallelises its own tracks, so a single
 # conversion is usually not using the whole machine, and a third one mostly
@@ -44,6 +49,11 @@ DEFAULT_MAX_ACTIVE_PLAYLISTS = 2
 # dropped belongs to the queue rather than the job, so the job's own wording is
 # about stopping work once it has begun.
 QUEUE_JOB_CANCELLED = "Cancelled while waiting to run."
+
+# Why a waiting conversion was dropped by "cancel everything". Named apart from
+# the queue's own message so a run stopped in bulk reads differently from one the
+# user singled out.
+QUEUE_ALL_CANCELLED = "Cancelled with the rest of the pending work."
 
 
 class QueueError(RuntimeError):
@@ -63,13 +73,13 @@ class UnknownQueueEntryError(QueueError):
 
 
 class QueueJobNotCancellableError(QueueError):
-    """The conversion has already started, so it cannot simply be dropped.
+    """The conversion has already settled, so there is nothing left to stop.
 
-    ``state`` says what it is doing instead, so a caller can tell the user
-    something useful.
+    ``state`` says how far it got, so a caller can tell the user something
+    useful instead of a bare refusal.
     """
 
-    def __init__(self, message: str, *, state: str = "active") -> None:
+    def __init__(self, message: str, *, state: str = "completed") -> None:
         super().__init__(message)
         self.state = state
 
@@ -92,7 +102,7 @@ class QueueEntry:
     @property
     def settled(self) -> bool:
         """True once this conversion will not change state on its own again."""
-        return self.state in {"completed", "failed", "cancelled"}
+        return self.state in QUEUE_SETTLED
 
     def as_dict(self) -> dict[str, object]:
         """The JSON shape the interface polls for."""
@@ -124,6 +134,11 @@ class _Slot:
     queued_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None
+
+    @property
+    def settled(self) -> bool:
+        """True once this conversion will not change state on its own again."""
+        return self.state in QUEUE_SETTLED
 
     @property
     def key(self) -> tuple[str, str]:
@@ -166,6 +181,7 @@ class ConversionQueue:
         self._slots: dict[tuple[str, str], _Slot] = {}
         # The conversions holding one of the slots, and the threads holding them.
         self._active: set[tuple[str, str]] = set()
+        self._paused = False
         self._closed = False
 
     @property
@@ -182,6 +198,12 @@ class ConversionQueue:
     def waiting_count(self) -> int:
         with self._condition:
             return len(self._waiting)
+
+    @property
+    def paused(self) -> bool:
+        """Whether the queue is holding its work back from starting."""
+        with self._condition:
+            return self._paused
 
     # -- waiting -----------------------------------------------------------
 
@@ -245,34 +267,126 @@ class ConversionQueue:
         self._launch(starting)
         return selected
 
-    def cancel(self, job_id: str, playlist_id: str) -> QueueEntry:
-        """Drop a conversion that has not started and record it as cancelled.
+    def cancel(
+        self, job_id: str, playlist_id: str, reason: str = QUEUE_JOB_CANCELLED
+    ) -> QueueEntry:
+        """Stop one conversion, whether it is waiting or already running.
 
-        Only waiting work can be cancelled this way. A conversion that has begun
-        is stopped by pausing or cancelling the run, which is a different
-        operation and is deliberately not reachable from here.
+        Waiting work is dropped outright: it has no thread, so there is nothing
+        to stop and nothing has been downloaded for it. Running work is asked to
+        stop instead of killed, and stops at its next boundary, so a download
+        that is mid-write finishes that write rather than leaving a truncated
+        file behind. Its entry stays ``active`` until the run itself settles,
+        which is what the interface shows as "stopping".
+
+        A conversion that has already settled is refused: there is nothing left
+        to stop, and reporting a stop that never happened would be worse than
+        saying no.
         """
         with self._condition:
             slot = self._slots.get((job_id, playlist_id))
             if slot is None:
                 raise UnknownQueueEntryError("conversion is not in the queue")
-            if slot.state != "queued":
+            if slot.settled:
                 raise QueueJobNotCancellableError(
-                    "conversion has already started", state=slot.state
+                    "conversion has already finished", state=slot.state
                 )
-            self._waiting.remove(slot)
-            slot.state = "cancelled"
-            slot.finished_at = time.time()
-            starting = self._take_available()
-        try:
-            slot.job.cancel_before_start(QUEUE_JOB_CANCELLED)
-        except JobNotCancellableError:  # pragma: no cover - the queue just checked
-            logger.warning("conversion %s started while being cancelled", slot.key)
+            if slot.state == "queued":
+                self._waiting.remove(slot)
+                slot.state = "cancelled"
+                slot.finished_at = time.time()
+                starting = self._take_available()
+            else:
+                # Still active: the run decides when it stops, and the queue
+                # records how it ended in ``_settle``.
+                starting = []
+        if slot.state == "cancelled":
+            self._drop_waiting_job(slot, reason)
+        else:
+            self._ask_job_to_stop(slot, reason)
         with self._condition:
             entry = slot.entry(None)
             self._condition.notify_all()
         self._launch(starting)
         return entry
+
+    def cancel_pending(
+        self,
+        *,
+        job_id: str | None = None,
+        reason: str = QUEUE_ALL_CANCELLED,
+    ) -> list[QueueEntry]:
+        """Stop everything that has not finished, and report what was stopped.
+
+        ``job_id`` narrows this to one upload's playlists, so a batch can be
+        stopped without reaching into another one the user has open. Waiting
+        conversions are dropped; running ones are asked to stop and are still
+        ``active`` in the answer until they settle, which is why a caller that
+        wants a settled answer waits on :meth:`wait_for_idle`.
+
+        Work that has already completed, failed or been cancelled is left alone:
+        it has an outcome the user already sees, and rewriting it would hide
+        what happened.
+        """
+        with self._condition:
+            targets = [
+                slot
+                for slot in self._slots.values()
+                if not slot.settled and (job_id is None or slot.job.job_id == job_id)
+            ]
+        stopped: list[QueueEntry] = []
+        for slot in targets:
+            try:
+                stopped.append(self.cancel(slot.job.job_id, slot.job.playlist_id, reason))
+            except (QueueJobNotCancellableError, UnknownQueueEntryError):
+                # It settled between the two locks; its own outcome stands.
+                continue
+        return stopped
+
+    def pause(self) -> None:
+        """Stop handing out slots, leaving what is running alone.
+
+        Conversions already running are not interrupted: a pause is a decision
+        about what starts next, and one that killed work in progress would be a
+        cancellation with a misleading name. Work that arrives while paused waits
+        like anything else, in the order it was given.
+        """
+        with self._condition:
+            self._paused = True
+            self._condition.notify_all()
+
+    def resume(self) -> None:
+        """Let the queue start waiting work again, in its existing order.
+
+        Pausing does not unqueue anything, so resuming needs no reconstruction:
+        the same entries in the same order take the same slots they would have
+        taken had the pause never happened.
+        """
+        with self._condition:
+            if not self._paused:
+                return
+            self._paused = False
+            starting = self._take_available()
+            self._condition.notify_all()
+        # Started outside the lock, because a conversion that starts instantly
+        # would otherwise be able to ask the queue a question it cannot answer.
+        self._launch(starting)
+
+    def _drop_waiting_job(self, slot: _Slot, reason: str) -> None:
+        """Record a waiting conversion as cancelled, never as a failure."""
+        try:
+            slot.job.cancel_before_start(reason)
+        except JobNotCancellableError:  # pragma: no cover - the queue just checked
+            logger.warning("conversion %s started while being cancelled", slot.key)
+
+    def _ask_job_to_stop(self, slot: _Slot, reason: str) -> None:
+        """Ask a running conversion to stop at its next boundary."""
+        try:
+            slot.job.cancel(reason)
+        except JobNotCancellableError:
+            # It finished between the two locks. Its own outcome stands; the
+            # queue only records it when the run settles.
+            logger.info("conversion %s finished while being stopped", slot.key)
 
     # -- reading -----------------------------------------------------------
 
@@ -309,6 +423,10 @@ class ConversionQueue:
             counts[entry.state] += 1
         return {
             "max_active": self._max_active,
+            # Reported as its own flag rather than a sixth state: a paused queue
+            # is still running whatever it had already started, and the
+            # interface has to be able to say both things at once.
+            "paused": self.paused,
             "active": counts["active"],
             "waiting": counts["queued"],
             "completed": counts["completed"],
@@ -362,7 +480,14 @@ class ConversionQueue:
         return None
 
     def _take_available(self) -> list[_Slot]:
-        """Claim slots for as many waiting conversions as the limit allows."""
+        """Claim slots for as many waiting conversions as the limit allows.
+
+        A paused queue hands out none, which is the whole of what pausing means
+        here: the waiting order is untouched, and resuming claims slots from the
+        same front of it.
+        """
+        if self._paused:
+            return []
         starting: list[_Slot] = []
         while self._waiting and len(self._active) < self._max_active:
             slot = self._waiting.popleft()

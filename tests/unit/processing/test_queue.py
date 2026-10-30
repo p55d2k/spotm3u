@@ -13,10 +13,12 @@ from pathlib import Path
 
 import pytest
 
+from spotm3u.cancellation import CancelledError
 from spotm3u.history import HistoryStore
 from spotm3u.jobs import ProcessingJob
 from spotm3u.models import ResolvedTrack, Track
 from spotm3u.queue import (
+    QUEUE_ALL_CANCELLED,
     QUEUE_JOB_CANCELLED,
     ConversionQueue,
     QueueClosedError,
@@ -91,6 +93,47 @@ def _job(
         resolver_factory=lambda: resolver,
         history=history,
     )
+
+
+class CancellableGateResolver(GateResolver):
+    """A gate that can also be stopped, the way a real resolver can.
+
+    A resolver that ignores the stop request would leave a running conversion
+    unstoppable, so this one waits in slices and raises the same
+    :class:`~spotm3u.cancellation.CancelledError` the pipeline raises at its own
+    checkpoints. That is the whole contract: a stop is noticed, not enforced.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._signal = None
+        self.stopped = 0
+
+    def set_cancel(self, signal) -> None:
+        self._signal = signal
+
+    def resolve(self, track, *, stage_callback=None, exclude_urls=()):
+        with self._lock:
+            self.calls += 1
+            self.running += 1
+            self.peak = max(self.peak, self.running)
+            self.entered.set()
+        try:
+            while not self._release.is_set():
+                if self._signal is not None and self._signal.cancelled:
+                    self.stopped += 1
+                    raise CancelledError(self._signal.reason)
+                self._release.wait(timeout=0.02)
+            path = Path(track.title) / f"{track.title}.mp3"
+            return TrackResolution(
+                track,
+                "downloaded",
+                resolved=ResolvedTrack(track, path, status="downloaded"),
+                reasons=("downloaded",),
+            )
+        finally:
+            with self._lock:
+                self.running -= 1
 
 
 def _wait_for(predicate, timeout: float = 10.0) -> bool:
@@ -191,6 +234,14 @@ def test_cancelling_a_waiting_conversion_drops_it_without_starting(tmp_path) -> 
     assert second.status == "cancelled"
     assert second.error == QUEUE_JOB_CANCELLED
     assert queue.snapshot()["cancelled"] == 1
+    # The track's own fields are preserved rather than shifted into one
+    # another: a cancelled track must still report the same identity it had.
+    cancelled_track = second.as_dict()["tracks"][0]
+    assert cancelled_track["local_path"] is None
+    assert cancelled_track["source_url"] is None
+    assert cancelled_track["resolution"] == ""
+    assert cancelled_track["attempts"] == 0
+    assert cancelled_track["stage_started_at"] is None
     resolver.release()
     assert queue.wait_for_idle(timeout=30)
     assert first.status == "completed"
@@ -198,18 +249,178 @@ def test_cancelling_a_waiting_conversion_drops_it_without_starting(tmp_path) -> 
     assert second.as_dict()["resolved"] == 0
 
 
-def test_a_running_conversion_cannot_be_dropped_from_the_queue(tmp_path) -> None:
-    """Cancelling work that has begun is refused rather than quietly ignored."""
+def test_cancelling_a_running_conversion_stops_it_without_failing(tmp_path) -> None:
+    """A running conversion is asked to stop, and settles as cancelled.
+
+    This is the case that used to be refused: refusing meant a playlist that had
+    already begun could only be left to finish, which is not what "cancel" means
+    to the person who asked for it. The work stops at the resolver's next
+    boundary, reports itself cancelled, and the slot is freed for the next one.
+    """
+    resolver = CancellableGateResolver()
+    queue = ConversionQueue(max_active=1)
+    first = _job(tmp_path, "0", resolver)
+    second = _job(tmp_path, "1", resolver)
+    queue.submit(first)
+    queue.submit(second)
+    assert _wait_for(lambda: resolver.running == 1)
+
+    queue.cancel("job-1", "0")
+
+    # The stop is not the same thing as the stop having happened: the entry stays
+    # active, and says the run is winding down, until the resolver lets go.
+    assert queue.snapshot()["entries"][0]["state"] == "active"
+    assert first.cancelling is True
+    assert first.status == "running", "a stop request is not a settled state"
+
+    assert _wait_for(lambda: first.status == "cancelled")
+    assert first.cancelling is False
+    assert first.error is None, "a cancellation is not an error to report"
+    assert not list((tmp_path / "downloads").glob("*.m3u")), "no m3u for a stopped run"
+    assert queue.count_in("cancelled") == 1
+
+    resolver.release()
+    assert queue.wait_for_idle(timeout=30)
+    assert second.status == "completed", "the freed slot is handed on"
+
+
+def test_cancelling_a_settled_conversion_is_refused(tmp_path) -> None:
+    """A stop that arrived too late says so rather than pretending to work."""
     resolver = GateResolver()
     queue = ConversionQueue(max_active=1)
     job = _job(tmp_path, "0", resolver)
     queue.submit(job)
-
     assert _wait_for(lambda: resolver.running == 1)
+    resolver.release()
+    assert queue.wait_for_idle(timeout=30)
+    assert job.status == "completed"
+
     with pytest.raises(QueueJobNotCancellableError) as raised:
         queue.cancel("job-1", "0")
 
-    assert raised.value.state == "active"
+    assert raised.value.state == "completed"
+
+
+def test_pausing_holds_waiting_work_and_resuming_starts_it_in_order(tmp_path) -> None:
+    """A paused queue keeps its order and starts nothing until it is resumed."""
+    resolvers = [CancellableGateResolver() for _ in range(3)]
+    queue = ConversionQueue(max_active=1)
+    first, second, third = (
+        _job(tmp_path, str(index), resolver) for index, resolver in enumerate(resolvers)
+    )
+    queue.submit(first)
+    assert _wait_for(lambda: resolvers[0].running == 1)
+
+    queue.pause()
+    queue.submit(second)
+    queue.submit(third)
+    assert queue.paused is True
+    assert queue.waiting_count == 2
+    snapshot = queue.snapshot()
+    assert snapshot["paused"] is True
+    waiting_ids = [
+        entry["playlist_id"] for entry in snapshot["entries"] if entry["state"] == "queued"
+    ]
+    assert waiting_ids == ["1", "2"]
+
+    # Pausing holds the queue back; it does not stop what is already running, so
+    # the running conversion finishes and its slot stays empty.
+    resolvers[0].release()
+    assert _wait_for(lambda: first.status == "completed")
+    time.sleep(0.2)
+    assert resolvers[1].calls == 0, "a paused queue must not hand out the freed slot"
+    assert queue.waiting_count == 2
+
+    queue.resume()
+    assert queue.paused is False
+    assert _wait_for(lambda: resolvers[1].calls == 1)
+    resolvers[1].release()
+    assert _wait_for(lambda: second.status == "completed")
+    assert _wait_for(lambda: resolvers[2].calls == 1)
+    resolvers[2].release()
+    assert queue.wait_for_idle(timeout=30)
+    assert [job.status for job in (first, second, third)] == ["completed"] * 3
+    assert [entry["state"] for entry in queue.snapshot()["entries"]] == ["completed"] * 3
+
+
+def test_pausing_twice_is_harmless_and_resuming_a_running_queue_is_harmless(tmp_path) -> None:
+    """The decision is a flag, so repeating it must not change anything."""
+    resolver = GateResolver()
+    queue = ConversionQueue(max_active=2)
+    queue.pause()
+    queue.pause()
+    assert queue.paused is True
+    queue.resume()
+    queue.resume()
+    assert queue.paused is False
+    job = _job(tmp_path, "0", resolver)
+    queue.submit(job)
+    assert _wait_for(lambda: resolver.running == 1)
+    resolver.release()
+    assert queue.wait_for_idle(timeout=30)
+
+
+def test_cancelling_the_pending_work_stops_this_upload_and_spares_the_others(tmp_path) -> None:
+    """Bulk cancel is scoped to the upload it was asked about."""
+    resolver = CancellableGateResolver()
+    queue = ConversionQueue(max_active=2)
+    mine = [_job(tmp_path, str(index), resolver, job_id="job-1") for index in range(3)]
+    theirs = [_job(tmp_path, str(index), resolver, job_id="job-2") for index in range(2)]
+    for job in [*mine, *theirs]:
+        queue.submit(job)
+    assert _wait_for(lambda: resolver.running == 2)
+
+    stopped = queue.cancel_pending(job_id="job-1")
+
+    # Both of this upload's running conversions and its waiting one.
+    assert len(stopped) == 3
+    resolver.release()
+    assert queue.wait_for_idle(timeout=30)
+    assert {job.status for job in mine} == {"cancelled"}
+    assert mine[2].error == QUEUE_ALL_CANCELLED
+    assert {job.status for job in theirs} == {"completed"}
+
+
+def test_cancelling_nothing_pending_is_not_an_error(tmp_path) -> None:
+    """Bulk cancel with nothing left to stop reports nothing rather than failing."""
+    resolver = CancellableGateResolver()
+    queue = ConversionQueue(max_active=1)
+    job = _job(tmp_path, "0", resolver)
+    queue.submit(job)
+    assert _wait_for(lambda: resolver.running == 1)
+    assert len(queue.cancel_pending(job_id="job-1")) == 1
+    assert _wait_for(lambda: job.status == "cancelled")
+    assert queue.cancel_pending(job_id="job-1") == []
+    resolver.release()
+    assert queue.wait_for_idle(timeout=30)
+
+
+def test_a_retry_after_a_cancellation_starts_a_fresh_attempt(tmp_path) -> None:
+    """The retry gets an unset signal, and nothing left over from the stop.
+
+    This is the race a reset-in-place would lose: the stopped attempt's resolver
+    still holds the old signal, and must keep seeing the stop, while the retry
+    runs against a new one.
+    """
+    resolver = CancellableGateResolver()
+    queue = ConversionQueue(max_active=1)
+    job = _job(tmp_path, "0", resolver)
+    queue.submit(job)
+    assert _wait_for(lambda: resolver.running == 1)
+    queue.cancel("job-1", "0")
+    assert _wait_for(lambda: job.status == "cancelled")
+
+    first_signal = resolver._signal
+    assert first_signal.cancelled is True
+
+    assert queue.submit_retry(job) == (0,)
+    assert _wait_for(lambda: resolver.running == 1)
+    assert job.status == "running", "a retry is a new attempt, not a resumed one"
+    # The new attempt's signal is a different, unset object: the stop that
+    # belonged to the old attempt cannot follow it into the retry.
+    assert resolver._signal is not first_signal
+    assert resolver._signal.cancelled is False
+
     resolver.release()
     assert queue.wait_for_idle(timeout=30)
     assert job.status == "completed"

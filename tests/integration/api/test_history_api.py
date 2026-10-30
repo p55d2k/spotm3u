@@ -4,6 +4,8 @@ from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
+from conftest import stub_web_downloader
+
 from spotm3u.app import create_app
 from spotm3u.history import HistoryStore, RunIdentity, persisted_track_status
 from spotm3u.models import Track
@@ -79,7 +81,7 @@ def _convert(
     monkeypatch.setattr(
         "spotm3u.web_jobs.OnlineSourceSearcher", lambda **_kw: searcher or _FakeSearcher()
     )
-    monkeypatch.setattr("spotm3u.web_jobs.download_track", _mock_download)
+    stub_web_downloader(monkeypatch, _mock_download)
     monkeypatch.setattr("spotm3u.resolution.validate_downloaded_audio", _mock_audio_valid)
     uploaded = client.post(
         "/api/upload",

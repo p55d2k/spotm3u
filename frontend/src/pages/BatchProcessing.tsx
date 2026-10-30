@@ -5,9 +5,12 @@ import { ProgressCard } from "../components/ProgressCard";
 import { TrackRow } from "../components/TrackRow";
 import {
   ApiError,
-  cancelQueuedPlaylist,
+  cancelPendingWork,
+  cancelPlaylistProcessing,
   getJob,
   getProcessingStatus,
+  pauseQueue,
+  resumeQueue,
   startProcessing,
 } from "../lib/api";
 import type { BatchState } from "../lib/api";
@@ -37,6 +40,7 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
   const [fastMode, setFastMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [queueBusy, setQueueBusy] = useState(false);
   const mountedRef = useRef(true);
   const timerRef = useRef<number | null>(null);
   const etaRef = useRef(new EtaEstimator());
@@ -58,14 +62,15 @@ export default function BatchProcessing({ jobId }: { jobId: string }) {
           next.started_at ?? 0,
         );
       }
-setState(next);
-        setPhase("active");
+      setState(next);
+      setPhase("active");
       if (next.status === "completed") {
         navigate(`/jobs/${jobId}/result`);
         return;
       }
-      // Work that is only waiting still needs watching: it will start on its own.
-      // Work that has all settled does not, so polling stops rather than
+      // Work that is only waiting still needs watching: it will start on its own
+      // once the queue is resumed, and a paused queue is still finishing what it
+      // started. Work that has all settled does not, so polling stops rather than
       // reporting a finished batch as though it were still in progress.
       if (next.queue && next.queue.active === 0 && next.queue.waiting === 0) {
         if (next.status === "failed" || next.status === "cancelled") return;
@@ -127,21 +132,73 @@ setState(next);
     }
   };
 
-  const cancelWaiting = async (playlistId: string) => {
+  /**
+   * Stop one playlist. A waiting one is dropped immediately; a running one is
+   * asked to stop and keeps the audio it has already finished, so the button
+   * stays busy until the run reports itself settled.
+   */
+  const stopPlaylist = async (playlistId: string) => {
     setCancelling(playlistId);
     try {
-      await cancelQueuedPlaylist(jobId, playlistId);
-      toast.success("Removed from the queue.");
+      await cancelPlaylistProcessing(jobId, playlistId);
+      toast.success("Stopping. Audio already downloaded is kept.");
+    } catch (cause) {
+      setCancelling(null);
+      toast.error(
+        "That playlist could not be stopped.",
+        cause instanceof ApiError ? cause.message : "Check your connection and try again.",
+      );
+      return;
+    }
+    void pollOnce();
+  };
+
+  const runQueueAction = async (
+    action: () => Promise<BatchState>,
+    message: (next: BatchState & { stopped?: number }) => string,
+    failure: string,
+  ) => {
+    setQueueBusy(true);
+    try {
+      const next = await action();
+      setState(next);
+      toast.success(message(next));
     } catch (cause) {
       toast.error(
-        "That playlist could not be removed from the queue.",
+        failure,
         cause instanceof ApiError ? cause.message : "Check your connection and try again.",
       );
     } finally {
-      setCancelling(null);
+      setQueueBusy(false);
       void pollOnce();
     }
   };
+
+  const pauseQueueNow = () =>
+    void runQueueAction(
+      () => pauseQueue(jobId),
+      () => "Paused. Waiting playlists keep their place in the queue.",
+      "The queue could not be paused.",
+    );
+
+  const resumeQueueNow = () =>
+    void runQueueAction(
+      () => resumeQueue(jobId),
+      () => "Resumed. Waiting playlists start in order.",
+      "The queue could not be resumed.",
+    );
+
+  const cancelAll = () =>
+    void runQueueAction(
+      () => cancelPendingWork(jobId),
+      (next) => {
+        const stopped = next.stopped ?? 0;
+        return stopped === 1
+          ? "Stopping 1 playlist. Audio already downloaded is kept."
+          : `Stopping ${stopped} playlists. Audio already downloaded is kept.`;
+      },
+      "The pending work could not be stopped.",
+    );
 
   const activePlaylists =
     state?.playlists.filter((playlist) => playlist.queue_state === "active") ?? [];
@@ -214,34 +271,48 @@ setState(next);
                 const waiting = playlist.queue_state === "queued";
                 const cancelled = playlist.queue_state === "cancelled";
                 return (
-                <section
-                key={playlist.playlist.id}
-                className={`flex flex-col gap-2 rounded-lg p-3 ${
-                  playlist.queue_state === "active"
-                    ? "border border-accent bg-accent-subtle/40"
-                    : ""
-                } ${cancelled ? "opacity-70" : ""}`}
-              >
-                  <div className="flex items-center gap-2">
-                    <h3 className="m-0 flex-1 text-base">{playlist.playlist.name}</h3>
-                    {playlist.queue_state && <QueueStatusIcon state={playlist.queue_state} />}
-                  </div>
-                  <p className="m-0 text-sm text-ink-muted" role="status">
-                    {playlist.queue_state
-                      ? `${statusLabel(playlist.queue_state)} · `
-                      : ""}
-                    {/* A waiting playlist has searched nothing, so its stage counts
-                        are shown as not started rather than as a stalled run. */}
-                    {waiting
-                      ? `${playlist.playlist.total_tracks} track${
-                          playlist.playlist.total_tracks === 1 ? "" : "s"
-                        } waiting to start`
-                      : `${playlist.searched} / ${playlist.playlist.total_tracks} found · ${
-                          playlist.resolved
-                        } / ${playlist.playlist.total_tracks} audio ready · ${playlist.completed} / ${
-                          playlist.playlist.total_tracks
-                        } tracks · ${playlist.successful} successful · ${playlist.failed} failed`}
-                  </p>
+                  <section
+                    key={playlist.playlist.id}
+                    className={`flex flex-col gap-2 rounded-lg p-3 ${
+                      playlist.queue_state === "active"
+                        ? "border border-accent bg-accent-subtle/40"
+                        : ""
+                    } ${cancelled ? "opacity-70" : ""}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <h3 className="m-0 flex-1 text-base">{playlist.playlist.name}</h3>
+                      {playlist.queue_state && <QueueStatusIcon state={playlist.queue_state} />}
+                    </div>
+                    <p className="m-0 text-sm text-ink-muted" role="status">
+                      {/* A stop that has been asked for but not yet reached a
+                          boundary is "stopping", not "cancelled": the run is
+                          still working out how to stop. */}
+                      {playlist.cancelling
+                        ? "Stopping — finishing the track it is on · "
+                        : playlist.queue_state
+                          ? `${statusLabel(playlist.queue_state)} · `
+                          : ""}
+                      {/* A waiting playlist has searched nothing, so its stage counts
+                          are shown as not started rather than as a stalled run. */}
+                      {waiting
+                        ? `${playlist.playlist.total_tracks} track${
+                            playlist.playlist.total_tracks === 1 ? "" : "s"
+                          } waiting to start`
+                        : `${playlist.searched} / ${playlist.playlist.total_tracks} found · ${
+                            playlist.resolved
+                          } / ${playlist.playlist.total_tracks} audio ready · ${playlist.completed} / ${
+                            playlist.playlist.total_tracks
+                          } tracks · ${playlist.successful} successful · ${playlist.failed} failed`}
+                    </p>
+                    {cancelled && (
+                      <p className="m-0 text-sm text-ink-muted">
+                        {playlist.completed > 0
+                          ? `Cancelled. The ${playlist.completed} track${
+                              playlist.completed === 1 ? "" : "s"
+                            } already finished are kept.`
+                          : "Cancelled before it started, so nothing was downloaded."}
+                      </p>
+                    )}
                   {!waiting && !cancelled && (
                     <div
                       className="h-2 overflow-hidden rounded-sm bg-track"
@@ -289,8 +360,12 @@ setState(next);
           {state.queue && (
             <QueuePanel
               queue={state.queue}
-              onCancel={(playlistId) => void cancelWaiting(playlistId)}
+              onCancel={(playlistId) => void stopPlaylist(playlistId)}
+              onPause={pauseQueueNow}
+              onResume={resumeQueueNow}
+              onCancelAll={cancelAll}
               cancelling={cancelling}
+              busy={queueBusy}
             />
           )}
           {state.status === "failed" && (
@@ -319,6 +394,11 @@ function batchStatusLine(
   if (state.status === "completed") return "Batch complete";
   if (state.status === "failed") return "Batch finished with errors";
   if (state.status === "cancelled") return "Batch stopped before it finished";
+  if (state.paused) {
+    return activeCount > 0
+      ? "Paused — what is already converting finishes, and nothing new starts"
+      : "Paused — resume to start the waiting playlists";
+  }
   if (state.status === "queued" || (waitingCount > 0 && activeCount === 0)) {
     return "Queued — waiting for a conversion slot";
   }

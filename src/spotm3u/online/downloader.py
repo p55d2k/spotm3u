@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
+from ..cancellation import CancelledError, CancelSignal
 from ..file_lock import file_lock
 from ..log import track_identifier
 from ..metadata import MetadataError, enrich_metadata
@@ -122,6 +124,11 @@ class _InFlightDownload:
 _OUTPUT_IN_FLIGHT: dict[str, _InFlightDownload] = {}
 _OUTPUT_IN_FLIGHT_GUARD = threading.Lock()
 
+# How long a cancellable waiter sleeps between checks of the owner's outcome.
+# Short enough that a stop is acted on at once, long enough that the wait costs
+# nothing measurable next to a download.
+_PEER_WAIT_SLICE = 0.2
+
 
 def download_track(
     track: Track,
@@ -138,6 +145,7 @@ def download_track(
     pot_provider_home: str | None = None,
     ffmpeg_location: str | None = None,
     verify: bool = True,
+    cancel: CancelSignal | None = None,
 ) -> Path:
     """Download ``source_url`` and return its local MP3 path.
 
@@ -154,11 +162,19 @@ def download_track(
 
     ``verify`` controls the expensive post-download steps. When ``False`` the
     download stops once a complete MP3 exists: no audio validation and no
-    metadata enrichment run, and a file produced by a concurrent download of
-    the same track is reused without re-validating it. This is the audio-only
+    metadata enrichment run, and a file produced by a concurrent download of the
+    same track is reused without re-validating it. This is the audio-only
     path fast mode uses; it never changes what yt-dlp itself downloads.
+
+    ``cancel`` is honoured by interrupting yt-dlp through its own progress hook,
+    which is the supported way to stop a download: it closes the open stream and
+    unwinds the downloader rather than leaving a truncated file that looks
+    complete. A cancelled download raises :class:`CancelledError`, never
+    :class:`DownloadError`, so stopping is never reported as a failed download.
     """
     _validate_source_url(source_url)
+    if cancel is not None:
+        cancel.check()
     destination = Path(output_dir).expanduser().resolve()
     try:
         destination.mkdir(parents=True, exist_ok=True)
@@ -181,7 +197,32 @@ def download_track(
         pot_provider_home=pot_provider_home,
         ffmpeg_location=ffmpeg_location,
         verify=verify,
+        cancel=cancel,
     )
+
+
+class CancellableDownloader:
+    """A ``download_track`` call that carries a stop request with it.
+
+    The downloader is built before the job that owns it exists — a job's factory
+    closes over the settings, not the job — so the stop request cannot be an
+    argument at construction. This holds the options and takes the signal
+    afterwards, the same way a resolver takes its log context: once the job that
+    owns it has made it. The resolver forwards the signal here, which is how a
+    cancel reaches yt-dlp's progress hook.
+    """
+
+    __slots__ = ("_cancel", "_options")
+
+    def __init__(self, **options: object) -> None:
+        self._options = options
+        self._cancel: CancelSignal | None = None
+
+    def set_cancel(self, cancel: CancelSignal | None) -> None:
+        self._cancel = cancel
+
+    def __call__(self, track: Track, source_url: str, output_dir: str | Path) -> Path:
+        return download_track(track, source_url, output_dir, cancel=self._cancel, **self._options)
 
 
 def _download_single_flight(
@@ -200,6 +241,7 @@ def _download_single_flight(
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
     verify: bool,
+    cancel: CancelSignal | None = None,
 ) -> Path:
     """Download ``output_path`` exactly once no matter how many callers race.
 
@@ -209,6 +251,9 @@ def _download_single_flight(
     is only reused when it still passes audio validation against the waiting
     track. If the owner failed (or its file is unusable for this track), the
     next caller acquires ownership and downloads itself.
+
+    A caller waiting for a peer's download can stop waiting: it never gets to
+    download the file itself once it has given up on the peer.
     """
     key = str(output_path.resolve())
     while True:
@@ -240,10 +285,11 @@ def _download_single_flight(
                     pot_provider_home=pot_provider_home,
                     ffmpeg_location=ffmpeg_location,
                     verify=verify,
+                    cancel=cancel,
                 ),
             )
 
-        reused = _await_peer(in_flight, track, timeout, verify=verify)
+        reused = _await_peer(in_flight, track, timeout, verify=verify, cancel=cancel)
         if reused is not None:
             logger.info(
                 "download track=%s url=%s status=reused from concurrent peer path=%s",
@@ -285,6 +331,7 @@ def _await_peer(
     timeout: float | None,
     *,
     verify: bool = True,
+    cancel: CancelSignal | None = None,
 ) -> Path | None:
     """Wait for the owner of ``in_flight`` and reuse its result.
 
@@ -292,12 +339,35 @@ def _await_peer(
     validation against ``track``; ``None`` means the caller must download the
     file itself. With ``verify`` disabled (fast mode) a complete file is
     reused as-is, matching the download that produced it.
+
+    A stop request ends the wait: this caller never gets to download the file
+    itself once it has given up on the peer, so it is a cancellation rather than
+    a handoff to the next candidate. The wait is therefore sliced while a signal
+    exists, so a stop is noticed within a fraction of a second instead of after
+    the download timeout.
     """
-    with in_flight.condition:
-        in_flight.condition.wait_for(lambda: in_flight.done, timeout=timeout)
-        if in_flight.done and in_flight.path is not None and in_flight.path.is_file():
-            if not verify or validate_downloaded_audio(track, in_flight.path).status == "valid":
-                return in_flight.path
+    if cancel is None:
+        with in_flight.condition:
+            in_flight.condition.wait_for(lambda: in_flight.done, timeout=timeout)
+            return _reusable_peer_file(in_flight, track, verify)
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        with in_flight.condition:
+            if in_flight.done:
+                return _reusable_peer_file(in_flight, track, verify)
+            in_flight.condition.wait(_PEER_WAIT_SLICE)
+        if cancel.cancelled:
+            raise CancelledError(cancel.reason)
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
+
+
+def _reusable_peer_file(in_flight: _InFlightDownload, track: Track, verify: bool) -> Path | None:
+    """The owner's file when it is still usable for ``track``, else ``None``."""
+    path = in_flight.path
+    if in_flight.done and path is not None and path.is_file():
+        if not verify or validate_downloaded_audio(track, path).status == "valid":
+            return path
     return None
 
 
@@ -317,6 +387,7 @@ def _perform_download(
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
     verify: bool,
+    cancel: CancelSignal | None = None,
 ) -> Path:
     """Run the actual yt-dlp/ffmpeg download under the per-path lock."""
     if timeout is not None and timeout > 0:
@@ -337,7 +408,19 @@ def _perform_download(
                 pot_provider_home=pot_provider_home,
                 ffmpeg_location=ffmpeg_location,
                 verify=verify,
+                cancel=cancel,
             )
+        except CancelledError:
+            # Stopping is not a timeout and not a failure: the partial file the
+            # interrupted download left is removed here, where the output path
+            # is known, and the reason travels on as a cancellation.
+            _prune_partial(output_path)
+            logger.info(
+                "download track=%s url=%s status=cancelled",
+                track_identifier(track),
+                _redact_url(source_url) or source_url,
+            )
+            raise
         except TimeoutError as exc:
             _prune_partial(output_path)
             logger.warning(
@@ -363,6 +446,7 @@ def _perform_download(
         pot_provider_home=pot_provider_home,
         ffmpeg_location=ffmpeg_location,
         verify=verify,
+        cancel=cancel,
     )
 
 
@@ -381,6 +465,7 @@ def _download_guarded(
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
     verify: bool,
+    cancel: CancelSignal | None = None,
 ) -> Path:
     """Run :func:`_download_to` under the process-wide per-file lock."""
     with file_lock(output_path):
@@ -398,6 +483,7 @@ def _download_guarded(
             pot_provider_home=pot_provider_home,
             ffmpeg_location=ffmpeg_location,
             verify=verify,
+            cancel=cancel,
         )
 
 
@@ -445,6 +531,35 @@ def _prune_partial(output_path: Path) -> None:
         pass
 
 
+def _cancel_progress_hook(cancel: CancelSignal) -> Callable[[dict[str, object]], None]:
+    """A yt-dlp progress hook that stops the download when asked to.
+
+    yt-dlp calls the hook on the thread doing the downloading, several times a
+    second, and an exception raised from it unwinds the downloader through its
+    own error path: the open stream is closed and the partial file is left for
+    the caller to remove. That is the supported interruption, so cancelling a
+    download does not mean killing a process mid-write and hoping the file on
+    disk is intact.
+
+    yt-dlp's own ``DownloadCancelled`` is raised rather than ours so its
+    internal handlers recognise it; it is translated back to
+    :class:`CancelledError` by the caller.
+    """
+    try:
+        from yt_dlp.utils import DownloadCancelled  # type: ignore
+    except ImportError:  # pragma: no cover - yt-dlp is project-managed
+        DownloadCancelled = None  # type: ignore[assignment]
+
+    def hook(_status: dict[str, object]) -> None:
+        if not cancel.cancelled:
+            return
+        if DownloadCancelled is not None:
+            raise DownloadCancelled(cancel.reason)
+        raise CancelledError(cancel.reason)
+
+    return hook
+
+
 def _download_to(
     track: Track,
     source_url: str,
@@ -460,6 +575,7 @@ def _download_to(
     pot_provider_home: str | None,
     ffmpeg_location: str | None,
     verify: bool = True,
+    cancel: CancelSignal | None = None,
 ) -> Path:
     """Download one source into ``output_path``.
 
@@ -472,6 +588,9 @@ def _download_to(
         output_path.unlink(missing_ok=True)
     except OSError as exc:
         raise DownloadError(f"cannot replace existing download: {output_path.name}") from exc
+
+    if cancel is not None:
+        cancel.check()
 
     try:
         import yt_dlp  # type: ignore
@@ -521,11 +640,28 @@ def _download_to(
         extractor_args = _pot_provider_extractor_args(pot_provider_url, pot_provider_home)
         if extractor_args:
             options["extractor_args"] = extractor_args
+    if cancel is not None:
+        options["progress_hooks"] = [_cancel_progress_hook(cancel)]
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             result = ydl.download([source_url])
+    except CancelledError:
+        _prune_partial(output_path)
+        raise
     except Exception as exc:
+        if cancel is not None and cancel.cancelled:
+            # yt-dlp reports an interrupted download in several ways depending on
+            # where the hook fired. The stop request, not the message, is what
+            # says what happened, so it is translated back into a cancellation
+            # here rather than being reported as a failed download.
+            _prune_partial(output_path)
+            logger.info(
+                "download track=%s url=%s status=cancelled",
+                track_identifier(track),
+                log_url,
+            )
+            raise CancelledError(cancel.reason) from exc
         _prune_partial(output_path)
         logger.debug(
             "download track=%s yt-dlp error: %s",
@@ -568,6 +704,11 @@ def _download_to(
         )
         raise DownloadError(f"download did not produce a complete MP3: {output_path.name}")
     if verify:
+        # The download is finished and the file is whole, so this is the first
+        # safe boundary after it: stopping here leaves a complete MP3 on disk
+        # rather than a partial one, and a retry can reuse it.
+        if cancel is not None:
+            cancel.check()
         validation = validate_downloaded_audio(track, output_path)
         if validation.status == "invalid":
             _prune_partial(output_path)
@@ -579,6 +720,10 @@ def _download_to(
             )
             raise DownloadError(f"downloaded audio is invalid: {', '.join(validation.reasons)}")
         try:
+            # Enrichment is the last write to the file, so it is the last thing
+            # a stop skips rather than the first thing it abandons.
+            if cancel is not None:
+                cancel.check()
             result = enrich_metadata(output_path, track, destination)
             if result.errors:
                 logger.warning(
@@ -746,4 +891,4 @@ def _is_complete_mp3(output_path: Path, destination: Path) -> bool:
         return False
 
 
-__all__ = ["DownloadError", "download_track"]
+__all__ = ["CancellableDownloader", "DownloadError", "download_track"]

@@ -42,9 +42,13 @@ shows the queue rather than one implied "active playlist": a line counts what is
 converting against the limit and what is waiting, and each playlist is listed in
 the state it is actually in. A playlist that is waiting says how many tracks it
 has yet to start, which is what distinguishes it from one that has stalled
-midway. Waiting playlists can be removed with **Remove**, which is safe because
-nothing has been downloaded for them; a playlist that has already started is not
-offered the action, because stopping work in progress is a different thing.
+midway. A waiting playlist can be removed with **Remove**; a running one can be
+stopped with **Cancel**, which keeps the audio it has already finished and
+leaves the rest for a retry. The whole queue can be paused — running work
+finishes, nothing new starts — and resumed in the same order, and **Cancel all**
+stops everything from the current upload that has not finished. A stop request
+shows as "stopping" until the run reaches a safe boundary, so the button never
+pretends the work is already over.
 
 Queued work keeps its place if you close the window: it is recorded before it
 starts, and picks up again when the application is reopened.

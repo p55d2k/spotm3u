@@ -169,6 +169,11 @@ export type JobState = {
     uncertain: number;
   };
   status: JobStatus;
+  /**
+   * A stop was asked for but the run has not reached a boundary yet. Separate
+   * from `status` so "stopping" does not read as "already stopped".
+   */
+  cancelling: boolean;
   error: string | null;
   output_dir: string;
   fast_mode: boolean;
@@ -180,6 +185,8 @@ export type JobState = {
   queue_state?: QueueState | null;
   /** A waiting conversion's place in line, counted from one. */
   queue_position?: number | null;
+  /** Whether the whole queue is holding its work back from starting. */
+  queue_paused?: boolean;
 };
 
 /** One conversion as the queue holds it, whether or not it has started. */
@@ -199,6 +206,11 @@ export type QueueEntry = {
 /** The whole download queue: the counts a header needs and every entry. */
 export type QueueSnapshot = {
   max_active: number;
+  /**
+   * The queue is holding work back from starting. Its own flag rather than a
+   * sixth state, because a paused queue can still be finishing what it started.
+   */
+  paused: boolean;
   active: number;
   waiting: number;
   completed: number;
@@ -211,7 +223,9 @@ export type QueueSnapshot = {
 /** The aggregated progress of every job in the current selection. */
 export type BatchState = {
   job_id: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";
+  /** The whole-queue decision, so the page need not infer it from `status`. */
+  paused: boolean;
   completed: number;
   searched: number;
   resolved: number;
@@ -489,22 +503,42 @@ export function getProcessingStatus(jobId: string, playlistIds?: string[]): Prom
 }
 
 /** Live progress for one playlist. */
+export function getPlaylistProcessingStatus(jobId: string, playlistId: string): Promise<JobState> {
+  return request(
+    `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/processing`,
+  );
+}
+
 /**
- * Drop a playlist that is still waiting for a queue slot. Nothing has been
- * downloaded for it, so this never stops work in progress: a playlist that has
- * already started is `409 job_running`.
+ * Stop one playlist, whether it is waiting for a slot or already converting.
+ * A running conversion is asked to stop and settles as `cancelled`, keeping the
+ * audio it already has; a settled one is `409`.
  */
-export function cancelQueuedPlaylist(jobId: string, playlistId: string): Promise<JobState> {
+export function cancelPlaylistProcessing(jobId: string, playlistId: string): Promise<JobState> {
   return request(
     `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/queue/cancel`,
     { method: "POST" },
   );
 }
 
-export function getPlaylistProcessingStatus(jobId: string, playlistId: string): Promise<JobState> {
-  return request(
-    `/jobs/${encodeURIComponent(jobId)}/playlists/${encodeURIComponent(playlistId)}/processing`,
-  );
+/** Stop the queue handing out slots. What is running keeps running. */
+export function pauseQueue(jobId: string): Promise<BatchState> {
+  return request(`/jobs/${encodeURIComponent(jobId)}/queue/pause`, { method: "POST" });
+}
+
+/** Let the waiting conversions start again, in the order they were given. */
+export function resumeQueue(jobId: string): Promise<BatchState> {
+  return request(`/jobs/${encodeURIComponent(jobId)}/queue/resume`, { method: "POST" });
+}
+
+/** Stop everything from this upload that has not finished. */
+export type BatchCancelResponse = BatchState & {
+  /** How many conversions were asked to stop, counting the already running ones. */
+  stopped: number;
+};
+
+export function cancelPendingWork(jobId: string): Promise<BatchCancelResponse> {
+  return request(`/jobs/${encodeURIComponent(jobId)}/queue/cancel-all`, { method: "POST" });
 }
 
 /**

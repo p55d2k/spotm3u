@@ -88,3 +88,18 @@ class NoCandidates:
 
     def search_query(self, track, query):
         return ()
+
+
+def stub_web_downloader(monkeypatch, download):
+    """Point the application's downloader at a stand-in for one test.
+
+    The web app builds a ``CancellableDownloader`` per conversion, and the
+    resolver calls whatever that build produced. A test that must not touch the
+    network replaces the class with a factory whose product is the callable the
+    resolver will call, so the test keeps writing a plain function.
+    """
+
+    def factory(**_options):
+        return download
+
+    monkeypatch.setattr("spotm3u.web_jobs.CancellableDownloader", factory)

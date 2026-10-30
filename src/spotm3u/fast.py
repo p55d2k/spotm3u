@@ -20,6 +20,7 @@ from collections.abc import Collection
 from pathlib import Path
 
 from .audio.resolver import LocalAudioResolver
+from .cancellation import CancelledError
 from .log import TrackLogger, track_identifier
 from .models import ResolvedTrack, Track
 from .online.downloader import DownloadError, download_track
@@ -127,6 +128,7 @@ class FastTrackResolver(TrackResolver):
         log = self._log.with_track(track)
         log.info("stage=resolving-local mode=fast")
         report("resolving-local")
+        self._check()
         local = self.local_resolver.resolve(track)
         if local.resolved is not None and _is_real_file(local.resolved.local_path):
             log.info("local match found path=%s mode=fast", local.resolved.local_path)
@@ -140,8 +142,11 @@ class FastTrackResolver(TrackResolver):
 
         log.info("stage=searching mode=fast")
         report("searching")
+        self._check()
         try:
             rankings = self.searcher.search(track)
+        except CancelledError:
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             log.error("fast source search failed: %s", exc)
             return TrackResolution(track, "failed", reasons=(f"source search failed: {exc}",))
@@ -168,6 +173,9 @@ class FastTrackResolver(TrackResolver):
         succeeds the track fails without entering the normal pipeline.
         ``exclude_urls`` names candidates a previous attempt already turned
         down, so a retry downloads something else.
+
+        A stop request is honoured between candidates and before each download,
+        which is where this path's only two expensive stages meet.
         """
 
         def report(stage: TrackStage) -> None:
@@ -184,14 +192,18 @@ class FastTrackResolver(TrackResolver):
                     ranking.candidate.url,
                 )
                 continue
+            self._check()
             report("downloading")
             log.info("stage=downloading url=%s mode=fast", ranking.candidate.url)
             try:
                 downloaded = self.downloader(track, ranking.candidate.url, self.output_dir)
+            except CancelledError:
+                raise
             except (DownloadError, OSError, RuntimeError) as exc:
                 download_failures += 1
                 log.warning("download failed url=%s error=%s", ranking.candidate.url, exc)
                 continue
+            self._check()
             if not _is_real_file(downloaded):
                 download_failures += 1
                 log.warning("download produced no file url=%s", ranking.candidate.url)

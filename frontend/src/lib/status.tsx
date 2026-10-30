@@ -60,9 +60,12 @@ export const TRACK_STATUSES: Record<string, StatusInfo> = {
 const JOB_LABELS: Record<string, string> = {
   queued: "Waiting to start",
   running: "Processing in progress",
+  // Pausing holds waiting conversions back; it is a decision about the queue
+  // rather than a state any single conversion is in.
+  paused: "Paused",
   completed: "Processing complete",
   failed: "Processing failed",
-  cancelled: "Cancelled before it started",
+  cancelled: "Cancelled",
 };
 
 /**

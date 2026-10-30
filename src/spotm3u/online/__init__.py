@@ -4,7 +4,7 @@ from ..metadata import MetadataResult, enrich_metadata
 from ..metadata_jobs import MetadataJob
 from .audio_validation import AudioValidation, AudioValidationStatus, validate_downloaded_audio
 from .cache import DownloadCache, cache_metadata_key, source_identity
-from .downloader import download_track
+from .downloader import CancellableDownloader, download_track
 from .errors import DownloadError
 from .ranking import (
     CandidateRanking,
@@ -51,6 +51,7 @@ __all__ = [
     "validate_source_candidate",
     "DownloadError",
     "describe_youtube_setup",
+    "CancellableDownloader",
     "download_track",
     "DownloadCache",
     "cache_metadata_key",

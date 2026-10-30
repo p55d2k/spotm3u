@@ -42,7 +42,7 @@ and answer `413 upload_too_large` as JSON instead of the page.
 | `selection_expired` | 404 | This playlist is not part of the current selection. |
 | `job_not_found` | 404 | No conversion has been started for that playlist yet. |
 | `job_not_ready` | 404 | The playlist has not finished converting (nothing to download or import). |
-| `job_running` | 409 | The playlist is still converting. |
+| `job_running` | 409 | The playlist is still converting, or has already finished. |
 | `playlist_incomplete` | 409 | The M3U points at files that are no longer on disk; confirm to accept it. |
 | `media_player_unavailable` | 404 | The platform media player or its library cannot be reached. |
 | `nothing_to_import` | 409 | The playlist has no resolved tracks to hand over. |
@@ -97,7 +97,10 @@ playlist's position in the export
 | `POST` | `/api/jobs/<job_id>/processing` | Queue the selection for conversion: `{"playlist_ids": ["1"], "fast_mode": false}`. Both keys are optional; without them the stored selection and the `[fast] enabled` default apply. Answers `202` with the batch summary. Every playlist is accepted whether or not it can start: a bounded number run at once and the rest wait their turn. |
 | `GET` | `/api/jobs/<job_id>/processing` | Live progress for the selection, ready to poll every second. `?playlist_ids=0,2` scopes it. |
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing` | Live progress for one playlist (one `ProcessingJob.snapshot()` with per-track artwork flags). |
-| `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/queue/cancel` | Drop a playlist that is still waiting for a queue slot. Answers its state; `409 job_running` once it has begun. |
+| `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/queue/cancel` | Stop one playlist, waiting or running. Answers its state; a stopped run settles as `cancelled`, and an already settled one is `409 job_running`. |
+| `POST` | `/api/jobs/<job_id>/queue/pause` | Hold the queue: what is running finishes, and nothing new starts. Answers the batch status with `paused`. |
+| `POST` | `/api/jobs/<job_id>/queue/resume` | Start waiting work again in its original order. Answers the batch status with `paused` cleared. |
+| `POST` | `/api/jobs/<job_id>/queue/cancel-all` | Stop every unfinished playlist from this upload. Answers `stopped`, the count asked to stop, plus the batch status. |
 | `POST` | `/api/jobs/<job_id>/playlists/<playlist_id>/processing/retry` | Re-resolve the tracks with no usable file; answers the state plus `retried` (0 when nothing was left to do) and `tracks`, the indices that were picked up. |
 | `GET` | `/api/jobs/<job_id>/playlists/<playlist_id>/result` | The finished outcome of one playlist, with per-track lyrics and `m3u_url`. |
 | `GET` | `/api/jobs/<job_id>/result` | The outcome of every selected playlist, for the batch result screen (`409 job_running` until all of them finish). |
@@ -120,13 +123,16 @@ and is working, and `queued` means it has been accepted and is waiting its turn.
 A playlist in `queued` has searched nothing and downloaded nothing, which is not
 the same as a conversion that has stalled at zero progress.
 
-Every playlist state carries `queue_state` and `queue_position` (its place in
-line, counted from one, or `null` when it is not waiting), including on the
-single-playlist and retry routes. The batch routes add `queue`, the whole queue:
+Every playlist state carries `queue_state`, `queue_position` (its place in
+line, counted from one, or `null` when it is not waiting) and `cancelling` (a
+stop has been asked for but the run has not reached a boundary yet), including
+on the single-playlist and retry routes. The batch routes add `queue`, the whole
+queue:
 
 ```json
 {
   "max_active": 2,
+  "paused": false,
   "active": 1,
   "waiting": 2,
   "completed": 3,
@@ -151,18 +157,28 @@ single-playlist and retry routes. The batch routes add `queue`, the whole queue:
 ```
 
 The batch's own `status` is the one word that describes the selection as a whole:
-`queued` while nothing has started, `running` while anything is, `completed` only
-when every playlist is, `failed` if any failed, and `cancelled` for work that was
-stopped without completing.
+`queued` while nothing has started, `running` while anything is, `paused` while
+the queue is holding work back, `completed` only when every playlist is,
+`failed` if any failed, and `cancelled` for work that was stopped without
+completing. `paused` is also reported as its own field, because a paused batch
+can still be finishing what it already started.
 
 `[queue] max_active_playlists` (default 2) is how many playlists may convert at
 once. Each conversion already downloads and searches its own tracks in parallel,
 so this counts playlists, not files.
 
-Cancelling a waiting playlist is `POST .../queue/cancel`. Nothing has been
-downloaded for it, so it is recorded as `cancelled` rather than `failed`, and it
-is refused with `409 job_running` once it has begun. A playlist the queue never
-took is `404 job_not_found`.
+Stop one playlist with `POST .../queue/cancel`, whether it is waiting or already
+running. Waiting work is recorded as `cancelled` immediately; running work is
+asked to stop at its next safe boundary, is shown as `cancelling` until then,
+and keeps the audio it already finished. Either way it ends as `cancelled`
+rather than `failed`, and a playlist that has already settled is `409
+job_running`. A playlist the queue never took is `404 job_not_found`.
+
+`POST /api/jobs/<job_id>/queue/pause` holds the queue and
+`POST /api/jobs/<job_id>/queue/resume` releases it; only work that has not
+started is held back, so a pause never abandons a track in progress.
+`POST /api/jobs/<job_id>/queue/cancel-all` stops every unfinished playlist from
+this upload and reports how many were asked to stop in `stopped`.
 
 The retry route takes an optional body naming the tracks to retry:
 

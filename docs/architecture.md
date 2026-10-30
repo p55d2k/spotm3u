@@ -175,19 +175,26 @@ conversion already parallelises itself: a third playlist mostly buys contention
 rather than speed.
 
 A retry is queued work too, not a special case, so it takes a slot the same way
-and a batch of retries cannot bypass the bound. Only waiting work can be
-dropped: `POST /api/jobs/<job_id>/playlists/<playlist_id>/queue/cancel` refuses
-with `409 job_running` once a playlist has begun, because stopping work in
-progress is a different operation and a button that quietly did nothing would be
-worse than saying no. Cancellation is not failure: a cancelled conversion and its
-undecided tracks are recorded as `cancelled`.
+and a batch of retries cannot bypass the bound. Any unfinished conversion can be
+stopped: waiting work is dropped outright because nothing has been downloaded
+for it, and running work is asked to stop rather than killed. It stops at a safe
+boundary — between candidates, around a download, before the M3U is written — so
+a partial file is never left behind and the audio already finished is kept.
+`POST /api/jobs/<job_id>/playlists/<playlist_id>/queue/cancel` stops one,
+`POST /api/jobs/<job_id>/queue/cancel-all` stops everything unfinished in one
+upload, and a conversion that has already settled is refused with `409`. The
+same request can also pause the queue (`POST /api/jobs/<job_id>/queue/pause`),
+which holds back what would start next without interrupting what is running;
+resuming starts the waiting work in its original order. Cancellation is not
+failure: a cancelled conversion and its undecided tracks are recorded as
+`cancelled`.
 
 Queue state is separate from interface state and is reported in full alongside
 the per-playlist snapshots, so the interface never has to infer it: each playlist
-carries `queue_state` and `queue_position`, and the batch carries the whole
-queue's counts and entries. A queued job is written to the history in the
-`queued` state before it starts, which is what makes waiting work survive the
-window being closed.
+carries `queue_state`, `queue_position` and `cancelling`, and the batch carries
+the whole queue's counts, entries and `paused` flag. A queued job is written to
+the history in the `queued` state before it starts, which is what makes waiting
+work survive the window being closed.
 
 ## Processing history
 

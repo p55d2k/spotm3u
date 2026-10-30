@@ -2,9 +2,10 @@
 
 The queue is what makes several playlists representable at once, so these drive
 it through the routes a real batch uses: what a batch reports about waiting
-versus running work, that the bound is configurable, that a waiting playlist can
-be dropped and is recorded as cancelled rather than failed, and that queued work
-is written down before it starts, so it survives the window being closed.
+versus running work, that the bound is configurable, that a playlist can be
+stopped whether it is waiting or running, that the queue can be paused and
+resumed as a whole, and that queued work is written down before it starts, so it
+survives the window being closed.
 """
 
 import threading
@@ -194,21 +195,86 @@ def test_a_waiting_playlist_can_be_dropped_and_is_cancelled_not_failed(
     assert {run["status"] for run in runs} == {"completed", "cancelled"}
 
 
-def test_a_running_playlist_cannot_be_dropped_from_the_queue(tmp_path, monkeypatch) -> None:
-    """Stopping work in progress is refused, not pretended to have happened."""
+def test_a_running_playlist_can_be_stopped_and_is_cancelled_not_failed(
+    tmp_path, monkeypatch
+) -> None:
+    """Stopping work in progress is asked for, then carried out at a boundary."""
     release = Gate().hold(monkeypatch)
     client = _app(tmp_path, QUEUE_MAX_ACTIVE=1).test_client()
     job_id = _upload(client)
     _start(client, job_id, 1)
     assert _wait_for(lambda: _queue(client)["active"] == 1)
 
-    refused = client.post(f"/api/jobs/{job_id}/playlists/0/queue/cancel")
+    stopped = client.post(f"/api/jobs/{job_id}/playlists/0/queue/cancel")
 
-    assert refused.status_code == 409
-    assert refused.get_json()["code"] == "job_running"
+    # The answer is the stop request, not the stop having happened: the run is
+    # still active until it reaches a safe boundary.
+    assert stopped.status_code == 200
+    assert stopped.get_json()["cancelling"] is True
 
     release.release()
     assert client.application.config["CONVERSION_QUEUE"].wait_for_idle(timeout=60)
+    settled = client.get(f"/api/jobs/{job_id}/playlists/0/processing").get_json()
+    assert settled["status"] == "cancelled"
+    assert settled["error"] is None, "a cancellation is not an error"
+    assert _queue(client)["failed"] == 0, "stopping work is not failing it"
+    assert not list((tmp_path / "downloads").glob("*.m3u")), "no m3u for a stopped run"
+
+
+def test_pausing_holds_waiting_work_until_the_queue_is_resumed(tmp_path, monkeypatch) -> None:
+    """A paused queue finishes what it started and starts nothing new."""
+    release = Gate().hold(monkeypatch)
+    client = _app(tmp_path, QUEUE_MAX_ACTIVE=1).test_client()
+    job_id = _upload(client, 3)
+    _start(client, job_id, 3)
+    assert _wait_for(lambda: _queue(client)["active"] == 1)
+
+    paused = client.post(f"/api/jobs/{job_id}/queue/pause")
+
+    assert paused.status_code == 200
+    assert paused.get_json()["action"] == "paused"
+    assert paused.get_json()["paused"] is True
+    assert paused.get_json()["status"] == "paused"
+    assert _queue(client)["paused"] is True
+
+    # The running conversion is not interrupted by a pause; once it finishes,
+    # its freed slot is held rather than handed to the next playlist.
+    release.release()
+    queue = client.application.config["CONVERSION_QUEUE"]
+    assert _wait_for(lambda: queue.count_in("completed") == 1)
+    time.sleep(0.2)
+    assert queue.count_in("active") == 0
+    assert queue.waiting_count == 2, "a paused queue must not start waiting work"
+
+    resumed = client.post(f"/api/jobs/{job_id}/queue/resume")
+
+    assert resumed.status_code == 200
+    assert resumed.get_json()["action"] == "resumed"
+    assert resumed.get_json()["paused"] is False
+    assert queue.wait_for_idle(timeout=60)
+    assert queue.count_in("completed") == 3
+
+
+def test_cancelling_the_pending_work_stops_everything_unfinished(tmp_path, monkeypatch) -> None:
+    """Bulk cancel reaches the running playlist and the waiting one."""
+    release = Gate().hold(monkeypatch)
+    client = _app(tmp_path, QUEUE_MAX_ACTIVE=1).test_client()
+    job_id = _upload(client, 2)
+    _start(client, job_id, 2)
+    assert _wait_for(lambda: _queue(client)["active"] == 1)
+
+    stopped = client.post(f"/api/jobs/{job_id}/queue/cancel-all")
+
+    assert stopped.status_code == 200
+    assert stopped.get_json()["stopped"] == 2
+
+    release.release()
+    queue = client.application.config["CONVERSION_QUEUE"]
+    assert queue.wait_for_idle(timeout=60)
+    assert queue.count_in("cancelled") == 2
+    assert queue.count_in("failed") == 0, "stopping work is not failing it"
+    runs = client.get("/api/history").get_json()["runs"]
+    assert {run["status"] for run in runs} == {"cancelled"}
 
 
 def test_a_playlist_the_queue_never_took_cannot_be_cancelled(tmp_path) -> None:

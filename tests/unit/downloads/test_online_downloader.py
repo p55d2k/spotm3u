@@ -7,6 +7,7 @@ from urllib.error import URLError
 
 import pytest
 
+from spotm3u.cancellation import CancelledError, CancelSignal
 from spotm3u.models import Track
 from spotm3u.online import DownloadError, download_track, downloader, youtube_setup
 
@@ -186,6 +187,44 @@ def test_hung_download_is_abandoned_after_wall_clock_timeout(tmp_path, monkeypat
 
     with pytest.raises(DownloadError, match="timed out"):
         download_track(TRACK, "https://example.com/source", tmp_path, timeout=0.2)
+
+
+# --- Cancellation -------------------------------------------------------------
+
+
+def test_a_cancelled_download_is_not_reported_as_a_failure(tmp_path, monkeypatch):
+    """Checking before the download starts is the cheapest safe stop."""
+    signal = CancelSignal()
+    signal.cancel("the user stopped it")
+    install_fake_yt_dlp(monkeypatch)
+
+    with pytest.raises(CancelledError, match="the user stopped it"):
+        download_track(TRACK, "https://example.com/source", tmp_path, cancel=signal)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_stop_request_interrupts_yt_dlp_and_removes_the_partial_file(
+    tmp_path, monkeypatch
+) -> None:
+    """A stop arrives through the progress hook, at yt-dlp's own boundary."""
+    signal = CancelSignal()
+
+    class Stoppable(FakeYoutubeDL):
+        def download(self, urls):
+            output = Path(self.options["outtmpl"].replace("%(ext)s", "mp3"))
+            output.write_bytes(b"partial")
+            signal.cancel("the user stopped it")
+            for hook in self.options.get("progress_hooks", ()):
+                hook({"status": "downloading"})
+            return 0
+
+    install_fake_yt_dlp(monkeypatch, Stoppable)
+
+    with pytest.raises(CancelledError, match="the user stopped it"):
+        download_track(TRACK, "https://example.com/source", tmp_path, cancel=signal)
+
+    assert list(tmp_path.iterdir()) == [], "an interrupted download leaves no partial file"
 
 
 # --- Concurrent deduplication -------------------------------------------------
